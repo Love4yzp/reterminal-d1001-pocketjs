@@ -271,6 +271,9 @@ static bool bring_up(void) {
     return false;
   if (radio_esp_failed("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA)))
     return false;
+  if (radio_esp_failed("esp_wifi_set_ps", esp_wifi_set_ps(WIFI_PS_NONE)))
+    return false;
+  ESP_LOGI(TAG, "Wi-Fi power save disabled");
   if (radio_esp_failed("esp_event_handler_register(WIFI_EVENT)",
                        esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                                   on_event, NULL)))

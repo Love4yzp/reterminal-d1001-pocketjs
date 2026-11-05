@@ -107,6 +107,7 @@ async function compileApp(directory: string): Promise<{ packagePath: string; id:
     throw new Error(`${manifestPath} requires an app.output filename without path separators`);
   const output = value.app.output;
   const packagePath = resolve(buildDirectory, `${output}.pocket`);
+  const started = performance.now();
   await run([
     resolve(root, "tools/pocket"), "compile",
     "--manifest", manifestPath,
@@ -115,6 +116,7 @@ async function compileApp(directory: string): Promise<{ packagePath: string; id:
     "--outdir", resolve(buildDirectory, output),
     "--output", packagePath,
   ]);
+  console.log(`compile: ${(performance.now() - started).toFixed(0)} ms`);
   return { packagePath, id: value.id };
 }
 

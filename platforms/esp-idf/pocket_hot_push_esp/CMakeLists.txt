@@ -5,9 +5,11 @@ idf_component_register(
     PRIV_REQUIRES
         esp_http_server
         esp_partition
+        esp_timer
         heap
         log
         pocket_wifi_esp
+        spi_flash
     REQUIRED_IDF_TARGETS esp32p4
 )
 

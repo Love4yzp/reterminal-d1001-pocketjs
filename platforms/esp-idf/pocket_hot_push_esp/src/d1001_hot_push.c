@@ -22,7 +22,9 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_partition.h"
+#include "esp_timer.h"
 #include "pocket/package_facts.h"
+#include "spi_flash_mmap.h"
 
 #ifndef CONFIG_MMU_PAGE_SIZE
 #define CONFIG_MMU_PAGE_SIZE 0x10000
@@ -110,8 +112,7 @@ static esp_err_t send_error(httpd_req_t *request, const char *status,
 static const char *validate_image(const uint8_t *image, size_t image_size,
                                   const esp_partition_t *partition,
                                   pocket_idf_package_facts *opened,
-                                  uint32_t *package_size,
-                                  uint32_t *extent_size) {
+                                  uint32_t *package_size) {
   if (read_u32(image) != HEADER_MAGIC)
     return "bad_magic";
   if (read_u32(image + 4U) != HEADER_VERSION)
@@ -150,8 +151,82 @@ static const char *validate_image(const uint8_t *image, size_t image_size,
     return "facts_mismatch";
 
   *package_size = size;
-  *extent_size = (uint32_t)extent;
   return NULL;
+}
+
+static esp_err_t write_changed_sectors(const esp_partition_t *partition,
+                                       const uint8_t *image, size_t image_size) {
+  const size_t sectors =
+      (image_size + SPI_FLASH_SEC_SIZE - 1U) / SPI_FLASH_SEC_SIZE;
+  uint8_t *changed = calloc((sectors + 7U) / 8U, 1U);
+  uint8_t *existing = malloc(SPI_FLASH_SEC_SIZE);
+  if (changed == NULL || existing == NULL) {
+    free(changed);
+    free(existing);
+    return ESP_ERR_NO_MEM;
+  }
+  esp_err_t status = ESP_OK;
+  size_t changed_count = 0;
+
+  const int64_t compare_started = esp_timer_get_time();
+  for (size_t sector = 0; sector < sectors; ++sector) {
+    const size_t offset = sector * SPI_FLASH_SEC_SIZE;
+    const size_t bytes = image_size - offset < SPI_FLASH_SEC_SIZE
+                             ? image_size - offset
+                             : SPI_FLASH_SEC_SIZE;
+    status = esp_partition_read(partition, offset, existing, bytes);
+    if (status != ESP_OK)
+      goto done;
+    if (memcmp(existing, image + offset, bytes) != 0) {
+      changed[sector / 8U] |= (uint8_t)(1U << (sector % 8U));
+      ++changed_count;
+    }
+  }
+  const uint32_t compare_ms =
+      (unsigned)(esp_timer_get_time() - compare_started) / 1000U;
+
+  const int64_t erase_started = esp_timer_get_time();
+  for (size_t sector = 0; sector < sectors; ++sector) {
+    if ((changed[sector / 8U] & (uint8_t)(1U << (sector % 8U))) == 0U)
+      continue;
+    status = esp_partition_erase_range(partition, sector * SPI_FLASH_SEC_SIZE,
+                                       SPI_FLASH_SEC_SIZE);
+    if (status != ESP_OK)
+      goto done;
+  }
+  const uint32_t erase_ms =
+      (unsigned)(esp_timer_get_time() - erase_started) / 1000U;
+
+  const int64_t write_started = esp_timer_get_time();
+  for (size_t sector = 1; sector < sectors; ++sector) {
+    if ((changed[sector / 8U] & (uint8_t)(1U << (sector % 8U))) == 0U)
+      continue;
+    const size_t offset = sector * SPI_FLASH_SEC_SIZE;
+    const size_t bytes = image_size - offset < SPI_FLASH_SEC_SIZE
+                             ? image_size - offset
+                             : SPI_FLASH_SEC_SIZE;
+    status = esp_partition_write(partition, offset, image + offset, bytes);
+    if (status != ESP_OK)
+      goto done;
+  }
+  if ((changed[0] & 1U) != 0U) {
+    const size_t bytes = image_size < SPI_FLASH_SEC_SIZE ? image_size
+                                                         : SPI_FLASH_SEC_SIZE;
+    status = esp_partition_write(partition, 0, image, bytes);
+    if (status != ESP_OK)
+      goto done;
+  }
+  const uint32_t write_ms =
+      (unsigned)(esp_timer_get_time() - write_started) / 1000U;
+  ESP_LOGI(TAG,
+           "flash sectors=%u changed=%u compare_ms=%u erase_ms=%u write_ms=%u",
+           (unsigned)sectors, (unsigned)changed_count, (unsigned)compare_ms,
+           (unsigned)erase_ms, (unsigned)write_ms);
+
+done:
+  free(existing);
+  free(changed);
+  return status;
 }
 
 static esp_err_t handle_push(httpd_req_t *request) {
@@ -175,13 +250,21 @@ static esp_err_t handle_push(httpd_req_t *request) {
   if (image == NULL)
     return send_error(request, "500 Internal Server Error", "psram_alloc_failed");
 
+  const int64_t receive_started = esp_timer_get_time();
   size_t received = 0;
   unsigned timeouts = 0;
+  uint32_t receive_calls = 0;
+  uint32_t max_recv_us = 0;
   while (received < request->content_len) {
     const size_t remaining = request->content_len - received;
     const size_t chunk = remaining > RECEIVE_CHUNK_BYTES ? RECEIVE_CHUNK_BYTES
                                                          : remaining;
+    const int64_t call_started = esp_timer_get_time();
     const int count = httpd_req_recv(request, (char *)image + received, chunk);
+    const uint32_t call_us = (uint32_t)(esp_timer_get_time() - call_started);
+    ++receive_calls;
+    if (call_us > max_recv_us)
+      max_recv_us = call_us;
     if (count == HTTPD_SOCK_ERR_TIMEOUT) {
       if (++timeouts < 3U)
         continue;
@@ -189,52 +272,57 @@ static esp_err_t handle_push(httpd_req_t *request) {
       return send_error(request, "408 Request Timeout", "receive_timeout");
     }
     if (count <= 0) {
+      ESP_LOGW(TAG, "receive ended early at %u/%u bytes", (unsigned)received,
+               (unsigned)request->content_len);
       free(image);
       return send_error(request, "400 Bad Request", "receive_failed");
     }
     timeouts = 0;
     received += (size_t)count;
   }
+  const uint32_t receive_ms =
+      (unsigned)(esp_timer_get_time() - receive_started) / 1000U;
+  ESP_LOGI(TAG, "receive bytes=%u time_ms=%u calls=%u max_recv_ms=%u",
+           (unsigned)received, (unsigned)receive_ms, (unsigned)receive_calls,
+           (unsigned)max_recv_us / 1000U);
 
+  const int64_t validate_started = esp_timer_get_time();
   pocket_idf_package_facts opened = {.struct_size = sizeof(opened)};
   uint32_t package_size = 0;
-  uint32_t extent_size = 0;
   const char *invalid = validate_image(image, request->content_len, partition,
-                                       &opened, &package_size, &extent_size);
+                                       &opened, &package_size);
+  const uint32_t validate_ms =
+      (unsigned)(esp_timer_get_time() - validate_started) / 1000U;
   if (invalid != NULL) {
     free(image);
     return send_error(request, "400 Bad Request", invalid);
   }
 
   const uint64_t hash = opened.package_hash;
+  const int64_t stop_started = esp_timer_get_time();
   esp_err_t status = hot_push.stop(hot_push.context);
+  const uint32_t stop_ms =
+      (unsigned)(esp_timer_get_time() - stop_started) / 1000U;
   if (status != ESP_OK) {
     ESP_LOGE(TAG, "runtime stop failed: %s", esp_err_to_name(status));
     free(image);
     return send_error(request, "500 Internal Server Error", "stop_failed");
   }
 
-  status = esp_partition_erase_range(partition, 0, extent_size);
+  const int64_t write_started = esp_timer_get_time();
+  status = write_changed_sectors(partition, image, request->content_len);
   if (status != ESP_OK) {
-    ESP_LOGE(TAG, "apps erase failed: %s", esp_err_to_name(status));
+    ESP_LOGE(TAG, "apps delta write failed: %s", esp_err_to_name(status));
     free(image);
-    return send_error(request, "500 Internal Server Error", "erase_failed");
+    return send_error(request, "500 Internal Server Error", "write_failed");
   }
-  status = esp_partition_write(partition, HEADER_BYTES, image + HEADER_BYTES,
-                               package_size);
-  if (status != ESP_OK) {
-    ESP_LOGE(TAG, "apps package write failed: %s", esp_err_to_name(status));
-    free(image);
-    return send_error(request, "500 Internal Server Error", "body_write_failed");
-  }
-  status = esp_partition_write(partition, 0, image, HEADER_BYTES);
-  if (status != ESP_OK) {
-    ESP_LOGE(TAG, "apps header write failed: %s", esp_err_to_name(status));
-    free(image);
-    return send_error(request, "500 Internal Server Error", "header_write_failed");
-  }
+  const uint32_t write_ms =
+      (unsigned)(esp_timer_get_time() - write_started) / 1000U;
 
+  const int64_t restart_started = esp_timer_get_time();
   status = hot_push.restart(hot_push.context);
+  const uint32_t restart_ms =
+      (unsigned)(esp_timer_get_time() - restart_started) / 1000U;
   if (status != ESP_OK) {
     ESP_LOGE(TAG, "runtime restart failed: %s", esp_err_to_name(status));
     free(image);
@@ -245,6 +333,9 @@ static esp_err_t handle_push(httpd_req_t *request) {
   snprintf(json, sizeof(json),
            "{\"size\":%lu,\"hash\":\"%016llx\",\"restarted\":true}",
            (unsigned long)package_size, (unsigned long long)hash);
+  ESP_LOGI(TAG, "push timing receive_ms=%u validate_ms=%u stop_ms=%u write_ms=%u restart_ms=%u",
+           (unsigned)receive_ms, (unsigned)validate_ms, (unsigned)stop_ms,
+           (unsigned)write_ms, (unsigned)restart_ms);
   ESP_LOGI(TAG, "installed size=%lu hash=%016llx", (unsigned long)package_size,
            (unsigned long long)hash);
   free(image);
@@ -254,7 +345,12 @@ static esp_err_t handle_push(httpd_req_t *request) {
 static esp_err_t push_handler(httpd_req_t *request) {
   if (!authorized(request)) {
     (void)httpd_resp_set_hdr(request, "WWW-Authenticate", "Bearer");
-    return send_error(request, "401 Unauthorized", "unauthorized");
+    (void)httpd_resp_set_hdr(request, "Connection", "close");
+    const esp_err_t result = send_error(request, "401 Unauthorized", "unauthorized");
+    const int socket = httpd_req_to_sockfd(request);
+    if (socket >= 0)
+      (void)httpd_sess_trigger_close(request->handle, socket);
+    return result;
   }
   if (push_active)
     return send_error(request, "409 Conflict", "push_in_progress");
