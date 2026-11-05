@@ -7,6 +7,7 @@ idf_component_register(
         esp_netif
         espressif__esp_hosted
         espressif__esp_wifi_remote
+        esp_timer
         freertos
         heap
         log

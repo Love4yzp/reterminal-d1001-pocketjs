@@ -66,7 +66,7 @@ bun run app:push apps/system-test
 
 The app reads `counter.json` through `data.fs`, increments and writes it on every boot, cycles seven color combinations through the standard `led-r`/`led-g`/`led-b` switches, demonstrates backlight 100→25→100 percent and requests a Wi-Fi scan without joining a network. The FAT `storage` partition mounts at `/pocket`; the driver never formats it automatically, so a new partition requires explicit provisioning before use. Board logs report the requested RGB states and LEDC duties; a user must check that all seven physical LED colors match the on-screen labels.
 
-No credentials are committed. `sdkconfig.local` is ignored for local configuration, and the self-test does not read or save Wi-Fi credentials. Hosted host 3.0.10 is back-compatible with 2.x coprocessors under the upstream migration table. The firmware reads and logs the existing C6 version; an unverified newer major version stops Wi-Fi before `esp_wifi_init`. No Hosted OTA path is called.
+No credentials are committed. `sdkconfig.local` is ignored for local configuration. When `CONFIG_D1001_WIFI_SSID` is non-empty, the firmware sets the STA configuration with `CONFIG_D1001_WIFI_PASSWORD` and joins that network; disconnects reconnect with exponential backoff from 1 to 30 seconds. Wi-Fi configuration uses RAM storage. Empty SSID preserves scan/status and the C6's existing connection behavior. Logs include only the SSID, IP address and RSSI, never the password. Hosted host 3.0.10 is back-compatible with 2.x coprocessors under the upstream migration table. The firmware reads and logs the existing C6 version; an unverified newer major version stops Wi-Fi before `esp_wifi_init`. No Hosted OTA path is called.
 
 ## Worker HTTP
 

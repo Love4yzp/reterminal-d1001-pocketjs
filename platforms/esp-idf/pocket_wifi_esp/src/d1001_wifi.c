@@ -1,5 +1,5 @@
 /* Scan collection and QuickJS binding derive from pocket-m5 commit aa8a0ca,
- * pocket_system/src/wifi.c and qjs.c; this component is scan-only. */
+ * pocket_system/src/wifi.c and qjs.c. */
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -14,11 +14,13 @@
 #include "esp_hosted.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "sdkconfig.h"
 
 #define D1001_WIFI_TASK_STACK_BYTES (8U * 1024U)
 #define D1001_WIFI_POLL_MS 200U
@@ -26,6 +28,9 @@
 #define D1001_WIFI_MAX_NETWORKS 16U
 #define D1001_WIFI_SSID_BYTES 33U
 #define D1001_WIFI_STATUS_BYTES (8U * 1024U)
+#define D1001_WIFI_RECONNECT_MIN_MS 1000U
+#define D1001_WIFI_RECONNECT_MAX_MS 30000U
+#define D1001_WIFI_HAS_STATION_CONFIG (CONFIG_D1001_WIFI_SSID[0] != '\0')
 
 static const char *TAG = "d1001_wifi";
 
@@ -64,6 +69,8 @@ static wifi_ap_record_t scan_records[D1001_WIFI_SCAN_RECORDS];
 static d1001_found_network networks[D1001_WIFI_MAX_NETWORKS];
 static size_t network_count;
 static char status_out[D1001_WIFI_STATUS_BYTES];
+static int64_t reconnect_at_us;
+static uint32_t reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
 
 static void take(void) { xSemaphoreTake(lock, portMAX_DELAY); }
 
@@ -71,6 +78,29 @@ static void give(void) { xSemaphoreGive(lock); }
 
 static int bars(int8_t value) {
   return value >= -55 ? 3 : value >= -66 ? 2 : value >= -77 ? 1 : 0;
+}
+
+/* Caller holds the lock. */
+static void schedule_reconnect(void) {
+  state = D1001_WIFI_CONNECTING;
+  reconnect_at_us = esp_timer_get_time() + reconnect_delay_ms * 1000;
+  reconnect_delay_ms = reconnect_delay_ms >= D1001_WIFI_RECONNECT_MAX_MS / 2U
+                           ? D1001_WIFI_RECONNECT_MAX_MS
+                           : reconnect_delay_ms * 2U;
+}
+
+static void connect_station(void) {
+  ESP_LOGI(TAG, "connecting to configured SSID=%s", CONFIG_D1001_WIFI_SSID);
+  const esp_err_t result = esp_wifi_connect();
+  if (result == ESP_OK)
+    return;
+  take();
+  snprintf(error, sizeof error, "esp_wifi_connect failed (%s)",
+           esp_err_to_name(result));
+  schedule_reconnect();
+  give();
+  ESP_LOGW(TAG, "esp_wifi_connect failed for SSID=%s (%s)",
+           CONFIG_D1001_WIFI_SSID, esp_err_to_name(result));
 }
 
 static bool radio_esp_failed(const char *operation, esp_err_t result) {
@@ -148,6 +178,11 @@ static bool coprocessor_compatible(void) {
 static void on_event(void *argument, esp_event_base_t base, int32_t id,
                      void *data) {
   (void)argument;
+  wifi_ap_record_t access_point;
+  const bool have_rssi = base == IP_EVENT && id == IP_EVENT_STA_GOT_IP &&
+                         esp_wifi_sta_get_ap_info(&access_point) == ESP_OK;
+  bool disconnected = false;
+  uint32_t retry_ms = 0;
   take();
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
     if (state != D1001_WIFI_CONNECTING && state != D1001_WIFI_CONNECTED)
@@ -156,6 +191,7 @@ static void on_event(void *argument, esp_event_base_t base, int32_t id,
     state = D1001_WIFI_OFF;
     current[0] = '\0';
     address[0] = '\0';
+    reconnect_at_us = 0;
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
     scan_done = true;
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
@@ -167,6 +203,7 @@ static void on_event(void *argument, esp_event_base_t base, int32_t id,
     current[length] = '\0';
     address[0] = '\0';
     state = D1001_WIFI_CONNECTING;
+    reconnect_at_us = 0;
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     const wifi_event_sta_disconnected_t *event = data;
     state = D1001_WIFI_IDLE;
@@ -175,13 +212,33 @@ static void on_event(void *argument, esp_event_base_t base, int32_t id,
     rssi = 0;
     snprintf(error, sizeof error, "Station disconnected (reason %u)",
              (unsigned)event->reason);
+    if (D1001_WIFI_HAS_STATION_CONFIG) {
+      disconnected = true;
+      retry_ms = reconnect_delay_ms;
+      schedule_reconnect();
+    }
   } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
     const ip_event_got_ip_t *event = data;
     snprintf(address, sizeof address, IPSTR, IP2STR(&event->ip_info.ip));
     state = D1001_WIFI_CONNECTED;
     error[0] = '\0';
+    reconnect_at_us = 0;
+    reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
+    if (have_rssi)
+      rssi = access_point.rssi;
   }
   give();
+  if (disconnected)
+    ESP_LOGW(TAG, "station SSID=%s disconnected; reconnect in %u ms",
+             CONFIG_D1001_WIFI_SSID, (unsigned)retry_ms);
+  if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+    if (have_rssi)
+      ESP_LOGI(TAG, "station connected SSID=%s IP=%s RSSI=%d", current, address,
+               (int)rssi);
+    else
+      ESP_LOGI(TAG, "station connected SSID=%s IP=%s RSSI=unknown", current,
+               address);
+  }
 }
 
 static bool bring_up(void) {
@@ -234,7 +291,26 @@ static bool bring_up(void) {
     state = D1001_WIFI_IDLE;
   error[0] = '\0';
   give();
-  ESP_LOGI(TAG, "station ready; scan/status only");
+  if (D1001_WIFI_HAS_STATION_CONFIG) {
+    wifi_config_t station_config = {0};
+    strlcpy((char *)station_config.sta.ssid, CONFIG_D1001_WIFI_SSID,
+            sizeof station_config.sta.ssid);
+    strlcpy((char *)station_config.sta.password, CONFIG_D1001_WIFI_PASSWORD,
+            sizeof station_config.sta.password);
+    station_config.sta.pmf_cfg.capable = true;
+    if (radio_esp_failed("esp_wifi_set_config(STA)",
+                         esp_wifi_set_config(WIFI_IF_STA, &station_config)))
+      return false;
+    take();
+    state = D1001_WIFI_CONNECTING;
+    reconnect_at_us = 0;
+    reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
+    give();
+    connect_station();
+    ESP_LOGI(TAG, "station ready; configured SSID=%s", CONFIG_D1001_WIFI_SSID);
+  } else {
+    ESP_LOGI(TAG, "station ready; scan/status only");
+  }
   return true;
 }
 
@@ -339,13 +415,21 @@ static void radio_task(void *argument) {
     take();
     const bool start = scan_requested;
     const bool finish = scan_done;
+    const bool reconnect = D1001_WIFI_HAS_STATION_CONFIG &&
+                           state == D1001_WIFI_CONNECTING &&
+                           reconnect_at_us != 0 &&
+                           esp_timer_get_time() >= reconnect_at_us;
     scan_requested = false;
     scan_done = false;
+    if (reconnect)
+      reconnect_at_us = 0;
     give();
     if (start)
       start_scan();
     if (finish)
       collect_scan();
+    if (reconnect)
+      connect_station();
   }
 }
 

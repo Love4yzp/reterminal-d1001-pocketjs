@@ -150,7 +150,7 @@ function SystemTest() {
         <Text class="absolute left-[16] top-[14] w-[336] text-xs text-cyan-300 font-bold">WIFI SCAN / 5 SECOND POLL</Text>
         <Text class="absolute left-[16] top-[46] w-[336] text-xl text-white font-bold">{`STATUS ${wifiState()}`}</Text>
         <Text class="absolute left-[16] top-[82] w-[336] text-2xl text-white">{`AP COUNT ${apCount()}`}</Text>
-        <Text class="absolute left-[16] top-[122] w-[336] text-xs text-green-300">SCAN ONLY / NO JOIN</Text>
+        <Text class="absolute left-[16] top-[122] w-[336] text-xs text-green-300">SCAN / CONFIGURED STA</Text>
         <Text class="absolute left-[16] top-[142] w-[336] text-xs text-slate-400">AP DETAILS PRINTED TO CONSOLE</Text>
       </View>
 

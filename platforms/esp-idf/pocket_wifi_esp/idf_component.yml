@@ -1,5 +1,5 @@
 version: "0.1.0"
-description: Scan-only ESP32-C6 Wi-Fi support for Seeed reTerminal D1001
+description: Configurable ESP32-C6 station and scan support for Seeed reTerminal D1001
 license: MIT
 targets:
   - esp32p4
