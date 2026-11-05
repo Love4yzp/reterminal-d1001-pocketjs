@@ -228,7 +228,7 @@ async function main() {
     await Bun.write(previousImagePath, image);
   } catch (error) {
     if (writer) {
-      await writer.stdin.end().catch(() => undefined);
+      try { await writer.stdin.end(); } catch {}
       await writer.exited;
     }
     throw error;
