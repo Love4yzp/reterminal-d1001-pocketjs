@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=6.0,<6.3"
+  pocket-nexus/pocket_runtime:
+    override_path: ../../../third_party/pocketjs/platforms/esp-idf/pocket_runtime

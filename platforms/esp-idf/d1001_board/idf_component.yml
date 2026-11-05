@@ -1,0 +1,7 @@
+version: "0.1.0"
+description: Board support for Seeed reTerminal D1001
+license: MIT
+targets:
+  - esp32p4
+dependencies:
+  idf: ">=6.0,<6.3"

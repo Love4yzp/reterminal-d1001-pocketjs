@@ -1,0 +1,35 @@
+dependencies:
+  espressif/quickjs-ng:
+    component_hash: 51ead31abca34af01a44df24128e9ea10331cf35beb976a18fae62a03d36d6e2
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.14.0
+  idf:
+    source:
+      type: idf
+    version: 6.2.0
+  pocket-nexus/pocket_runtime:
+    dependencies:
+    - name: idf
+      version: '>=6.0,<6.3'
+    source:
+      path: ../../third_party/pocketjs/platforms/esp-idf/pocket_runtime
+      type: local
+    targets:
+    - esp32p4
+    - esp32s3
+    - esp32c3
+    - esp32c6
+    version: 0.1.0
+direct_dependencies:
+- espressif/quickjs-ng
+- idf
+- pocket-nexus/pocket_runtime
+manifest_hash: 006ba627ddd3f9824a71b81025e47c9f7a9116b21c3a751c46a31456e7373edc
+target: esp32p4
+version: 3.0.0

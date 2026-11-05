@@ -1,0 +1,22 @@
+{
+  "name": "pocketjs-d1001",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PocketJS firmware and board support for reTerminal D1001",
+  "license": "MIT",
+  "workspaces": [
+    "third_party/pocketjs"
+  ],
+  "scripts": {
+    "pocket": "bun third_party/pocketjs/tools/pocket.ts"
+  },
+  "dependencies": {
+    "@pocketjs/framework": "workspace:*",
+    "solid-js": "1.9.14"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "1.0.13",
+    "bun-types": "1.4.4"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "format": "pocket-host/2",
+  "id": "reterminal-d1001",
+  "platform": "esp-idf",
+  "form": "takeover",
+  "cadences": [30],
+  "display": {
+    "logicalViewports": [[400, 640]],
+    "presentations": ["native"],
+    "rasterDensity": 1,
+    "animation": "repaint"
+  },
+  "panel": {
+    "primary": [400, 640]
+  },
+  "capabilities": ["text.glyphs.baked"],
+  "bytecode": {
+    "engine": "esp-idf-quickjs-ng-0.14.0",
+    "source": "drop"
+  }
+}
