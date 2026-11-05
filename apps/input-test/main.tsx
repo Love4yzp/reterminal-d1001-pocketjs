@@ -121,7 +121,7 @@ function InputTest() {
 
       <Text class="absolute left-[16] top-[346] w-[210] text-xs text-slate-300 font-bold">VIRTUAL LIST / 80 ROWS</Text>
       <Text class="absolute left-[226] top-[346] w-[158] text-right text-xs text-green-300">{autoText()}</Text>
-      <View class="absolute left-[12] top-[374] w-[376] h-[250] rounded-[6] bg-slate-900 overflow-hidden border border-slate-700">
+      <View class="absolute left-[0] top-[374] w-[400] h-[250] bg-slate-900 overflow-hidden">
         <VirtualList
           ref={(handle) => (list = handle)}
           count={ROW_COUNT}
@@ -129,7 +129,7 @@ function InputTest() {
           height={LIST_HEIGHT}
           overscan={ROW_HEIGHT}
           focusRows={false}
-          style={{ width: 376 }}
+          style={{ width: 400 }}
           renderRow={(index) => (
             <View class={index % 2 === 0 ? "w-full h-full flex-row items-center justify-between px-[12] border-slate-700 bg-slate-900" : "w-full h-full flex-row items-center justify-between px-[12] border-slate-700 bg-slate-800"}>
               <Text class="text-sm text-white">{`ROW ${String(index).padStart(2, "0")}`}</Text>

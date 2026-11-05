@@ -10,9 +10,9 @@
 ## Implementation
 
 - Board initialization returns handles and owns no tasks. M1 covers the panel and backlight; M2 adds PKAP packages; GSL3670 touch belongs to M3.
-- Keep the primary picture at 400x640 RGB565 and present it at 2x on the 800x1280 panel. Keep the two DPI staging buffers within 128 KiB total, each in internal DMA RAM.
+- Keep the logical viewport at 400x640 and render an 800x1280 RGB565 raster at density 2 with DPI scale 1. Keep the two DPI staging buffers within 128 KiB total, each in internal DMA RAM.
 - M2 loads the first PKAP v1 extent in `apps`; invalid or empty slots must fall back to the embedded app. Perform partition mapping on the internal `app_main` stack, not the PSRAM guest task.
-- M3 registers GSL3670 touch with 180° mirroring and 0.5 logical scaling, plus active-high GPIO3 as CIRCLE. Use two PPA lanes and the display-vtable move counter for the automatic `input-test` list.
+- M3 registers GSL3670 touch with 180° mirroring and 0.5 logical scaling, plus active-high GPIO3 as CIRCLE. Use two PPA lanes and the display-vtable move counter for the automatic `input-test` list. Its scrolling content is full-width so retained moves use GDMA instead of the slower partial-width PPA band path.
 - M4 mounts FAT without automatic formatting, binds `data.fs` per slot and uses standard `led-r/led-g/led-b` switches. Hosted host 3.0.10 is back-compatible with the existing 2.3.2 C6; log its version and never invoke Hosted OTA. Wi-Fi push is dev-only, token-protected and compiled out by default; runtime restart is task-synchronised and never calls `esp_restart`.
 - Use `bun run app:push <app-dir>` for the development loop. Serial writes only `apps`; `--wifi <ip>` uses the authenticated HTTP endpoint and restarts only the runtime. Use `apps/worker-http` for worker GET, `apps/system-test` for persistence/device/Wi-Fi, `apps/input-test` for input/scroll and `apps/hello-d1001` for the minimal push check.
 - Declare only capabilities registered by the firmware in `pocket.host.json`.

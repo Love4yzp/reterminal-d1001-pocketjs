@@ -458,8 +458,10 @@ static void run_app(void *context) {
              stats.frame_errors - last.frame_errors,
              stats.max_frame_us / 1000.0);
     ESP_LOGI(TAG, "moves_ok=%" PRIu32 " moves_unsupported=%" PRIu32
-                  " move_errors=%" PRIu32,
-             moves.ok, moves.unsupported, moves.errors);
+                  " move_errors=%" PRIu32 " move_pixels=%" PRIu64
+                  " move_total_us=%" PRIu64 " move_max_us=%" PRIu32,
+             moves.ok, moves.unsupported, moves.errors, moves.pixels,
+             moves.total_us, moves.max_us);
     if (sample_pending) {
       log_framebuffer_sample(&host);
       sample_pending = false;

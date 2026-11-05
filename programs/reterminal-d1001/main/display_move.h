@@ -2,12 +2,15 @@
 
 #include <stdint.h>
 
-#include "pocket_drivers.h"
+#include "pocket/display_esp_dpi.h"
 
 typedef struct {
   uint32_t ok;
   uint32_t unsupported;
   uint32_t errors;
+  uint64_t pixels;
+  uint64_t total_us;
+  uint32_t max_us;
 } d1001_move_stats;
 
 void d1001_move_tracker_init(void);
