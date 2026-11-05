@@ -7,11 +7,11 @@
   "display": {
     "logicalViewports": [[400, 640]],
     "presentations": ["native"],
-    "rasterDensity": 1,
+    "rasterDensity": 2,
     "animation": "repaint"
   },
   "panel": {
-    "primary": [400, 640]
+    "primary": [800, 1280]
   },
   "capabilities": [
     "data.fs",

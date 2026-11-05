@@ -35,10 +35,10 @@
 #include "pocketjs/esp32p4_ppa_status.h"
 #include "pocketjs_package_app.h"
 
-#define D1001_RASTER_WIDTH 400U
-#define D1001_RASTER_HEIGHT 640U
-#define D1001_PRESENT_SCALE 2U
-#define D1001_STRIP_ROWS 80U
+#define D1001_RASTER_WIDTH 800U
+#define D1001_RASTER_HEIGHT 1280U
+#define D1001_PRESENT_SCALE 1U
+#define D1001_STRIP_ROWS 40U
 #define D1001_STRIP_BYTES (D1001_RASTER_WIDTH * D1001_STRIP_ROWS * 2U)
 #define D1001_GUEST_HEAP (8U * 1024U * 1024U)
 #define D1001_GUEST_STACK (192U * 1024U)
@@ -111,7 +111,7 @@ static void start_display(d1001_host *host) {
   assert(host->display != NULL);
   assert(pocket_display_esp_dpi_buffer_bytes(host->display) ==
          2U * D1001_STRIP_BYTES);
-  ESP_LOGI(TAG, "raster 400x640 at 2x, strips 2 x %u bytes",
+  ESP_LOGI(TAG, "raster 800x1280, logical 400x640 at density 2, strips 2 x %u bytes",
            (unsigned)D1001_STRIP_BYTES);
 }
 
@@ -362,6 +362,15 @@ static void log_framebuffer_sample(const d1001_host *host) {
            fb[0], fb[128U * D1001_PANEL_WIDTH + 128U],
            fb[100U * D1001_PANEL_WIDTH + 400U],
            fb[1276U * D1001_PANEL_WIDTH + 796U]);
+  uint32_t different_pairs = 0;
+  for (uint32_t y = 0; y < D1001_PANEL_HEIGHT; ++y) {
+    for (uint32_t x = 0; x < D1001_PANEL_WIDTH; x += 2U) {
+      const uint16_t *pair = fb + (size_t)y * D1001_PANEL_WIDTH + x;
+      if (pair[0] != pair[1])
+        ++different_pairs;
+    }
+  }
+  ESP_LOGI(TAG, "high_res_even_pairs_different=%" PRIu32, different_pairs);
 }
 
 typedef struct {
