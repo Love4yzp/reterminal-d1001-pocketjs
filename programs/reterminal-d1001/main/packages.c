@@ -50,6 +50,12 @@ static void use_embedded(d1001_package *selected, const char *reason) {
   };
   selected->external = false;
   selected->hash = read_u64(selected->source.data + selected->source.size - 8U);
+  selected->facts.struct_size = sizeof(selected->facts);
+  const int32_t facts_status = pocket_idf_package_open(
+      selected->source.data, selected->source.size, pocket_profile.facts,
+      pocket_profile.host_abi, pocket_profile.profile_hash, &selected->facts);
+  if (facts_status != POCKET_PACKAGE_OPEN_OK)
+    ESP_LOGW(TAG, "embedded package facts unavailable: %ld", (long)facts_status);
   ESP_LOGW(TAG, "source=embedded reason=%s size=%u hash=%016llx", reason,
            (unsigned)selected->source.size,
            (unsigned long long)selected->hash);
@@ -132,6 +138,7 @@ void d1001_package_select(d1001_package *selected) {
 
   selected->mapping = mapping;
   selected->hash = opened.package_hash;
+  selected->facts = opened;
   selected->external = true;
   selected->source = (pocket_memory_package){
       .data = package,

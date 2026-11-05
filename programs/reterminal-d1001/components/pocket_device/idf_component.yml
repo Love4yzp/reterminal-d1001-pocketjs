@@ -1,0 +1,10 @@
+version: "0.1.0"
+description: PocketJS system.device for the reTerminal D1001 backlight and RGB LED
+targets:
+  - esp32p4
+dependencies:
+  idf: ">=6.0,<6.3"
+  d1001_board:
+    override_path: ../../../../platforms/esp-idf/d1001_board
+  pocket-nexus/pocket_guest_quickjs:
+    override_path: ../../../../third_party/pocketjs/platforms/esp-idf/pocket_guest_quickjs

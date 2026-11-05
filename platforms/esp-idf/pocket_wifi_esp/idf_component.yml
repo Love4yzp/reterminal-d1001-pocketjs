@@ -1,0 +1,12 @@
+version: "0.1.0"
+description: Scan-only ESP32-C6 Wi-Fi support for Seeed reTerminal D1001
+license: MIT
+targets:
+  - esp32p4
+dependencies:
+  idf: ">=6.0,<6.3"
+  espressif/esp_hosted: "3.0.10"
+  espressif/esp_wifi_remote: "1.6.5"
+  espressif/quickjs-ng:
+    version: "0.14.0"
+    public: true

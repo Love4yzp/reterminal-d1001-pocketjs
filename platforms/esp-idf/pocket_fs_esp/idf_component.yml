@@ -1,0 +1,8 @@
+version: "0.1.0"
+description: reTerminal D1001 FAT storage and QuickJS data.fs binding
+license: MIT
+targets:
+  - esp32p4
+dependencies:
+  idf: ">=6.0,<6.3"
+  espressif/quickjs-ng: "==0.14.0"

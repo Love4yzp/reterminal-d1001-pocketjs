@@ -1,4 +1,6 @@
 dependencies:
   idf: ">=6.0,<6.3"
+  espressif/esp_hosted: "3.0.10"
+  espressif/esp_wifi_remote: "1.6.5"
   pocket-nexus/pocket_runtime:
     override_path: ../../../third_party/pocketjs/platforms/esp-idf/pocket_runtime

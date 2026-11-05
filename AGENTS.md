@@ -13,7 +13,8 @@
 - Keep the primary picture at 400x640 RGB565 and present it at 2x on the 800x1280 panel. Keep the two DPI staging buffers within 128 KiB total, each in internal DMA RAM.
 - M2 loads the first PKAP v1 extent in `apps`; invalid or empty slots must fall back to the embedded app. Perform partition mapping on the internal `app_main` stack, not the PSRAM guest task.
 - M3 registers GSL3670 touch with 180° mirroring and 0.5 logical scaling, plus active-high GPIO3 as CIRCLE. Use two PPA lanes and the display-vtable move counter for the automatic `input-test` list.
-- Use `bun run app:push <app-dir>` for the esptool-only development loop; it writes only the `apps` partition and never updates C6 firmware. Use `apps/input-test` for input/scroll validation and `apps/hello-d1001` for the minimal push check.
+- M4 mounts FAT without automatic formatting, binds `data.fs` per slot and uses standard `led-r/led-g/led-b` switches. Hosted host 3.0.10 requires C6 major version 3; a mismatch stops Wi-Fi before `esp_wifi_init`. Never invoke Hosted OTA.
+- Use `bun run app:push <app-dir>` for the esptool-only development loop; it writes only the `apps` partition and never updates C6 firmware. Use `apps/system-test` for persistence/device/Wi-Fi checks, `apps/input-test` for input/scroll and `apps/hello-d1001` for the minimal push check.
 - Declare only capabilities registered by the firmware in `pocket.host.json`.
 - Compile C with `-Wall -Wextra -Werror`, declare the `esp32p4` target for each component, and keep generated files, build trees and validation logs out of Git.
 

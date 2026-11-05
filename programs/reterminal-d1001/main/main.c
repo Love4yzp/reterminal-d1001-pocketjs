@@ -4,6 +4,8 @@
 #include <string.h>
 
 #include "d1001_board.h"
+#include "d1001_fs.h"
+#include "d1001_wifi.h"
 #include "esp_async_memcpy.h"
 #include "esp_cache.h"
 #include "esp_heap_caps.h"
@@ -14,6 +16,7 @@
 #include "freertos/task.h"
 #include "display_move.h"
 #include "inputs.h"
+#include "pocket/device.h"
 #include "pocket/display_esp_dpi.h"
 #include "pocket/guest_idf.h"
 #include "pocket/package_source.h"
@@ -121,6 +124,14 @@ static void start_guest(d1001_host *host) {
       host->runtime, pocket_memory_package_vtable(), &host->package.source));
   ESP_ERROR_CHECK(d1001_inputs_init(&host->board, host->runtime, &host->inputs));
 
+  JSContext *realm = pocket_guest_idf_context(host->guest);
+  const uint32_t features = host->package.facts.features;
+  if ((features & POCKET_IDF_FEATURE_FS) != 0U)
+    ESP_ERROR_CHECK(d1001_fs_install(realm));
+  if ((features & POCKET_IDF_FEATURE_DEVICE) != 0U)
+    ESP_ERROR_CHECK(pocket_device_install(realm));
+  ESP_ERROR_CHECK(d1001_wifi_install(realm));
+
   const pocket_ppa_config ppa_config = {
       .struct_size = sizeof(ppa_config),
       .scale = pocket_profile.facts->display->raster_density,
@@ -176,6 +187,9 @@ static void run_app(void *context) {
   static d1001_host host;
   host.package = *(d1001_package *)context;
   start_display(&host);
+  if ((host.package.facts.features & POCKET_IDF_FEATURE_DEVICE) != 0U)
+    ESP_ERROR_CHECK(pocket_device_setup());
+  d1001_wifi_start();
   start_guest(&host);
   ESP_LOGI(TAG, "app started");
 
@@ -214,6 +228,8 @@ static void run_app(void *context) {
 void app_main(void) {
   static d1001_package package;
   d1001_package_select(&package);
+  if ((package.facts.features & POCKET_IDF_FEATURE_FS) != 0U)
+    ESP_ERROR_CHECK(d1001_fs_init(package.facts.slot));
   const BaseType_t created = xTaskCreatePinnedToCoreWithCaps(
       run_app, "pocketjs_d1001", D1001_GUEST_STACK, &package, 1, NULL, 0,
       MALLOC_CAP_SPIRAM);

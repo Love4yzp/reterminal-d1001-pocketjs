@@ -4,11 +4,13 @@
 #include <stdint.h>
 
 #include "esp_partition.h"
+#include "pocket/package_facts.h"
 #include "pocket/package_source.h"
 
 typedef struct {
   pocket_memory_package source;
   esp_partition_mmap_handle_t mapping;
+  pocket_idf_package_facts facts;
   uint64_t hash;
   bool external;
 } d1001_package;

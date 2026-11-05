@@ -95,6 +95,43 @@ static esp_err_t init_backlight(void) {
   return ESP_OK;
 }
 
+#define D1001_RGB_OFF_DUTY 1024U
+
+static esp_err_t init_rgb(void) {
+  const ledc_channel_config_t channels[] = {
+      {
+          .gpio_num = D1001_RGB_RED_GPIO,
+          .speed_mode = LEDC_LOW_SPEED_MODE,
+          .channel = LEDC_CHANNEL_1,
+          .intr_type = LEDC_INTR_DISABLE,
+          .timer_sel = LEDC_TIMER_0,
+          .duty = D1001_RGB_OFF_DUTY,
+          .hpoint = 0,
+      },
+      {
+          .gpio_num = D1001_RGB_GREEN_GPIO,
+          .speed_mode = LEDC_LOW_SPEED_MODE,
+          .channel = LEDC_CHANNEL_2,
+          .intr_type = LEDC_INTR_DISABLE,
+          .timer_sel = LEDC_TIMER_0,
+          .duty = D1001_RGB_OFF_DUTY,
+          .hpoint = 0,
+      },
+      {
+          .gpio_num = D1001_RGB_BLUE_GPIO,
+          .speed_mode = LEDC_LOW_SPEED_MODE,
+          .channel = LEDC_CHANNEL_3,
+          .intr_type = LEDC_INTR_DISABLE,
+          .timer_sel = LEDC_TIMER_0,
+          .duty = D1001_RGB_OFF_DUTY,
+          .hpoint = 0,
+      },
+  };
+  for (size_t i = 0; i < sizeof channels / sizeof channels[0]; ++i)
+    ESP_RETURN_ON_ERROR(ledc_channel_config(&channels[i]), TAG, "RGB channel");
+  return ESP_OK;
+}
+
 static esp_err_t reset_panel(void) {
   ESP_RETURN_ON_ERROR(
       d1001_pca9535_set_level(D1001_PCA9535_LCD_RESET, true), TAG, "reset high");
@@ -119,6 +156,20 @@ esp_err_t d1001_board_backlight_set(uint32_t percent) {
   return ESP_OK;
 }
 
+esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue) {
+  const bool enabled[] = {red, green, blue};
+  const ledc_channel_t channels[] = {LEDC_CHANNEL_1, LEDC_CHANNEL_2,
+                                     LEDC_CHANNEL_3};
+  for (size_t i = 0; i < sizeof channels / sizeof channels[0]; ++i) {
+    const uint32_t duty = enabled[i] ? 0U : D1001_RGB_OFF_DUTY;
+    ESP_RETURN_ON_ERROR(
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, channels[i], duty), TAG, "RGB duty");
+    ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, channels[i]), TAG,
+                        "apply RGB duty");
+  }
+  return ESP_OK;
+}
+
 esp_err_t d1001_board_init(d1001_board_handles *handles) {
   ESP_RETURN_ON_FALSE(handles != NULL, ESP_ERR_INVALID_ARG, TAG, "missing output");
   *handles = (d1001_board_handles){0};
@@ -128,6 +179,7 @@ esp_err_t d1001_board_init(d1001_board_handles *handles) {
                       "initialize PCA9535");
   ESP_RETURN_ON_ERROR(init_power(), TAG, "initialize board power");
   ESP_RETURN_ON_ERROR(init_backlight(), TAG, "initialize backlight");
+  ESP_RETURN_ON_ERROR(init_rgb(), TAG, "initialize RGB LED");
 
   const esp_lcd_dsi_bus_config_t bus_config = {
       .bus_id = 0,

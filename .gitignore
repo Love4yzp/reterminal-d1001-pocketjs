@@ -2,6 +2,7 @@
 build/
 sdkconfig
 sdkconfig.old
+sdkconfig.local
 managed_components/
 
 # JavaScript dependencies
