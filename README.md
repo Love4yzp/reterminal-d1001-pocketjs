@@ -74,7 +74,7 @@ No credentials are committed. `sdkconfig.local` is ignored for local configurati
 bun run app:push apps/worker-http
 ```
 
-The app starts a worker with one `http` node, GETs `http://example.com/` and retries every five seconds until the STA is online. HTTP status, body bytes and errors are sent to the UI through the `progress` channel and printed to serial.
+The app starts a worker with one `http` node, GETs Home Assistant at `http://192.168.77.126:8123/` and retries every five seconds until the STA is online. HTTP status, body bytes and errors are sent to the UI through the `progress` channel and printed to serial.
 
 ## Development Wi-Fi hot push
 

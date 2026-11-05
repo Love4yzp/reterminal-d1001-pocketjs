@@ -1,6 +1,6 @@
 // Change this constant to fetch another URL. The response body is capped at
 // 256 KiB by the worker's io.http descriptor.
-export const TARGET_URL = "http://example.com/";
+export const TARGET_URL = "http://192.168.77.126:8123/";
 export const PHASES = ["Ready", "Request accepted", "Headers received", "Receiving body", "Complete", "Failed"] as const;
 export const Phase = { ready: 0, accepted: 1, headers: 2, body: 3, complete: 4, failed: 5 } as const;
 
