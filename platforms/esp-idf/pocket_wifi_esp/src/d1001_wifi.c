@@ -131,10 +131,11 @@ static bool coprocessor_compatible(void) {
   if (result == 0) {
     ESP_LOGI(TAG, "coprocessor firmware=%u.%u.%u", (unsigned)version.major1,
              (unsigned)version.minor1, (unsigned)version.patch1);
-    if (version.major1 != 3U) {
-      ESP_LOGE(TAG, "unsupported C6 firmware %u.%u.%u; host is 3.0.10",
-               (unsigned)version.major1, (unsigned)version.minor1,
-               (unsigned)version.patch1);
+    if (version.major1 == 2U)
+      ESP_LOGI(TAG, "host 3.x is back-compatible with the 2.x coprocessor");
+    else if (version.major1 != 3U) {
+      ESP_LOGE(TAG, "unverified C6 firmware major version %u",
+               (unsigned)version.major1);
       compatible = false;
     }
   } else {

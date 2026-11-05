@@ -16,3 +16,4 @@ typedef struct {
 } d1001_package;
 
 void d1001_package_select(d1001_package *selected);
+void d1001_package_release(d1001_package *selected);

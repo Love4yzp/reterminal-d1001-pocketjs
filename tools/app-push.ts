@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { basename, extname, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
@@ -16,13 +17,15 @@ interface Options {
   appDirectory?: string;
   packagePath?: string;
   slotId?: string;
+  wifiIp?: string;
 }
 
 function usage() {
-  console.log("usage: bun run app:push <app-directory>\n" +
-    "       bun run app:push --package <existing.pocket> --slot <manifest-id>\n\n" +
+  console.log("usage: bun run app:push <app-directory> [--wifi <ip>]\n" +
+    "       bun run app:push --package <existing.pocket> --slot <manifest-id> [--wifi <ip>]\n\n" +
     "Compile an app or reuse a package, then write its PKAP v1 short image.\n" +
-    "The port defaults to /dev/ttyACM0; set D1001_PORT to override it.");
+    "The serial port defaults to /dev/ttyACM0; set D1001_PORT to override it.\n" +
+    "Wi-Fi uses port 8080 and requires a non-empty D1001_WIFI_TOKEN.");
 }
 
 function parseOptions(args: string[]): Options | undefined {
@@ -33,10 +36,10 @@ function parseOptions(args: string[]): Options | undefined {
   const options: Options = {};
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]!;
-    if (argument === "--package" || argument === "--slot") {
+    if (argument === "--package" || argument === "--slot" || argument === "--wifi") {
       const value = args[index + 1];
       if (!value || value.startsWith("--")) throw new Error(`${argument} requires a value`);
-      const key = argument === "--package" ? "packagePath" : "slotId";
+      const key = argument === "--package" ? "packagePath" : argument === "--slot" ? "slotId" : "wifiIp";
       if (options[key] !== undefined) throw new Error(`${argument} was provided more than once`);
       options[key] = value;
       index += 1;
@@ -52,6 +55,8 @@ function parseOptions(args: string[]): Options | undefined {
     throw new Error("an app directory is mutually exclusive with --package and --slot");
   if (!options.appDirectory && (!options.packagePath || !options.slotId))
     throw new Error("provide an app directory, or --package and --slot together");
+  if (options.wifiIp !== undefined && isIP(options.wifiIp) === 0)
+    throw new Error("--wifi requires an IPv4 or IPv6 address");
   return options;
 }
 
@@ -149,11 +154,47 @@ function startWriter(offset: number) {
   ], { cwd: root, stdin: "pipe", stdout: "inherit", stderr: "inherit" });
 }
 
+async function pushWifi(image: Uint8Array, ip: string, packageSize: number, hash: bigint) {
+  const token = process.env.D1001_WIFI_TOKEN;
+  if (!token) throw new Error("--wifi requires a non-empty D1001_WIFI_TOKEN");
+  const host = isIP(ip) === 6 ? `[${ip}]` : ip;
+  const started = performance.now();
+  const response = await fetch(`http://${host}:8080/push`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/octet-stream",
+    },
+    body: image,
+  });
+
+  let value: unknown;
+  try {
+    value = await response.json();
+  } catch {
+    throw new Error(`Wi-Fi push returned HTTP ${response.status} with a non-JSON response`);
+  }
+  if (typeof value !== "object" || value === null)
+    throw new Error("Wi-Fi push returned a non-object JSON response");
+  const result = value as { size?: unknown; hash?: unknown; restarted?: unknown; error?: unknown };
+  if (!response.ok || result.error !== undefined) {
+    const reason = typeof result.error === "string" ? result.error : `HTTP ${response.status}`;
+    throw new Error(`Wi-Fi push failed: ${reason}`);
+  }
+
+  const expectedHash = hash.toString(16).padStart(16, "0");
+  if (result.size !== packageSize || result.hash !== expectedHash || result.restarted !== true)
+    throw new Error("Wi-Fi push returned a mismatched size/hash or did not confirm runtime restart");
+  const elapsed = (performance.now() - started).toFixed(0);
+  console.log(`wifi push: ${packageSize} package bytes in ${elapsed} ms`);
+  console.log(`wifi hash: 0x${expectedHash}; runtime restarted: true`);
+}
+
 async function main() {
   const options = parseOptions(Bun.argv.slice(2));
   if (!options) return;
   const partition = appsPartition();
-  const writer = startWriter(partition.offset);
+  const writer = options.wifiIp === undefined ? startWriter(partition.offset) : undefined;
   try {
     const compiled = options.appDirectory ? await compileApp(options.appDirectory) : undefined;
     const packagePath = compiled?.packagePath ?? resolve(options.packagePath!);
@@ -170,20 +211,26 @@ async function main() {
     console.log(`package bytes: ${packageBytes.length}`);
     console.log(`hash: 0x${hash.toString(16).padStart(16, "0")}`);
     console.log(`slot: ${slot}`);
-    console.log(`flash offset: 0x${partition.offset.toString(16)}`);
     console.log(`short image: ${imagePath}`);
-    const previous = existsSync(previousImagePath) ? previousImagePath : undefined;
-    if (previous) console.log(`diff against: ${previous}`);
 
-    await writer.stdin.write(`${JSON.stringify({ image: imagePath, previous })}\n`);
-    await writer.stdin.end();
-    const status = await writer.exited;
-    if (status !== 0 || writer.signalCode)
-      throw new Error(`esptool failed: ${writer.signalCode ?? status}`);
+    if (writer) {
+      console.log(`flash offset: 0x${partition.offset.toString(16)}`);
+      const previous = existsSync(previousImagePath) ? previousImagePath : undefined;
+      if (previous) console.log(`diff against: ${previous}`);
+      await writer.stdin.write(`${JSON.stringify({ image: imagePath, previous })}\n`);
+      await writer.stdin.end();
+      const status = await writer.exited;
+      if (status !== 0 || writer.signalCode)
+        throw new Error(`esptool failed: ${writer.signalCode ?? status}`);
+    } else {
+      await pushWifi(image, options.wifiIp!, packageBytes.length, hash);
+    }
     await Bun.write(previousImagePath, image);
   } catch (error) {
-    await writer.stdin.end().catch(() => undefined);
-    await writer.exited;
+    if (writer) {
+      await writer.stdin.end().catch(() => undefined);
+      await writer.exited;
+    }
     throw error;
   }
 }

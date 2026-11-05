@@ -1,0 +1,15 @@
+menuconfig D1001_HOT_PUSH
+    bool "Development Wi-Fi app hot push"
+    default n
+    depends on IDF_TARGET_ESP32P4
+    help
+        Expose an authenticated POST /push endpoint on the STA interface.
+        This development endpoint writes PKAP short images to the apps partition.
+
+config D1001_HOT_PUSH_TOKEN
+    string "Development Wi-Fi hot-push bearer token"
+    default ""
+    depends on IDF_TARGET_ESP32P4
+    help
+        The HTTP server starts only when D1001_HOT_PUSH is enabled and this
+        token is non-empty. Clients send it as Authorization: Bearer <token>.

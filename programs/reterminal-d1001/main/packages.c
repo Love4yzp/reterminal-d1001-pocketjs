@@ -148,3 +148,10 @@ void d1001_package_select(d1001_package *selected) {
   ESP_LOGI(TAG, "source=apps slot=%s size=%lu hash=%016llx", opened.slot,
            (unsigned long)size, (unsigned long long)opened.package_hash);
 }
+
+void d1001_package_release(d1001_package *selected) {
+  if (selected != NULL && selected->mapping != 0) {
+    esp_partition_munmap(selected->mapping);
+    selected->mapping = 0;
+  }
+}

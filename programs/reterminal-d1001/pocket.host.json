@@ -17,10 +17,15 @@
     "data.fs",
     "input.buttons",
     "input.touch",
+    "net.http",
+    "runtime.worker",
     "system.device",
     "system.wifi",
     "text.glyphs.baked"
   ],
+  "worker": {
+    "nodes": { "http": 1 }
+  },
   "bytecode": {
     "engine": "esp-idf-quickjs-ng-0.14.0",
     "source": "drop"

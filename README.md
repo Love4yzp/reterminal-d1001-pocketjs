@@ -21,7 +21,7 @@ idf.py -C programs/reterminal-d1001 set-target esp32p4
 idf.py -C programs/reterminal-d1001 build
 ```
 
-The embedded application is `apps/system-test`; `apps/input-test` and `apps/hello-d1001` remain input and minimal development-loop examples. The selected app is compiled with `pocketjs_compile_app`. The partition table retains the 4 MiB `apps` data partition for installed packages.
+The embedded application is `apps/worker-http`; `apps/system-test`, `apps/input-test` and `apps/hello-d1001` remain system, input and minimal development-loop examples. The selected app is compiled with `pocketjs_compile_app`. The partition table retains the 4 MiB `apps` data partition for installed packages.
 
 ## Flash and monitor
 
@@ -66,4 +66,32 @@ bun run app:push apps/system-test
 
 The app reads `counter.json` through `data.fs`, increments and writes it on every boot, cycles seven color combinations through the standard `led-r`/`led-g`/`led-b` switches, demonstrates backlight 100→25→100 percent and requests a Wi-Fi scan without joining a network. The FAT `storage` partition mounts at `/pocket`; the driver never formats it automatically, so a new partition requires explicit provisioning before use.
 
-No credentials are committed. `sdkconfig.local` is ignored for local configuration, and the self-test does not read or save Wi-Fi credentials. Hosted host 3.0.10 reads the existing C6 firmware version and requires major version 3; a mismatch leaves Wi-Fi off and never invokes OTA. Wi-Fi hot install and worker HTTP are not included in this tree; they require a compatible C6 and separate validation.
+No credentials are committed. `sdkconfig.local` is ignored for local configuration, and the self-test does not read or save Wi-Fi credentials. Hosted host 3.0.10 is back-compatible with 2.x coprocessors under the upstream migration table. The firmware reads and logs the existing C6 version; an unverified newer major version stops Wi-Fi before `esp_wifi_init`. No Hosted OTA path is called.
+
+## Worker HTTP
+
+```sh
+bun run app:push apps/worker-http
+```
+
+The app starts a worker with one `http` node, GETs `http://example.com/` and retries every five seconds until the STA is online. HTTP status, body bytes and errors are sent to the UI through the `progress` channel and printed to serial.
+
+## Development Wi-Fi hot push
+
+The authenticated HTTP endpoint is compiled out by default. To enable it locally, put this in the ignored `programs/reterminal-d1001/sdkconfig.local`:
+
+```ini
+CONFIG_D1001_HOT_PUSH=y
+CONFIG_D1001_HOT_PUSH_TOKEN="replace-with-local-token"
+```
+
+Build with both files, then use the same token in the host environment:
+
+```sh
+export SDKCONFIG_DEFAULTS="$PWD/programs/reterminal-d1001/sdkconfig.defaults;$PWD/programs/reterminal-d1001/sdkconfig.local"
+idf.py -C programs/reterminal-d1001 set-target esp32p4
+idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 build flash
+D1001_WIFI_TOKEN=replace-with-local-token bun run app:push apps/worker-http --wifi <device-ip>
+```
+
+The endpoint is `POST /push` on port 8080. It validates the PKAP image and package before stopping the runtime, writes the body before the header and restarts only the runtime; it does not reset the P4 or write the C6. The response reports the package size/hash and confirms the runtime restart.

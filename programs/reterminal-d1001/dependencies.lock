@@ -149,6 +149,6 @@ direct_dependencies:
 - idf
 - pocket-nexus/pocket_guest_quickjs
 - pocket-nexus/pocket_runtime
-manifest_hash: 6f10c68f71d140b6fb40ca72d915bfc1801b9ca2c11e119a15bead9cbec6939f
+manifest_hash: 0c1e0507f35ab43a845d4738f42e7032a319135d4e8cc0c0cd61365041879835
 target: esp32p4
 version: 3.0.0
