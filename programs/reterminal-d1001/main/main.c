@@ -151,6 +151,19 @@ static void start_guest(d1001_host *host) {
       pocket_runner_start(host->runtime, &runner_config, &host->runner));
 }
 
+static void log_framebuffer_sample(const d1001_host *host) {
+  const size_t frame_bytes =
+      D1001_PANEL_WIDTH * D1001_PANEL_HEIGHT * sizeof(uint16_t);
+  ESP_ERROR_CHECK(esp_cache_msync(host->board.framebuffer, frame_bytes,
+                                  ESP_CACHE_MSYNC_FLAG_DIR_M2C));
+  const uint16_t *fb = host->board.framebuffer;
+  ESP_LOGI(TAG,
+           "framebuffer_rgb565 (0,0)=%04x (128,128)=%04x (400,100)=%04x (796,1276)=%04x",
+           fb[0], fb[128U * D1001_PANEL_WIDTH + 128U],
+           fb[100U * D1001_PANEL_WIDTH + 400U],
+           fb[1276U * D1001_PANEL_WIDTH + 796U]);
+}
+
 static void run_app(void *context) {
   (void)context;
   static d1001_host host;
@@ -158,6 +171,7 @@ static void run_app(void *context) {
   start_guest(&host);
   ESP_LOGI(TAG, "hello app started");
 
+  bool sample_pending = true;
   pocket_runner_stats_t last = {.struct_size = sizeof(last)};
   int64_t logged = esp_timer_get_time();
   for (;;) {
@@ -176,6 +190,10 @@ static void run_app(void *context) {
              stats.frames_skipped - last.frames_skipped,
              stats.frame_errors - last.frame_errors,
              stats.max_frame_us / 1000.0);
+    if (sample_pending) {
+      log_framebuffer_sample(&host);
+      sample_pending = false;
+    }
     last = stats;
     logged = now;
   }
