@@ -1,7 +1,10 @@
 version: "0.1.0"
 description: Board support for Seeed reTerminal D1001
-license: MIT
+license: MIT AND Apache-2.0 AND GPL-2.0-or-later
 targets:
   - esp32p4
 dependencies:
   idf: ">=6.0,<6.3"
+  espressif/esp_lcd_touch:
+    version: "==1.2.1"
+    public: true

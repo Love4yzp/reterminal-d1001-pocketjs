@@ -5,6 +5,7 @@
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "esp_lcd_mipi_dsi.h"
+#include "esp_lcd_touch.h"
 #include "esp_lcd_types.h"
 
 #ifdef __cplusplus
@@ -21,6 +22,7 @@ typedef struct {
   esp_lcd_dsi_bus_handle_t dsi_bus;
   esp_lcd_panel_io_handle_t panel_io;
   esp_lcd_panel_handle_t panel;
+  esp_lcd_touch_handle_t touch;
   uint16_t *framebuffer;
 } d1001_board_handles;
 

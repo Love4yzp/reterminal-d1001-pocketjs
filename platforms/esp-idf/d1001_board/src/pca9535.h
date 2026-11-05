@@ -10,6 +10,7 @@
 #define D1001_PCA9535_LCD_RESET (1U << 2)
 #define D1001_PCA9535_BACKLIGHT_POWER (1U << 7)
 #define D1001_PCA9535_POWER_HOLD (1U << 8)
+#define D1001_PCA9535_TOUCH_RESET (1U << 12)
 
 esp_err_t d1001_pca9535_init(i2c_master_bus_handle_t bus);
 esp_err_t d1001_pca9535_set_direction(uint16_t mask, bool output);

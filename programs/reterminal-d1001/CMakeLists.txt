@@ -5,6 +5,8 @@ set(pocketjs_components "${d1001_root}/third_party/pocketjs/platforms/esp-idf")
 list(APPEND EXTRA_COMPONENT_DIRS
     "${pocketjs_components}/pocket_runtime"
     "${pocketjs_components}/pocket_guest_quickjs"
+    "${pocketjs_components}/pocket_input_gpio"
+    "${pocketjs_components}/pocket_input_touch"
     "${pocketjs_components}/pocket_runner"
     "${pocketjs_components}/pocket_render_esp_ppa"
     "${pocketjs_components}/pocket_display_esp_dpi"

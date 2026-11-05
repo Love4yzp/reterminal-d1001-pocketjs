@@ -1,0 +1,24 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-nexus.d1001.input-test",
+  "title": "D1001 Input Test",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": ["input.touch", "input.buttons", "text.glyphs.baked"]
+    }
+  },
+  "app": {
+    "entry": "main.tsx",
+    "output": "input-test",
+    "framework": "solid",
+    "tickHz": 30,
+    "viewport": {
+      "fixed": {
+        "logical": [400, 640],
+        "presentation": "native"
+      }
+    }
+  }
+}

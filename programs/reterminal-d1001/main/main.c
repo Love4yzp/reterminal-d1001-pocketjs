@@ -12,12 +12,15 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "display_move.h"
+#include "inputs.h"
 #include "pocket/display_esp_dpi.h"
 #include "pocket/guest_idf.h"
 #include "pocket/package_source.h"
 #include "pocket/runner.h"
 #include "packages.h"
 #include "pocket_profile.h"
+#include "pocketjs/esp32p4_ppa_lanes.h"
 #include "pocketjs/esp32p4_ppa_status.h"
 #include "pocketjs_package_app.h"
 
@@ -36,10 +39,12 @@ typedef struct {
   d1001_board_handles board;
   pocket_runtime *runtime;
   pocket_guest_idf *guest;
-  pocket_render_esp_ppa *renderer;
-  pocketjs_esp32p4_ppa_t *ppa;
+  pocket_render_esp_ppa *renderers[2];
+  pocketjs_esp32p4_ppa_t *ppa[2];
+  pocketjs_esp32p4_ppa_lanes_t *lanes;
   pocket_display_esp_dpi *display;
   pocket_runner_t *runner;
+  d1001_inputs inputs;
   d1001_package package;
 } d1001_host;
 
@@ -114,8 +119,8 @@ static void start_guest(d1001_host *host) {
 
   require_status(pocket_runtime_set_package_source(
       host->runtime, pocket_memory_package_vtable(), &host->package.source));
+  ESP_ERROR_CHECK(d1001_inputs_init(&host->board, host->runtime, &host->inputs));
 
-  ESP_ERROR_CHECK(pocketjs_esp32p4_ppa_create(&host->ppa));
   const pocket_ppa_config ppa_config = {
       .struct_size = sizeof(ppa_config),
       .scale = pocket_profile.facts->display->raster_density,
@@ -124,14 +129,20 @@ static void start_guest(d1001_host *host) {
       .min_srm_pixels = 256,
       .mask_budget = D1001_STRIP_BYTES / 2U,
   };
-  host->renderer = pocket_render_esp_ppa_create(
-      &ppa_config, pocketjs_esp32p4_ppa_status_ops(host->ppa));
-  assert(host->renderer != NULL);
+  for (size_t i = 0; i < 2U; ++i) {
+    ESP_ERROR_CHECK(pocketjs_esp32p4_ppa_create(&host->ppa[i]));
+    host->renderers[i] = pocket_render_esp_ppa_create(
+        &ppa_config, pocketjs_esp32p4_ppa_status_ops(host->ppa[i]));
+    assert(host->renderers[i] != NULL);
+  }
+  ESP_ERROR_CHECK(pocketjs_esp32p4_ppa_lanes_create(
+      host->renderers[0], host->renderers[1], 1, 4, &host->lanes));
   const pocket_renderer_id renderer = pocket_runtime_add_renderer(
-      host->runtime, pocket_render_esp_ppa_vtable(), host->renderer);
+      host->runtime, pocketjs_esp32p4_ppa_lanes_vtable(), host->lanes);
   assert(renderer != POCKET_RENDERER_INVALID);
+  d1001_move_tracker_init();
   require_status(pocket_runtime_add_display(
-      host->runtime, pocket_display_esp_dpi_vtable(), host->display, renderer));
+      host->runtime, d1001_move_tracker_vtable(), host->display, renderer));
 
   const int32_t boot = pocket_runtime_boot(host->runtime);
   if (boot != POCKET_STATUS_OK)
@@ -166,7 +177,7 @@ static void run_app(void *context) {
   host.package = *(d1001_package *)context;
   start_display(&host);
   start_guest(&host);
-  ESP_LOGI(TAG, "hello app started");
+  ESP_LOGI(TAG, "app started");
 
   bool sample_pending = true;
   pocket_runner_stats_t last = {.struct_size = sizeof(last)};
@@ -179,6 +190,7 @@ static void run_app(void *context) {
     const uint32_t frames = stats.frames - last.frames;
     const size_t dma_free =
         heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    const d1001_move_stats moves = d1001_move_tracker_read();
     ESP_LOGI(TAG, "internal_dma_largest_free=%u bytes", (unsigned)dma_free);
     ESP_LOGI(TAG,
              "frames=%" PRIu32 " fps=%.1f skipped=%" PRIu32
@@ -187,6 +199,9 @@ static void run_app(void *context) {
              stats.frames_skipped - last.frames_skipped,
              stats.frame_errors - last.frame_errors,
              stats.max_frame_us / 1000.0);
+    ESP_LOGI(TAG, "moves_ok=%" PRIu32 " moves_unsupported=%" PRIu32
+                  " move_errors=%" PRIu32,
+             moves.ok, moves.unsupported, moves.errors);
     if (sample_pending) {
       log_framebuffer_sample(&host);
       sample_pending = false;

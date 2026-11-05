@@ -1,0 +1,7 @@
+menu "D1001 board"
+
+config D1001_TOUCH_INT_GPIO
+    int "GSL3670 interrupt GPIO (-1 disables)"
+    default 16
+
+endmenu

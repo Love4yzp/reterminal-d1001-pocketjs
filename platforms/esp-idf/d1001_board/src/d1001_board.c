@@ -10,8 +10,10 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "gsl3670.h"
 #include "jd9365.h"
 #include "pca9535.h"
+#include "sdkconfig.h"
 #include "soc/pmu_reg.h"
 #include "soc/soc.h"
 
@@ -175,6 +177,11 @@ esp_err_t d1001_board_init(d1001_board_handles *handles) {
       esp_lcd_dpi_panel_get_frame_buffer(handles->panel, 1, &framebuffer), TAG,
       "framebuffer");
   handles->framebuffer = framebuffer;
+  ESP_RETURN_ON_ERROR(
+      d1001_gsl3670_create(handles->touch_i2c,
+                           (gpio_num_t)CONFIG_D1001_TOUCH_INT_GPIO,
+                           &handles->touch),
+      TAG, "GSL3670");
   ESP_LOGI(TAG, "800x1280 RGB565, two DSI lanes at 1000 Mbps");
   return ESP_OK;
 }

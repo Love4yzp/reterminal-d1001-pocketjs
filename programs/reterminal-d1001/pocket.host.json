@@ -13,7 +13,7 @@
   "panel": {
     "primary": [400, 640]
   },
-  "capabilities": ["text.glyphs.baked"],
+  "capabilities": ["input.buttons", "input.touch", "text.glyphs.baked"],
   "bytecode": {
     "engine": "esp-idf-quickjs-ng-0.14.0",
     "source": "drop"

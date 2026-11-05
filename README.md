@@ -21,7 +21,7 @@ idf.py -C programs/reterminal-d1001 set-target esp32p4
 idf.py -C programs/reterminal-d1001 build
 ```
 
-The application is `apps/hello-d1001`; its package is embedded by `pocketjs_compile_app`. The partition table retains the 4 MiB `apps` data partition for later milestones.
+The embedded application is `apps/input-test`; `apps/hello-d1001` remains the minimal development-loop example. Both are compiled with `pocketjs_compile_app` when selected by the firmware build. The partition table retains the 4 MiB `apps` data partition for installed packages.
 
 ## Flash and monitor
 
@@ -46,4 +46,14 @@ time bun run app:push apps/hello-d1001
 
 `app:push` compiles against this program's host config, wraps the package in a PKAP v1 header and writes only the `apps` partition at 0x810000 through esptool. It overlaps the esptool connection with compilation, uses the previous image for verified sector-delta writes and hard-resets the P4. It does not call `idf.py`. `D1001_PORT` overrides the default `/dev/ttyACM0`.
 
-At boot the firmware memory-maps the `apps` partition and admits the first package with `pocket_idf_package_open`. Logs identify `source=apps` with the package slot, size and hash. An empty, damaged or incompatible slot falls back to the embedded hello app with `source=embedded` and a reason. Edit `apps/hello-d1001/block.svg` for a color-only iteration; its resource changes leave the app bytecode unchanged.
+At boot the firmware memory-maps the `apps` partition and admits the first package with `pocket_idf_package_open`. Logs identify `source=apps` with the package slot, size and hash. An empty, damaged or incompatible slot falls back to the embedded app with `source=embedded` and a reason. Edit `apps/hello-d1001/block.svg` for a color-only iteration; its resource changes leave the app bytecode unchanged.
+
+## Input and scroll self-test (M3)
+
+Push `apps/input-test` to exercise the touch panel, side button and retained-move list:
+
+```sh
+bun run app:push apps/input-test
+```
+
+The app counts contact hits in four corners and the centre, counts GPIO3/CIRCLE presses and automatically scrolls an 80-row virtual list in both directions. Firmware logs include raw, mirrored physical and logical touch coordinates, runner statistics, DMA heap and successful/unsupported/failed display moves. Calibration follows Seeed's `swap_xy=0, mirror_x=1, mirror_y=1`, followed by 0.5 scaling to the logical viewport; see `platforms/esp-idf/d1001_board/README.md`. Physical touch and button hits require validation by a user with the device.

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.c" "packages.c"
+    SRCS "main.c" "packages.c" "inputs.c" "display_move.c"
     REQUIRES
         d1001_board
         esp_driver_dma
@@ -10,6 +10,8 @@ idf_component_register(
         esp_timer
         pocket_display_esp_dpi
         pocket_guest_quickjs
+        pocket_input_gpio
+        pocket_input_touch
         pocket_render_esp_ppa
         pocket_runner
         pocket_runtime
@@ -20,5 +22,5 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 pocketjs_compile_app(
     TARGET ${COMPONENT_LIB}
     NAME app
-    MANIFEST "../../../apps/hello-d1001/pocket.app.json"
+    MANIFEST "../../../apps/input-test/pocket.app.json"
     HOST_CONFIG "../pocket.host.config.ts")
