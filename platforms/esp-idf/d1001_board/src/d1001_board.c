@@ -95,7 +95,12 @@ static esp_err_t init_backlight(void) {
   return ESP_OK;
 }
 
-#define D1001_RGB_OFF_DUTY 1024U
+/* Active-high channels on the 10-bit timer. Off=0 and on=20/8/50 follow Seeed
+ * esp32_p4_re_terminal_d1001.c:115-117,1335-1352 at 5074d3b. */
+#define D1001_RGB_OFF_DUTY 0U
+#define D1001_RGB_RED_ON_DUTY 20U
+#define D1001_RGB_GREEN_ON_DUTY 8U
+#define D1001_RGB_BLUE_ON_DUTY 50U
 
 static esp_err_t init_rgb(void) {
   const ledc_channel_config_t channels[] = {
@@ -160,13 +165,22 @@ esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue) {
   const bool enabled[] = {red, green, blue};
   const ledc_channel_t channels[] = {LEDC_CHANNEL_1, LEDC_CHANNEL_2,
                                      LEDC_CHANNEL_3};
+  const uint32_t on_duties[] = {D1001_RGB_RED_ON_DUTY, D1001_RGB_GREEN_ON_DUTY,
+                                D1001_RGB_BLUE_ON_DUTY};
+  uint32_t target_duties[] = {D1001_RGB_OFF_DUTY, D1001_RGB_OFF_DUTY,
+                              D1001_RGB_OFF_DUTY};
   for (size_t i = 0; i < sizeof channels / sizeof channels[0]; ++i) {
-    const uint32_t duty = enabled[i] ? 0U : D1001_RGB_OFF_DUTY;
+    const uint32_t duty = enabled[i] ? on_duties[i] : D1001_RGB_OFF_DUTY;
     ESP_RETURN_ON_ERROR(
         ledc_set_duty(LEDC_LOW_SPEED_MODE, channels[i], duty), TAG, "RGB duty");
     ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, channels[i]), TAG,
                         "apply RGB duty");
+    target_duties[i] = duty;
   }
+  ESP_LOGI(TAG, "RGB enabled R=%u G=%u B=%u; target duty R=%u G=%u B=%u",
+           (unsigned)red, (unsigned)green, (unsigned)blue,
+           (unsigned)target_duties[0], (unsigned)target_duties[1],
+           (unsigned)target_duties[2]);
   return ESP_OK;
 }
 

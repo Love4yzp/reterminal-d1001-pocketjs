@@ -64,7 +64,7 @@ The app counts contact hits in four corners and the centre, counts GPIO3/CIRCLE 
 bun run app:push apps/system-test
 ```
 
-The app reads `counter.json` through `data.fs`, increments and writes it on every boot, cycles seven color combinations through the standard `led-r`/`led-g`/`led-b` switches, demonstrates backlight 100→25→100 percent and requests a Wi-Fi scan without joining a network. The FAT `storage` partition mounts at `/pocket`; the driver never formats it automatically, so a new partition requires explicit provisioning before use.
+The app reads `counter.json` through `data.fs`, increments and writes it on every boot, cycles seven color combinations through the standard `led-r`/`led-g`/`led-b` switches, demonstrates backlight 100→25→100 percent and requests a Wi-Fi scan without joining a network. The FAT `storage` partition mounts at `/pocket`; the driver never formats it automatically, so a new partition requires explicit provisioning before use. Board logs report the requested RGB states and LEDC duties; a user must check that all seven physical LED colors match the on-screen labels.
 
 No credentials are committed. `sdkconfig.local` is ignored for local configuration, and the self-test does not read or save Wi-Fi credentials. Hosted host 3.0.10 is back-compatible with 2.x coprocessors under the upstream migration table. The firmware reads and logs the existing C6 version; an unverified newer major version stops Wi-Fi before `esp_wifi_init`. No Hosted OTA path is called.
 
