@@ -16,6 +16,7 @@
 #include "pocket/guest_idf.h"
 #include "pocket/package_source.h"
 #include "pocket/runner.h"
+#include "packages.h"
 #include "pocket_profile.h"
 #include "pocketjs/esp32p4_ppa_status.h"
 #include "pocketjs_package_app.h"
@@ -39,7 +40,7 @@ typedef struct {
   pocketjs_esp32p4_ppa_t *ppa;
   pocket_display_esp_dpi *display;
   pocket_runner_t *runner;
-  pocket_memory_package package;
+  d1001_package package;
 } d1001_host;
 
 static void require_status(int32_t status) {
@@ -111,12 +112,8 @@ static void start_guest(d1001_host *host) {
   require_status(pocket_runtime_set_guest(
       host->runtime, pocket_guest_idf_vtable(), host->guest));
 
-  host->package = (pocket_memory_package){
-      .data = pocketjs_package_app.data,
-      .size = pocketjs_package_app.size,
-  };
   require_status(pocket_runtime_set_package_source(
-      host->runtime, pocket_memory_package_vtable(), &host->package));
+      host->runtime, pocket_memory_package_vtable(), &host->package.source));
 
   ESP_ERROR_CHECK(pocketjs_esp32p4_ppa_create(&host->ppa));
   const pocket_ppa_config ppa_config = {
@@ -165,8 +162,8 @@ static void log_framebuffer_sample(const d1001_host *host) {
 }
 
 static void run_app(void *context) {
-  (void)context;
   static d1001_host host;
+  host.package = *(d1001_package *)context;
   start_display(&host);
   start_guest(&host);
   ESP_LOGI(TAG, "hello app started");
@@ -200,8 +197,10 @@ static void run_app(void *context) {
 }
 
 void app_main(void) {
+  static d1001_package package;
+  d1001_package_select(&package);
   const BaseType_t created = xTaskCreatePinnedToCoreWithCaps(
-      run_app, "pocketjs_d1001", D1001_GUEST_STACK, NULL, 1, NULL, 0,
+      run_app, "pocketjs_d1001", D1001_GUEST_STACK, &package, 1, NULL, 0,
       MALLOC_CAP_SPIRAM);
   assert(created == pdPASS);
 }

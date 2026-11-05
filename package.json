@@ -9,7 +9,8 @@
     "third_party/pocketjs"
   ],
   "scripts": {
-    "pocket": "bun third_party/pocketjs/tools/pocket.ts"
+    "pocket": "bun third_party/pocketjs/tools/pocket.ts",
+    "app:push": "bun tools/app-push.ts"
   },
   "dependencies": {
     "@pocketjs/framework": "workspace:*",

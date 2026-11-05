@@ -1,8 +1,9 @@
 idf_component_register(
-    SRCS "main.c"
+    SRCS "main.c" "packages.c"
     REQUIRES
         d1001_board
         esp_driver_dma
+        esp_partition
         esp_driver_ppa
         esp_lcd
         esp_mm

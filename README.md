@@ -34,3 +34,16 @@ idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 flash monitor
 ```
 
 Runtime logs report the largest internal DMA heap block and runner frame statistics every five seconds.
+
+## App development loop (M2)
+
+With the ESP-IDF environment exported, compile and push an app without rebuilding or reflashing the firmware:
+
+```sh
+. ~/esp/esp-idf-6.2/export.sh
+time bun run app:push apps/hello-d1001
+```
+
+`app:push` compiles against this program's host config, wraps the package in a PKAP v1 header and writes only the `apps` partition at 0x810000 through esptool. It overlaps the esptool connection with compilation, uses the previous image for verified sector-delta writes and hard-resets the P4. It does not call `idf.py`. `D1001_PORT` overrides the default `/dev/ttyACM0`.
+
+At boot the firmware memory-maps the `apps` partition and admits the first package with `pocket_idf_package_open`. Logs identify `source=apps` with the package slot, size and hash. An empty, damaged or incompatible slot falls back to the embedded hello app with `source=embedded` and a reason. Edit `apps/hello-d1001/block.svg` for a color-only iteration; its resource changes leave the app bytecode unchanged.
