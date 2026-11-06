@@ -78,6 +78,15 @@ bun run app:push apps/worker-http
 
 The app starts a worker with one `http` node, GETs Home Assistant at `http://192.168.77.126:8123/` and retries every five seconds until the STA is online. HTTP status, body bytes and errors are sent to the UI through the `progress` channel and printed to serial.
 
+## HA panel
+
+```sh
+bun test apps/ha-panel
+bun run app:push apps/ha-panel --wifi <device-ip>
+```
+
+The panel provides clock/weather/light/IMU cards and virtual, onboard and HA light adapters. HA is disabled without local configuration. See `apps/ha-panel/README.md` for Kconfig settings, RTC/SNTP, sensor units and the authenticated local mock server.
+
 ## Development Wi-Fi hot push
 
 The authenticated HTTP endpoint is compiled out by default. To enable it locally, put this in the ignored `programs/reterminal-d1001/sdkconfig.local`:

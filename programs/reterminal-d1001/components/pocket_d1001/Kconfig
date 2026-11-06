@@ -24,7 +24,7 @@ config D1001_HA_LIGHT_ENTITY
     depends on IDF_TARGET_ESP32P4
 
 config D1001_HA_SELFTEST
-    bool "Issue one mock light command after the initial HA state read"
+    bool "Exercise onboard RGB and one mock HA light command"
     default n
     depends on IDF_TARGET_ESP32P4
 

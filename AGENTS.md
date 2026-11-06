@@ -14,13 +14,13 @@
 - M2 loads the first PKAP v1 extent in `apps`; invalid or empty slots must fall back to the embedded app. Perform partition mapping on the internal `app_main` stack, not the PSRAM guest task.
 - M3 registers GSL3670 touch with 180° mirroring and 0.5 logical scaling, plus active-high GPIO3 as CIRCLE. Use two PPA lanes and the display-vtable move counter for the automatic `input-test` list. Its scrolling content is full-width so retained moves use GDMA instead of the slower partial-width PPA band path.
 - M4 mounts FAT without automatic formatting, binds `data.fs` per slot and uses standard `led-r/led-g/led-b` switches. Hosted host 3.0.10 is back-compatible with the existing 2.3.2 C6; log its version and never invoke Hosted OTA. Station credentials come from ignored local Kconfig values and RAM storage; log SSID/IP/RSSI only, never the password. Wi-Fi push is dev-only, token-protected and compiled out by default; buffer and validate the complete image before any flash write, skip unchanged 4 KiB sectors, and close unauthorized sessions. Runtime restart is task-synchronised and never calls `esp_restart`.
-- Use `bun run app:push <app-dir>` for the development loop. Serial writes only `apps`; `--wifi <ip>` uses the authenticated HTTP endpoint and restarts only the runtime. Use `apps/worker-http` for worker GET, `apps/system-test` for persistence/device/Wi-Fi, `apps/input-test` for input/scroll and `apps/hello-d1001` for the minimal push check.
+- Use `bun run app:push <app-dir>` for the development loop. Serial writes only `apps`; `--wifi <ip>` uses the authenticated HTTP endpoint and restarts only the runtime. Use `apps/worker-http` for worker GET, `apps/ha-panel` for the dashboard and mock-HA checks, `apps/system-test` for persistence/device/Wi-Fi, `apps/input-test` for input/scroll and `apps/hello-d1001` for the minimal push check.
 - Declare only capabilities registered by the firmware in `pocket.host.json`.
 - Compile C with `-Wall -Wextra -Werror`, declare the `esp32p4` target for each component, and keep generated files, build trees and validation logs out of Git.
 
 ## Verification and commits
 
-- Run the relevant host export and firmware build after changes. A successful build is not device validation.
+- Run the relevant host export and firmware build after changes. Run `bun test apps/ha-panel` for panel color, request, protocol and state logic. A successful build is not device validation.
 - For device changes, identify the attached chip before flashing and capture at least 30 seconds of serial output, including internal DMA heap and runner statistics.
 - Store validation logs under ignored `.pocket-build/validation/<task>/<run>/`; report unrun checks as unverified.
 - Use one local Conventional Commit per milestone after its checks pass.
