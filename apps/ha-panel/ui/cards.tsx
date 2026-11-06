@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
-import { formatDate, formatTime } from "../clock";
+import { formatDate, formatTime, formatTimezone } from "../clock";
 import type { SensorSample } from "../model";
 import { theme } from "../theme";
 import type { WeatherEntity } from "../weather";
@@ -33,6 +33,7 @@ function Card(props: CardProps) {
 
 interface ClockCardProps {
   epoch: number | null;
+  utcOffsetMinutes: number;
   synced: boolean;
   haConfigured: boolean;
   haConnected: boolean;
@@ -41,15 +42,15 @@ interface ClockCardProps {
 export function ClockCard(props: ClockCardProps) {
   return (
     <Card left={12} top={12} width={376} height={124}>
-      <Text class="absolute left-[18] top-[12] text-xs" style={{ textColor: theme.secondaryText }}>时间 / UTC</Text>
+      <Text class="absolute left-[18] top-[12] text-xs" style={{ textColor: theme.secondaryText }}>{`时间 / ${formatTimezone(props.utcOffsetMinutes)}`}</Text>
       <Text class="absolute left-[230] top-[12] w-[128] text-right text-xs" style={{ textColor: props.haConfigured ? theme.brand : theme.secondaryText }}>
         {!props.haConfigured ? "HA 未连接" : props.haConnected ? "HA 已连接" : "HA 连接中"}
       </Text>
       <Text class="absolute left-[18] top-[32] w-[340] text-5xl font-bold" style={{ textColor: theme.text }}>
-        {formatTime(props.epoch)}
+        {formatTime(props.epoch, props.utcOffsetMinutes)}
       </Text>
       <Text class="absolute left-[18] top-[99] text-xs" style={{ textColor: theme.secondaryText }}>
-        {formatDate(props.epoch)}
+        {formatDate(props.epoch, props.utcOffsetMinutes)}
       </Text>
       <Text class="absolute left-[258] top-[99] text-xs" style={{ textColor: theme.secondaryText }}>
         {props.synced ? "RTC + SNTP" : "PCF8563 RTC"}

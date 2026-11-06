@@ -2,14 +2,27 @@ function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-export function formatTime(epochSeconds: number | null): string {
+function localDate(epochSeconds: number, offsetMinutes: number): Date {
+  return new Date((epochSeconds + offsetMinutes * 60) * 1000);
+}
+
+export function formatTime(epochSeconds: number | null, offsetMinutes = 0): string {
   if (epochSeconds === null) return "--:--:--";
-  const date = new Date(epochSeconds * 1000);
+  const date = localDate(epochSeconds, offsetMinutes);
   return `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
 }
 
-export function formatDate(epochSeconds: number | null): string {
+export function formatDate(epochSeconds: number | null, offsetMinutes = 0): string {
   if (epochSeconds === null) return "RTC unset";
-  const date = new Date(epochSeconds * 1000);
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} UTC`;
+  const date = localDate(epochSeconds, offsetMinutes);
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+export function formatTimezone(offsetMinutes: number): string {
+  if (offsetMinutes === 0) return "UTC";
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const absolute = Math.abs(offsetMinutes);
+  const hours = Math.floor(absolute / 60);
+  const minutes = absolute % 60;
+  return `UTC${sign}${hours}${minutes ? `:${pad(minutes)}` : ""}`;
 }

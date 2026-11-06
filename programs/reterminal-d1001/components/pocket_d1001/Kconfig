@@ -5,6 +5,11 @@ config D1001_SNTP_SERVER
     default "pool.ntp.org"
     depends on IDF_TARGET_ESP32P4
 
+config D1001_TIMEZONE
+    string "POSIX timezone for panel display; the RTC stores UTC"
+    default "CST-8"
+    depends on IDF_TARGET_ESP32P4
+
 config D1001_HA_BASE_URL
     string "Home Assistant base URL"
     default ""

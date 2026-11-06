@@ -14,7 +14,7 @@ import {
   type PanelAction,
   type PanelState,
 } from "./model";
-import { readHaConfig, readNativeSensors, readRtcSeconds, syncNativeClock } from "./native";
+import { readHaConfig, readNativeSensors, readRtcSeconds, readUtcOffsetMinutes, syncNativeClock } from "./native";
 import { encodeMessage, decodeMessage } from "./protocol";
 import { DEMO_WEATHER } from "./weather";
 import { theme } from "./theme";
@@ -23,6 +23,7 @@ import type { PanelHaConfig, WorkerCommand, WorkerEvent } from "./protocol";
 function Panel() {
   const [state, setState] = createSignal<PanelState>(createInitialPanelState());
   const config: PanelHaConfig = readHaConfig();
+  const utcOffsetMinutes = readUtcOffsetMinutes();
   const configured = config.baseUrl.length > 0 && config.token.length > 0;
   const configChannel = worker.channel("ha-config");
   const commands = worker.channel("ha-commands");
@@ -140,6 +141,7 @@ function Panel() {
     <View class="relative overflow-hidden" style={{ width: 400, height: 640, bgColor: theme.page }}>
       <ClockCard
         epoch={state().clockEpochSeconds}
+        utcOffsetMinutes={utcOffsetMinutes}
         synced={state().clockSynced}
         haConfigured={state().haConfigured}
         haConnected={state().haConnected}

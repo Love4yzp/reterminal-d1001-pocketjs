@@ -3,6 +3,7 @@ import type { PanelHaConfig } from "./protocol";
 
 interface D1001Native {
   readRtc(): number;
+  utcOffsetMinutes(): number;
   syncClock(): string;
   readSensors(): string;
   setRgb(red: number, green: number, blue: number): boolean;
@@ -18,6 +19,11 @@ function native(): D1001Native | undefined {
 export function readRtcSeconds(): number | null {
   const value = native()?.readRtc() ?? -1;
   return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+export function readUtcOffsetMinutes(): number {
+  const value = native()?.utcOffsetMinutes() ?? 0;
+  return Number.isSafeInteger(value) && Math.abs(value) <= 24 * 60 ? value : 0;
 }
 
 export function syncNativeClock(): ClockSyncState {

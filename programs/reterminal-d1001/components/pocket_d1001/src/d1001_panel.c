@@ -6,8 +6,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 
 #include "d1001_drivers.h"
 #include "d1001_wifi.h"
@@ -77,6 +79,24 @@ static JSValue read_rtc(JSContext *realm) {
                                : d1001_rtc_read(panel.rtc, &epoch);
   rtc_log_error(result);
   return JS_NewInt64(realm, result == ESP_OK ? (int64_t)epoch : -1);
+}
+
+static int utc_offset_minutes(void) {
+  const time_t now = time(NULL);
+  struct tm local;
+  struct tm utc;
+  if (now == (time_t)-1 || localtime_r(&now, &local) == NULL ||
+      gmtime_r(&now, &utc) == NULL)
+    return 0;
+  const time_t local_time = mktime(&local);
+  const time_t utc_time = mktime(&utc);
+  if (local_time == (time_t)-1 || utc_time == (time_t)-1)
+    return 0;
+  return (int)(difftime(local_time, utc_time) / 60.0);
+}
+
+static JSValue read_utc_offset(JSContext *realm) {
+  return JS_NewInt32(realm, utc_offset_minutes());
 }
 
 static JSValue sync_clock(JSContext *realm) {
@@ -169,6 +189,7 @@ static JSValue ha_config(JSContext *realm) {
 
 enum {
   OP_READ_RTC,
+  OP_UTC_OFFSET_MINUTES,
   OP_SYNC_CLOCK,
   OP_READ_SENSORS,
   OP_SET_RGB,
@@ -181,6 +202,8 @@ static JSValue operation(JSContext *realm, JSValueConst this_value, int argc,
   switch (magic) {
   case OP_READ_RTC:
     return read_rtc(realm);
+  case OP_UTC_OFFSET_MINUTES:
+    return read_utc_offset(realm);
   case OP_SYNC_CLOCK:
     return sync_clock(realm);
   case OP_READ_SENSORS:
@@ -205,6 +228,13 @@ esp_err_t d1001_panel_install(JSContext *realm, const d1001_board_handles *board
     return ESP_ERR_INVALID_ARG;
   if (panel.board != NULL)
     return ESP_ERR_INVALID_STATE;
+  if (setenv("TZ", CONFIG_D1001_TIMEZONE, 1) != 0) {
+    ESP_LOGE(TAG, "could not set display timezone");
+    return ESP_ERR_NO_MEM;
+  }
+  tzset();
+  ESP_LOGI(TAG, "display timezone=%s UTC offset=%d minutes",
+           CONFIG_D1001_TIMEZONE, utc_offset_minutes());
   panel.board = board;
   const esp_err_t rtc_result = d1001_rtc_open(board->system_i2c, &panel.rtc);
   if (rtc_result == ESP_OK)
@@ -213,6 +243,7 @@ esp_err_t d1001_panel_install(JSContext *realm, const d1001_board_handles *board
   JSValue global = JS_GetGlobalObject(realm);
   JSValue object = JS_NewObject(realm);
   add(realm, object, "readRtc", OP_READ_RTC);
+  add(realm, object, "utcOffsetMinutes", OP_UTC_OFFSET_MINUTES);
   add(realm, object, "syncClock", OP_SYNC_CLOCK);
   add(realm, object, "readSensors", OP_READ_SENSORS);
   add(realm, object, "setRgb", OP_SET_RGB);
