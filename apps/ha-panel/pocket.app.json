@@ -1,0 +1,35 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-nexus.d1001.ha-panel",
+  "title": "D1001 Home Assistant Panel",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": ["input.touch", "runtime.worker", "net.http", "text.glyphs.baked"]
+    }
+  },
+  "app": {
+    "entry": "main.tsx",
+    "output": "ha-panel",
+    "framework": "solid",
+    "tickHz": 30,
+    "viewport": {
+      "fixed": {
+        "logical": [400, 640],
+        "presentation": "native"
+      }
+    }
+  },
+  "domains": {
+    "worker": {
+      "entry": "worker.ts",
+      "nodes": [{ "name": "http", "kind": "http" }],
+      "channels": [
+        { "name": "ha-config", "kind": "snapshot", "direction": "ui-to-worker", "recordBytes": 512, "capacity": 1 },
+        { "name": "ha-commands", "kind": "ring", "direction": "ui-to-worker", "recordBytes": 1024, "capacity": 8 },
+        { "name": "ha-events", "kind": "snapshot", "direction": "worker-to-ui", "recordBytes": 512, "capacity": 1 }
+      ]
+    }
+  }
+}
