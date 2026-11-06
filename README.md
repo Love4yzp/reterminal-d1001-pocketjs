@@ -46,7 +46,9 @@ With the ESP-IDF environment exported, compile and push an app without rebuildin
 time bun run app:push apps/hello-d1001
 ```
 
-`app:push` compiles against this program's host config, wraps the package in a PKAP v1 header and writes only the `apps` partition at 0x810000 through esptool. It overlaps the esptool connection with compilation, uses the previous image for verified sector-delta writes and hard-resets the P4. It does not call `idf.py`. `D1001_PORT` overrides the default `/dev/ttyACM0`. Resource changes are often under 3 seconds, but density-2 font baking has produced 3.1-second pushes; expect about 3.2–3.3 seconds for text/code changes. If the cached previous image does not match the partition, verification rejects the delta write and esptool rewrites the whole image.
+`app:push` compiles against this program's host config, wraps the package in a PKAP v1 header and writes only the `apps` partition at 0x810000 through esptool. It overlaps the esptool connection with compilation, uses the previous image for sector-delta writes and hard-resets the P4. It does not call `idf.py`. `D1001_PORT` overrides the default `/dev/ttyACM0`. Resource changes are often under 3 seconds, but density-2 font baking has produced 3.1-second pushes; expect about 3.2–3.3 seconds for text/code changes in smaller apps.
+
+Each contiguous changed region is independently completed and hash-checked, with the PKAP header region written last. This scopes compressed-write state and verification to one region. A final whole-image MD5 check skips writing when everything matches; if the cached previous image does not match the partition, the whole image is restored through one ordinary esptool write.
 
 At boot the firmware memory-maps the `apps` partition and admits the first package with `pocket_idf_package_open`. Logs identify `source=apps` with the package slot, size and hash. An empty, damaged or incompatible slot falls back to the embedded app with `source=embedded` and a reason. Edit `apps/hello-d1001/block.svg` for a color-only iteration; its resource changes leave the app bytecode unchanged.
 

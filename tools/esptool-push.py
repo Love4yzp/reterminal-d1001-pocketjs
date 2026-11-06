@@ -1,8 +1,16 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 
-from esptool.cmds import attach_flash, connect_esp, reset_chip, run_stub, write_flash
+from esptool.cmds import (
+    _diff_flash_regions,
+    attach_flash,
+    connect_esp,
+    reset_chip,
+    run_stub,
+    write_flash,
+)
 
 
 def main() -> None:
@@ -24,12 +32,24 @@ def main() -> None:
             reset_chip(esp, "hard-reset")
             raise RuntimeError("app compilation failed before write")
         options = json.loads(request)
-        diff_with = [options["previous"]] if options.get("previous") else []
+        offset = int(args.offset, 0)
+        previous = options.get("previous")
+        if previous:
+            regions = _diff_flash_regions(
+                Path(previous).read_bytes(),
+                Path(options["image"]).read_bytes(),
+                offset,
+            )
+            regions.sort(key=lambda region: region[0] == offset)
+        else:
+            regions = [(offset, options["image"])]
+        for region in regions:
+            write_flash(esp, [region], compress=True, diff_with=[])
         write_flash(
             esp,
-            [(int(args.offset, 0), options["image"])],
+            [(offset, options["image"])],
             compress=True,
-            diff_with=diff_with,
+            skip_flashed=True,
         )
         reset_chip(esp, "hard-reset")
 
