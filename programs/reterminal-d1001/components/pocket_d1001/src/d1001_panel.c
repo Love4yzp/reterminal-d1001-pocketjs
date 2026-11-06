@@ -32,14 +32,6 @@ static struct {
   atomic_bool sntp_synced;
 } panel;
 
-static esp_err_t rtc_ensure(void) {
-  if (panel.rtc != NULL)
-    return ESP_OK;
-  if (panel.board == NULL)
-    return ESP_ERR_INVALID_STATE;
-  return d1001_rtc_open(panel.board->system_i2c, &panel.rtc);
-}
-
 static void rtc_log_error(esp_err_t result) {
   if (result != ESP_OK && result != panel.rtc_error)
     ESP_LOGW(TAG, "RTC unavailable: %s", esp_err_to_name(result));
@@ -66,9 +58,9 @@ static void imu_log_error(esp_err_t result) {
 }
 
 static void on_sntp_sync(struct timeval *now) {
-  esp_err_t result = rtc_ensure();
-  if (result == ESP_OK)
-    result = d1001_rtc_write(panel.rtc, now->tv_sec);
+  const esp_err_t result = panel.rtc == NULL
+                               ? ESP_ERR_INVALID_STATE
+                               : d1001_rtc_write(panel.rtc, now->tv_sec);
   if (result != ESP_OK) {
     ESP_LOGE(TAG, "could not write SNTP time to RTC: %s",
              esp_err_to_name(result));
@@ -80,9 +72,9 @@ static void on_sntp_sync(struct timeval *now) {
 
 static JSValue read_rtc(JSContext *realm) {
   time_t epoch = 0;
-  esp_err_t result = rtc_ensure();
-  if (result == ESP_OK)
-    result = d1001_rtc_read(panel.rtc, &epoch);
+  const esp_err_t result = panel.rtc == NULL
+                               ? panel.rtc_error
+                               : d1001_rtc_read(panel.rtc, &epoch);
   rtc_log_error(result);
   return JS_NewInt64(realm, result == ESP_OK ? (int64_t)epoch : -1);
 }
@@ -214,6 +206,10 @@ esp_err_t d1001_panel_install(JSContext *realm, const d1001_board_handles *board
   if (panel.board != NULL)
     return ESP_ERR_INVALID_STATE;
   panel.board = board;
+  const esp_err_t rtc_result = d1001_rtc_open(board->system_i2c, &panel.rtc);
+  if (rtc_result == ESP_OK)
+    ESP_LOGI(TAG, "RTC opened during panel install");
+  rtc_log_error(rtc_result);
   JSValue global = JS_GetGlobalObject(realm);
   JSValue object = JS_NewObject(realm);
   add(realm, object, "readRtc", OP_READ_RTC);
