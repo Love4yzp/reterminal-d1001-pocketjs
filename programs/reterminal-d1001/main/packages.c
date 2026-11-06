@@ -98,6 +98,8 @@ void d1001_package_select(d1001_package *selected) {
     use_embedded(selected, "bad-partition-layout");
     return;
   }
+  ESP_LOGI(TAG, "apps partition offset=0x%lx size=%lu bytes",
+           (unsigned long)partition->address, (unsigned long)partition->size);
   const void *memory = NULL;
   esp_partition_mmap_handle_t mapping = 0;
   const esp_err_t mapped =

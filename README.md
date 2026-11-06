@@ -23,7 +23,18 @@ idf.py -C programs/reterminal-d1001 build
 
 An existing `programs/reterminal-d1001/sdkconfig` is loaded after `SDKCONFIG_DEFAULTS` and overrides values from `sdkconfig.local`. After changing local settings, move the existing file aside before rebuilding, for example `mv programs/reterminal-d1001/sdkconfig .pocket-build/sdkconfig.previous`. Both locations are ignored by Git.
 
-The embedded application is `apps/worker-http`; `apps/system-test`, `apps/input-test` and `apps/hello-d1001` remain system, input and minimal development-loop examples. The selected app is compiled with `pocketjs_compile_app`. The partition table retains the 4 MiB `apps` data partition for installed packages.
+The embedded application is `apps/worker-http`; `apps/system-test`, `apps/input-test` and `apps/hello-d1001` remain system, input and minimal development-loop examples. The selected app is compiled with `pocketjs_compile_app`. `partitions.csv` assigns 5 MiB to `factory` and 7 MiB to `apps` at 0x510000. `storage` remains at 0xc10000 with size 0x3f0000.
+
+## Partition migration
+
+An existing device with an older layout requires a complete partition-table and factory-firmware flash, not an app-only push:
+
+```sh
+. ~/esp/esp-idf-6.2/export.sh
+idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 flash
+```
+
+This writes the bootloader, partition table and factory image without `erase_flash`; it does not write `storage` or the C6. The old package is not at the new `apps` offset, so PKAP rejection and a logged fallback to the embedded app are expected before installing an app again with `bun run app:push apps/ha-panel`.
 
 ## Flash and monitor
 
@@ -46,7 +57,7 @@ With the ESP-IDF environment exported, compile and push an app without rebuildin
 time bun run app:push apps/hello-d1001
 ```
 
-`app:push` compiles against this program's host config, wraps the package in a PKAP v1 header and writes only the `apps` partition at 0x810000 through esptool. It overlaps the esptool connection with compilation, uses the previous image for sector-delta writes and hard-resets the P4. It does not call `idf.py`. `D1001_PORT` overrides the default `/dev/ttyACM0`. Resource changes are often under 3 seconds, but density-2 font baking has produced 3.1-second pushes; expect about 3.2–3.3 seconds for text/code changes in smaller apps.
+`app:push` compiles against this program's host config, wraps the package in a PKAP v1 header and writes only the `apps` partition through esptool. `tools/partitions.ts` derives its offset and capacity from `partitions.csv`. The tool overlaps the esptool connection with compilation, uses the previous image for sector-delta writes and hard-resets the P4. It does not call `idf.py`. `D1001_PORT` overrides the default `/dev/ttyACM0`. Resource changes are often under 3 seconds, but density-2 font baking has produced 3.1-second pushes; expect about 3.2–3.3 seconds for text/code changes in smaller apps.
 
 Each contiguous changed region is independently completed and hash-checked, with the PKAP header region written last. This scopes compressed-write state and verification to one region. A final whole-image MD5 check skips writing when everything matches; if the cached previous image does not match the partition, the whole image is restored through one ordinary esptool write.
 
@@ -107,4 +118,4 @@ idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 build flash
 D1001_WIFI_TOKEN=replace-with-local-token bun run app:push apps/worker-http --wifi <device-ip>
 ```
 
-The endpoint is `POST /push` on port 8080. It buffers the complete image in PSRAM and validates the PKAP image and package before stopping the runtime or touching flash. Only changed 4 KiB sectors are erased and written, with the header sector written last. Incomplete uploads leave the installed package untouched. Unauthorized requests return 401 with `Connection: close` and explicitly close the session. A successful push restarts only the runtime; it does not reset the P4 or write the C6. The response reports the package size/hash and confirms the runtime restart. Device logs break down receive, validation, flash and restart timings. The station disables Wi-Fi power save; the default TCP window is 16 KiB and the TCP receive mailbox remains at its default size.
+The endpoint is `POST /push` on port 8080. It buffers the complete image in PSRAM and validates the PKAP image and package before stopping the runtime or touching flash. The runtime `apps` partition size is the image limit; logs report PSRAM total, free space before/after allocation, minimum free space and peak total usage. Only changed 4 KiB sectors are erased and written, with the header sector written last. Incomplete uploads leave the installed package untouched. Unauthorized requests return 401 with `Connection: close` and explicitly close the session. A successful push restarts only the runtime; it does not reset the P4 or write the C6. The response reports the package size/hash and confirms the runtime restart. Device logs break down receive, validation, flash and restart timings. The station disables Wi-Fi power save; the default TCP window is 16 KiB and the TCP receive mailbox remains at its default size.

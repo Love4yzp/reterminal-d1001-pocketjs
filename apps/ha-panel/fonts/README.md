@@ -20,4 +20,4 @@ mise x uv -- uvx --from fonttools pyftsubset \
 
 `fonts.json` follows `third_party/pocketjs/docs/DYNAMIC_TEXT.md`, section “Packaged fonts and GPU pages”. The compiler packs these glyphs into the app's baked atlases; the original font is not loaded on the device.
 
-Every active font slot receives the declared character set, so keep Chinese labels in the shared 10px, 12px and 14px regular/bold styles. Large clock and weather digits use Inter only. Confirm the package fits the 4 MiB `apps` partition after adding a text style or changing characters.
+Every active font slot receives the declared character set, so keep Chinese labels in the shared 10px, 12px and 14px regular/bold styles. Large clock and weather digits use Inter only. Confirm the package fits the 7 MiB `apps` partition after adding a text style or changing characters.

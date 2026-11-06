@@ -44,6 +44,18 @@ static d1001_hot_push_config hot_push;
 static httpd_handle_t server;
 static bool push_active;
 
+typedef struct {
+  size_t total;
+  size_t free_before;
+  size_t min_free;
+} push_memory;
+
+static void sample_psram(push_memory *memory) {
+  const size_t free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (free < memory->min_free)
+    memory->min_free = free;
+}
+
 static uint32_t read_u32(const uint8_t *bytes) {
   return (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8 |
          (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
@@ -245,10 +257,21 @@ static esp_err_t handle_push(httpd_req_t *request) {
   if (request->content_len > partition->size)
     return send_error(request, "413 Content Too Large", "image_too_large");
 
+  push_memory memory = {
+      .total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+      .free_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+      .min_free = SIZE_MAX,
+  };
   uint8_t *image = heap_caps_malloc(request->content_len,
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (image == NULL)
     return send_error(request, "500 Internal Server Error", "psram_alloc_failed");
+  sample_psram(&memory);
+  ESP_LOGI(TAG,
+           "apps partition size=%u request=%u psram_total=%u free_before=%u free_after_alloc=%u",
+           (unsigned)partition->size, (unsigned)request->content_len,
+           (unsigned)memory.total, (unsigned)memory.free_before,
+           (unsigned)memory.min_free);
 
   const int64_t receive_started = esp_timer_get_time();
   size_t received = 0;
@@ -279,6 +302,7 @@ static esp_err_t handle_push(httpd_req_t *request) {
     }
     timeouts = 0;
     received += (size_t)count;
+    sample_psram(&memory);
   }
   const uint32_t receive_ms =
       (unsigned)(esp_timer_get_time() - receive_started) / 1000U;
@@ -329,6 +353,7 @@ static esp_err_t handle_push(httpd_req_t *request) {
     return send_error(request, "500 Internal Server Error", "restart_failed");
   }
 
+  sample_psram(&memory);
   char json[128];
   snprintf(json, sizeof(json),
            "{\"size\":%lu,\"hash\":\"%016llx\",\"restarted\":true}",
@@ -338,6 +363,11 @@ static esp_err_t handle_push(httpd_req_t *request) {
            (unsigned)write_ms, (unsigned)restart_ms);
   ESP_LOGI(TAG, "installed size=%lu hash=%016llx", (unsigned long)package_size,
            (unsigned long long)hash);
+  ESP_LOGI(TAG,
+           "psram_total=%u free_before=%u buffer=%u min_free=%u used_at_peak=%u",
+           (unsigned)memory.total, (unsigned)memory.free_before,
+           (unsigned)request->content_len, (unsigned)memory.min_free,
+           (unsigned)(memory.total - memory.min_free));
   free(image);
   return send_json(request, "200 OK", json);
 }

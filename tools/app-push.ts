@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { isIP } from "node:net";
 import { basename, extname, resolve } from "node:path";
+import { readAppsPartition } from "./partitions";
 
 const root = resolve(import.meta.dir, "..");
 const buildDirectory = resolve(root, ".pocket-build/apps");
@@ -58,32 +59,6 @@ function parseOptions(args: string[]): Options | undefined {
   if (options.wifiIp !== undefined && isIP(options.wifiIp) === 0)
     throw new Error("--wifi requires an IPv4 or IPv6 address");
   return options;
-}
-
-function parseSize(value: string, field: string): number {
-  let bytes: number;
-  if (/^0x[0-9a-f]+$/i.test(value)) {
-    bytes = Number.parseInt(value.slice(2), 16);
-  } else {
-    const match = /^(\d+)([km])?$/i.exec(value);
-    if (!match) throw new Error(`invalid ${field} in ${partitionsPath}: ${value}`);
-    bytes = Number(match[1]) * (match[2]?.toLowerCase() === "k" ? 1024 : match[2]?.toLowerCase() === "m" ? 1024 * 1024 : 1);
-  }
-  if (!Number.isSafeInteger(bytes) || bytes <= 0) throw new Error(`invalid ${field} in ${partitionsPath}: ${value}`);
-  return bytes;
-}
-
-function appsPartition(): { offset: number; size: number } {
-  const entries = readFileSync(partitionsPath, "utf8").split(/\r?\n/)
-    .map(line => line.replace(/#.*$/, ""))
-    .map(line => line.split(",").map(field => field.trim()))
-    .filter(fields => fields.some(Boolean));
-  const matches = entries.filter(fields =>
-    fields[0] === "apps" && fields[1] === "data" && fields[2]?.toLowerCase() === "0x40");
-  if (matches.length !== 1) throw new Error(`expected one apps data 0x40 partition in ${partitionsPath}`);
-  const entry = matches[0]!;
-  if (entry.length < 5 || !entry[3] || !entry[4]) throw new Error(`incomplete apps partition in ${partitionsPath}`);
-  return { offset: parseSize(entry[3], "apps offset"), size: parseSize(entry[4], "apps size") };
 }
 
 async function run(command: string[]) {
@@ -195,7 +170,7 @@ async function pushWifi(image: Uint8Array, ip: string, packageSize: number, hash
 async function main() {
   const options = parseOptions(Bun.argv.slice(2));
   if (!options) return;
-  const partition = appsPartition();
+  const partition = readAppsPartition(partitionsPath);
   const writer = options.wifiIp === undefined ? startWriter(partition.offset) : undefined;
   try {
     const compiled = options.appDirectory ? await compileApp(options.appDirectory) : undefined;
