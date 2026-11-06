@@ -161,8 +161,8 @@ esp_err_t d1001_board_backlight_set(uint32_t percent) {
   return ESP_OK;
 }
 
-esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue) {
-  const bool enabled[] = {red, green, blue};
+esp_err_t d1001_board_rgb_set_color(uint8_t red, uint8_t green, uint8_t blue) {
+  const uint8_t levels[] = {red, green, blue};
   const ledc_channel_t channels[] = {LEDC_CHANNEL_1, LEDC_CHANNEL_2,
                                      LEDC_CHANNEL_3};
   const uint32_t on_duties[] = {D1001_RGB_RED_ON_DUTY, D1001_RGB_GREEN_ON_DUTY,
@@ -170,7 +170,8 @@ esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue) {
   uint32_t target_duties[] = {D1001_RGB_OFF_DUTY, D1001_RGB_OFF_DUTY,
                               D1001_RGB_OFF_DUTY};
   for (size_t i = 0; i < sizeof channels / sizeof channels[0]; ++i) {
-    const uint32_t duty = enabled[i] ? on_duties[i] : D1001_RGB_OFF_DUTY;
+    const uint32_t duty =
+        (on_duties[i] * levels[i] + 127U) / 255U;
     ESP_RETURN_ON_ERROR(
         ledc_set_duty(LEDC_LOW_SPEED_MODE, channels[i], duty), TAG, "RGB duty");
     ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, channels[i]), TAG,
@@ -178,10 +179,15 @@ esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue) {
     target_duties[i] = duty;
   }
   ESP_LOGI(TAG, "RGB enabled R=%u G=%u B=%u; target duty R=%u G=%u B=%u",
-           (unsigned)red, (unsigned)green, (unsigned)blue,
-           (unsigned)target_duties[0], (unsigned)target_duties[1],
-           (unsigned)target_duties[2]);
+           (unsigned)(red != 0U), (unsigned)(green != 0U),
+           (unsigned)(blue != 0U), (unsigned)target_duties[0],
+           (unsigned)target_duties[1], (unsigned)target_duties[2]);
   return ESP_OK;
+}
+
+esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue) {
+  return d1001_board_rgb_set_color(red ? UINT8_MAX : 0U, green ? UINT8_MAX : 0U,
+                                   blue ? UINT8_MAX : 0U);
 }
 
 esp_err_t d1001_board_init(d1001_board_handles *handles) {

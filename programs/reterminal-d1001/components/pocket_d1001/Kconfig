@@ -1,0 +1,31 @@
+menu "D1001 panel services"
+
+config D1001_SNTP_SERVER
+    string "SNTP server used to update the PCF8563 RTC"
+    default "pool.ntp.org"
+    depends on IDF_TARGET_ESP32P4
+
+config D1001_HA_BASE_URL
+    string "Home Assistant base URL"
+    default ""
+    depends on IDF_TARGET_ESP32P4
+
+config D1001_HA_TOKEN
+    string "Home Assistant long-lived access token"
+    default ""
+    depends on IDF_TARGET_ESP32P4
+    help
+        Keep this in ignored local configuration. The token is passed to the
+        panel worker in memory and is never logged.
+
+config D1001_HA_LIGHT_ENTITY
+    string "Optional Home Assistant light entity_id"
+    default ""
+    depends on IDF_TARGET_ESP32P4
+
+config D1001_HA_SELFTEST
+    bool "Issue one mock light command after the initial HA state read"
+    default n
+    depends on IDF_TARGET_ESP32P4
+
+endmenu

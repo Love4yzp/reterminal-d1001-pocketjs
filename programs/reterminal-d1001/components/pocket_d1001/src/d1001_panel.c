@@ -1,0 +1,244 @@
+/* SNTP setup follows pocket-m5's pocket_system/src/clock.c at aa8a0ca,
+ * with an explicit RTC write after synchronization. */
+#include "pocket/d1001.h"
+
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/time.h>
+
+#include "d1001_drivers.h"
+#include "d1001_wifi.h"
+#include "esp_log.h"
+#include "esp_netif_sntp.h"
+#include "sdkconfig.h"
+
+#ifndef CONFIG_D1001_HA_SELFTEST
+#define CONFIG_D1001_HA_SELFTEST 0
+#endif
+
+static const char *TAG = "d1001_panel";
+
+static struct {
+  const d1001_board_handles *board;
+  i2c_master_dev_handle_t rtc;
+  i2c_master_dev_handle_t imu;
+  esp_err_t rtc_error;
+  esp_err_t imu_error;
+  bool imu_failed;
+  bool sntp_active;
+  atomic_bool sntp_synced;
+} panel;
+
+static esp_err_t rtc_ensure(void) {
+  if (panel.rtc != NULL)
+    return ESP_OK;
+  if (panel.board == NULL)
+    return ESP_ERR_INVALID_STATE;
+  return d1001_rtc_open(panel.board->system_i2c, &panel.rtc);
+}
+
+static void rtc_log_error(esp_err_t result) {
+  if (result != ESP_OK && result != panel.rtc_error)
+    ESP_LOGW(TAG, "RTC unavailable: %s", esp_err_to_name(result));
+  panel.rtc_error = result;
+}
+
+static esp_err_t imu_ensure(void) {
+  if (panel.imu != NULL)
+    return ESP_OK;
+  if (panel.imu_failed)
+    return ESP_ERR_INVALID_STATE;
+  if (panel.board == NULL)
+    return ESP_ERR_INVALID_STATE;
+  const esp_err_t result = d1001_imu_open(panel.board->system_i2c, &panel.imu);
+  if (result != ESP_OK)
+    panel.imu_failed = true;
+  return result;
+}
+
+static void imu_log_error(esp_err_t result) {
+  if (result != ESP_OK && result != panel.imu_error)
+    ESP_LOGW(TAG, "IMU unavailable: %s", esp_err_to_name(result));
+  panel.imu_error = result;
+}
+
+static void on_sntp_sync(struct timeval *now) {
+  esp_err_t result = rtc_ensure();
+  if (result == ESP_OK)
+    result = d1001_rtc_write(panel.rtc, now->tv_sec);
+  if (result != ESP_OK) {
+    ESP_LOGE(TAG, "could not write SNTP time to RTC: %s",
+             esp_err_to_name(result));
+    return;
+  }
+  atomic_store(&panel.sntp_synced, true);
+  ESP_LOGI(TAG, "SNTP synchronized; RTC epoch=%lld", (long long)now->tv_sec);
+}
+
+static JSValue read_rtc(JSContext *realm) {
+  time_t epoch = 0;
+  esp_err_t result = rtc_ensure();
+  if (result == ESP_OK)
+    result = d1001_rtc_read(panel.rtc, &epoch);
+  rtc_log_error(result);
+  return JS_NewInt64(realm, result == ESP_OK ? (int64_t)epoch : -1);
+}
+
+static JSValue sync_clock(JSContext *realm) {
+  if (!d1001_wifi_online())
+    return JS_NewString(realm, "offline");
+  if (atomic_load(&panel.sntp_synced))
+    return JS_NewString(realm, "synchronized");
+  if (panel.sntp_active)
+    return JS_NewString(realm, "pending");
+
+  esp_sntp_config_t config =
+      ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_D1001_SNTP_SERVER);
+  config.start = false;
+  config.wait_for_sync = false;
+  config.sync_cb = on_sntp_sync;
+  esp_err_t result = esp_netif_sntp_init(&config);
+  if (result == ESP_OK)
+    result = esp_netif_sntp_start();
+  if (result != ESP_OK) {
+    ESP_LOGE(TAG, "SNTP start failed: %s", esp_err_to_name(result));
+    return JS_NewString(realm, "error");
+  }
+  panel.sntp_active = true;
+  ESP_LOGI(TAG, "SNTP started");
+  return JS_NewString(realm, "pending");
+}
+
+static JSValue read_sensors(JSContext *realm) {
+  d1001_imu_sample sample;
+  esp_err_t result = imu_ensure();
+  if (result == ESP_OK)
+    result = d1001_imu_read(panel.imu, &sample);
+  imu_log_error(result);
+
+  char json[256];
+  int written;
+  if (result != ESP_OK) {
+    written = snprintf(json, sizeof json, "{\"available\":false}");
+  } else {
+    written = snprintf(
+        json, sizeof json,
+        "{\"available\":true,\"acceleration\":{\"x\":%.4f,\"y\":%.4f,\"z\":%.4f},"
+        "\"angularRate\":{\"x\":%.4f,\"y\":%.4f,\"z\":%.4f},"
+        "\"chipCelsius\":%.3f}",
+        sample.acceleration.x, sample.acceleration.y, sample.acceleration.z,
+        sample.angular_rate.x, sample.angular_rate.y, sample.angular_rate.z,
+        sample.chip_celsius);
+  }
+  if (written < 0 || (size_t)written >= sizeof json)
+    return JS_ThrowInternalError(realm, "sensor JSON overflow");
+  return JS_NewString(realm, json);
+}
+
+static JSValue set_rgb(JSContext *realm, int argc, JSValueConst *argv) {
+  int32_t color[3];
+  for (size_t i = 0; i < 3U; ++i) {
+    if (JS_ToInt32(realm, &color[i], argc > (int)i ? argv[i] : JS_UNDEFINED) !=
+        0)
+      return JS_EXCEPTION;
+    if (color[i] < 0 || color[i] > 255) {
+      ESP_LOGW(TAG, "RGB channel %u is outside 0..255", (unsigned)i);
+      return JS_FALSE;
+    }
+  }
+  return JS_NewBool(realm,
+                    d1001_board_rgb_set_color((uint8_t)color[0],
+                                              (uint8_t)color[1],
+                                              (uint8_t)color[2]) == ESP_OK);
+}
+
+static bool put(JSContext *realm, JSValue object, const char *name,
+                JSValue value) {
+  return JS_SetPropertyStr(realm, object, name, value) >= 0;
+}
+
+static JSValue ha_config(JSContext *realm) {
+  JSValue config = JS_NewObject(realm);
+  if (JS_IsException(config))
+    return config;
+  if (!put(realm, config, "baseUrl", JS_NewString(realm, CONFIG_D1001_HA_BASE_URL)) ||
+      !put(realm, config, "token", JS_NewString(realm, CONFIG_D1001_HA_TOKEN)) ||
+      !put(realm, config, "lightEntityId",
+           JS_NewString(realm, CONFIG_D1001_HA_LIGHT_ENTITY)) ||
+      !put(realm, config, "selftest", JS_NewBool(realm, CONFIG_D1001_HA_SELFTEST))) {
+    JS_FreeValue(realm, config);
+    return JS_EXCEPTION;
+  }
+  return config;
+}
+
+enum {
+  OP_READ_RTC,
+  OP_SYNC_CLOCK,
+  OP_READ_SENSORS,
+  OP_SET_RGB,
+  OP_HA_CONFIG,
+};
+
+static JSValue operation(JSContext *realm, JSValueConst this_value, int argc,
+                         JSValueConst *argv, int magic) {
+  (void)this_value;
+  switch (magic) {
+  case OP_READ_RTC:
+    return read_rtc(realm);
+  case OP_SYNC_CLOCK:
+    return sync_clock(realm);
+  case OP_READ_SENSORS:
+    return read_sensors(realm);
+  case OP_SET_RGB:
+    return set_rgb(realm, argc, argv);
+  case OP_HA_CONFIG:
+    return ha_config(realm);
+  default:
+    return JS_UNDEFINED;
+  }
+}
+
+static void add(JSContext *realm, JSValue object, const char *name, int magic) {
+  JS_SetPropertyStr(realm, object, name,
+                    JS_NewCFunctionMagic(realm, operation, name, 0,
+                                         JS_CFUNC_generic_magic, magic));
+}
+
+esp_err_t d1001_panel_install(JSContext *realm, const d1001_board_handles *board) {
+  if (realm == NULL || board == NULL)
+    return ESP_ERR_INVALID_ARG;
+  if (panel.board != NULL)
+    return ESP_ERR_INVALID_STATE;
+  panel.board = board;
+  JSValue global = JS_GetGlobalObject(realm);
+  JSValue object = JS_NewObject(realm);
+  add(realm, object, "readRtc", OP_READ_RTC);
+  add(realm, object, "syncClock", OP_SYNC_CLOCK);
+  add(realm, object, "readSensors", OP_READ_SENSORS);
+  add(realm, object, "setRgb", OP_SET_RGB);
+  add(realm, object, "haConfig", OP_HA_CONFIG);
+  JS_SetPropertyStr(realm, global, "d1001", object);
+  const bool failed = JS_HasException(realm);
+  JS_FreeValue(realm, global);
+  return failed ? ESP_ERR_NO_MEM : ESP_OK;
+}
+
+void d1001_panel_teardown(void) {
+  if (panel.sntp_active)
+    esp_netif_sntp_deinit();
+  if (panel.rtc != NULL) {
+    const esp_err_t result = d1001_rtc_close(&panel.rtc);
+    if (result != ESP_OK)
+      ESP_LOGW(TAG, "RTC close failed: %s", esp_err_to_name(result));
+  }
+  if (panel.imu != NULL) {
+    const esp_err_t result = d1001_imu_close(&panel.imu);
+    if (result != ESP_OK)
+      ESP_LOGW(TAG, "IMU close failed: %s", esp_err_to_name(result));
+  }
+  memset(&panel, 0, sizeof panel);
+}

@@ -19,6 +19,7 @@
 #include "freertos/task.h"
 #include "display_move.h"
 #include "inputs.h"
+#include "pocket/d1001.h"
 #include "pocket/device.h"
 #include "pocket/display_esp_dpi.h"
 #include "pocket/guest_idf.h"
@@ -181,6 +182,7 @@ static void start_guest(d1001_host *host) {
   if ((features & POCKET_IDF_FEATURE_DEVICE) != 0U)
     ESP_ERROR_CHECK(pocket_device_install(realm));
   ESP_ERROR_CHECK(d1001_wifi_install(realm));
+  ESP_ERROR_CHECK(d1001_panel_install(realm, &host->board));
 
   const char *worker_source = NULL;
   size_t worker_source_size = 0;
@@ -275,6 +277,7 @@ static void stop_guest(d1001_host *host) {
   }
   if ((host->package.facts.features & POCKET_IDF_FEATURE_FS) != 0U)
     d1001_fs_teardown();
+  d1001_panel_teardown();
   if (host->runtime != NULL) {
     pocket_runtime_destroy(host->runtime);
     host->runtime = NULL;

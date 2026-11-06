@@ -8,6 +8,7 @@ idf_component_register(
         esp_lcd
         esp_mm
         esp_timer
+        pocket_d1001
         pocket_device
         pocket_display_esp_dpi
         pocket_fs_esp
