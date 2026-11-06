@@ -2,6 +2,7 @@ import { For } from "solid-js";
 import { createGesture } from "@pocketjs/framework/gesture";
 import { View } from "@pocketjs/framework/solid/components";
 import type { NodeMirror } from "@pocketjs/framework/renderer";
+import { theme } from "../theme";
 
 interface HorizontalSliderProps {
   left: number;
@@ -10,7 +11,6 @@ interface HorizontalSliderProps {
   width: number;
   value: number;
   max: number;
-  fillColor: number;
   colors?: readonly number[];
   onChange(value: number): void;
 }
@@ -35,7 +35,7 @@ export function HorizontalSlider(props: HorizontalSliderProps) {
       class="absolute"
       style={{ insetL: props.left, insetT: props.top, width: props.width, height: 18 }}
     >
-      <View class="absolute left-[0] top-[3] w-full h-[12] rounded-[6] bg-[#30405a] overflow-hidden">
+      <View class="absolute left-[0] top-[3] w-full h-[12] rounded-[6] overflow-hidden" style={{ bgColor: theme.secondaryBackground }}>
         {props.colors ? (
           <For each={props.colors}>{(color, index) => {
             const count = props.colors!.length;
@@ -49,14 +49,15 @@ export function HorizontalSlider(props: HorizontalSliderProps) {
         ) : (
           <View class="absolute left-[0] top-[0] h-full" style={{
             width: Math.round(fraction() * props.width),
-            bgColor: props.fillColor,
+            bgColor: theme.primary,
           }} />
         )}
       </View>
-      <View class="absolute w-[8] h-[18] rounded-[4] bg-white" style={{
+      <View class="absolute w-[8] h-[18] rounded-[4]" style={{
         insetL: 0,
         insetT: 0,
         translateX: Math.round(fraction() * (props.width - 8)),
+        bgColor: theme.primary,
       }} />
     </View>
   );

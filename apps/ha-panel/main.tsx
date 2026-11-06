@@ -17,6 +17,7 @@ import {
 import { readHaConfig, readNativeSensors, readRtcSeconds, syncNativeClock } from "./native";
 import { encodeMessage, decodeMessage } from "./protocol";
 import { DEMO_WEATHER } from "./weather";
+import { theme } from "./theme";
 import type { PanelHaConfig, WorkerCommand, WorkerEvent } from "./protocol";
 
 function Panel() {
@@ -136,7 +137,7 @@ function Panel() {
   });
 
   return (
-    <View class="relative overflow-hidden bg-[#0b1220]" style={{ width: 400, height: 640 }}>
+    <View class="relative overflow-hidden" style={{ width: 400, height: 640, bgColor: theme.page }}>
       <ClockCard
         epoch={state().clockEpochSeconds}
         synced={state().clockSynced}

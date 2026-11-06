@@ -48,6 +48,6 @@ export function applyBrightness(color: Rgb, brightness: number): Rgb {
   ];
 }
 
-export function argb(color: Rgb): number {
-  return (0xff000000 | (color[0] << 16) | (color[1] << 8) | color[2]) >>> 0;
+export function abgr(color: Rgb): number {
+  return (0xff000000 | (color[2] << 16) | (color[1] << 8) | color[0]) >>> 0;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyBrightness, argb, hsvToRgb } from "./color";
+import { applyBrightness, abgr, hsvToRgb } from "./color";
 
 describe("hsvToRgb", () => {
   test("converts the three primary hue sectors", () => {
@@ -37,11 +37,11 @@ describe("applyBrightness", () => {
   });
 });
 
-describe("argb", () => {
-  test("returns an unsigned 0xffRRGGBB number", () => {
-    expect(argb([0x12, 0x34, 0x56])).toBe(0xff123456);
-    expect(argb([255, 0, 0])).toBe(0xffff0000);
-    expect(argb([0, 0, 0])).toBe(0xff000000);
-    expect(argb([255, 255, 255])).toBe(0xffffffff);
+describe("abgr", () => {
+  test("returns an unsigned PocketJS 0xffBBGGRR number", () => {
+    expect(abgr([0x12, 0x34, 0x56])).toBe(0xff563412);
+    expect(abgr([255, 0, 0])).toBe(0xff0000ff);
+    expect(abgr([0, 0, 0])).toBe(0xff000000);
+    expect(abgr([255, 255, 255])).toBe(0xffffffff);
   });
 });
