@@ -31,6 +31,7 @@ function Panel() {
   let sendHaAt = 0;
   let selftestSent = false;
   let sensorLogged = false;
+  let lastHaError = "";
 
   const queueHa = (light: LightState) => {
     if (!configured) return;
@@ -90,7 +91,10 @@ function Panel() {
       const event = decodeMessage<WorkerEvent>(record.copy());
       if (event.type === "status") {
         dispatch({ type: "ha", haConfigured: event.configured, haConnected: event.connected });
-        if (event.error) console.error(`[ha-panel] HA: ${event.error}`);
+        if (event.error !== lastHaError) {
+          if (event.error) console.error(`[ha-panel] HA: ${event.error}`);
+          lastHaError = event.error;
+        }
         if (event.connected && config.selftest && config.lightEntityId && !selftestSent) {
           selftestSent = true;
           dispatch({ type: "select-light", lightId: "remote" });

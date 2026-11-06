@@ -141,22 +141,46 @@ async function commandLoop(): Promise<void> {
   }
 }
 
+function sameBytes(left: Uint8Array, right: Uint8Array | undefined): boolean {
+  if (right === undefined || left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1)
+    if (left[index] !== right[index]) return false;
+  return true;
+}
+
 async function run(): Promise<void> {
   void commandLoop();
+  let retryDelay = 0;
+  let remoteReadActive = false;
   for (;;) {
     const bytes = io.channel("ha-config").snapshot();
-    if (bytes && bytes !== lastConfig) {
+    if (bytes && !sameBytes(bytes, lastConfig)) {
       lastConfig = bytes;
       try {
         config = decodeMessage<PanelHaConfig>(bytes);
         configured = configuredConfig(config);
         connected = false;
+        retryDelay = 0;
         publishStatus();
-        if (configured) await readRemoteLight();
       } catch (error) {
+        configured = false;
         connected = false;
         publishStatus(errorMessage(error));
         console.error(`[ha-panel] HA configuration failed: ${errorMessage(error)}`);
+      }
+    }
+    if (retryDelay > 0) retryDelay -= 1;
+    if (configured && config?.lightEntityId && !connected && retryDelay === 0 && !remoteReadActive) {
+      remoteReadActive = true;
+      try {
+        await readRemoteLight();
+      } catch (error) {
+        connected = false;
+        retryDelay = 20;
+        publishStatus(errorMessage(error));
+        console.error(`[ha-panel] HA state read failed: ${errorMessage(error)}`);
+      } finally {
+        remoteReadActive = false;
       }
     }
     await sleep(100_000);
