@@ -54,7 +54,7 @@ export function WeatherCard(props: { weather: WeatherEntity }) {
   return (
     <Card left={12} top={146} width={376} height={100}>
       <Text class="absolute left-[18] top-[12] text-xs text-[#9eabc0]">天气</Text>
-      <Text class="absolute left-[18] top-[36] text-xl font-bold text-[#f4f7fb]">多云</Text>
+      <Text class="absolute left-[18] top-[36] text-sm font-bold text-[#f4f7fb]">多云</Text>
       <Text class="absolute left-[218] top-[23] text-4xl font-bold text-[#f4b856]">
         {`${props.weather.attributes.temperature.toFixed(1)}°`}
       </Text>
@@ -88,7 +88,7 @@ export function SensorsCard(props: { sample: SensorSample | null }) {
         </>
       ) : (
         <>
-          <Text class="absolute left-[18] top-[48] text-lg text-[#f4b856]">IMU 不可用</Text>
+          <Text class="absolute left-[18] top-[48] text-sm text-[#f4b856]">IMU 不可用</Text>
           <Text class="absolute left-[18] top-[98] text-2xs text-[#9eabc0]">
             未确认环境光传感器，未显示
           </Text>
