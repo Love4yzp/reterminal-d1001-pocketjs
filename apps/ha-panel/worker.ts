@@ -9,6 +9,7 @@ import {
 import {
   decodeMessage,
   encodeMessage,
+  statusErrorText,
   type PanelHaConfig,
   type WorkerCommand,
   type WorkerEvent,
@@ -31,13 +32,18 @@ function errorMessage(error: unknown): string {
 }
 
 function publish(event: WorkerEvent): void {
-  const bytes = new Uint8Array(512);
-  encodeMessage(event, bytes);
-  io.channel("ha-events").publish(bytes);
+  try {
+    const bytes = new Uint8Array(512);
+    encodeMessage(event, bytes);
+    if (!io.channel("ha-events").publish(bytes))
+      console.error("[ha-panel] HA event channel is full");
+  } catch (error) {
+    console.error(`[ha-panel] event publish failed: ${errorMessage(error)}`);
+  }
 }
 
 function publishStatus(error = ""): void {
-  publish({ type: "status", configured, connected, error });
+  publish({ type: "status", configured, connected, error: statusErrorText(error) });
 }
 
 function enqueue(request: HttpRequest): Promise<HaResponse> {

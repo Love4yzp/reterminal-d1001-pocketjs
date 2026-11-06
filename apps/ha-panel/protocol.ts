@@ -13,6 +13,10 @@ export type WorkerEvent =
   | { type: "status"; configured: boolean; connected: boolean; error: string }
   | { type: "light"; light: LightState };
 
+export function statusErrorText(error: string): string {
+  return error.slice(0, 160);
+}
+
 export function encodeMessage(value: unknown, into: Uint8Array): number {
   const json = JSON.stringify(value);
   if (json === undefined) throw new Error("value is not JSON serializable");

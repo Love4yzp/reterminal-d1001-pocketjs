@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { decodeMessage, encodeMessage } from "./protocol";
+import { decodeMessage, encodeMessage, statusErrorText } from "./protocol";
 
 describe("UI/worker message protocol", () => {
   test("round-trips non-ASCII code units through a fixed byte buffer", () => {
@@ -32,5 +32,13 @@ describe("UI/worker message protocol", () => {
 
   test("rejects values JSON.stringify cannot represent", () => {
     expect(() => encodeMessage(undefined, new Uint8Array(8))).toThrow("JSON");
+  });
+
+  test("bounds a long status error before encoding it into a 512-byte event", () => {
+    const error = statusErrorText("x".repeat(2000));
+    const bytes = new Uint8Array(512);
+    expect(error).toHaveLength(160);
+    expect(() => encodeMessage({ type: "status", configured: true, connected: false, error }, bytes)).not.toThrow();
+    expect(decodeMessage<{ error: string }>(bytes).error).toBe(error);
   });
 });
