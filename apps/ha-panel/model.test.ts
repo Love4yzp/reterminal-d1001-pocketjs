@@ -1,147 +1,117 @@
 import { describe, expect, test } from "bun:test";
 
-import { createInitialPanelState, reducePanel } from "./model";
-import type { SensorSample } from "./model";
+import {
+  availableLights,
+  changedLights,
+  createInitialPanelState,
+  isLightAvailable,
+  reducePanel,
+  type PanelState,
+} from "./model";
+
+function connected(): PanelState {
+  return reducePanel(createInitialPanelState(), {
+    type: "ha", haConfigured: true, haConnected: true, haLightConfigured: true,
+  });
+}
 
 describe("createInitialPanelState", () => {
-  test("creates the requested defaults", () => {
+  test("starts with HA offline, no weather and no clock", () => {
     const state = createInitialPanelState();
-
-    expect(state.lights).toEqual({
-      desk: { on: true, brightness: 180, hue: 40 },
-      shelf: { on: false, brightness: 160, hue: 200 },
-      onboard: { on: false, brightness: 128, hue: 210 },
-      remote: { on: false, brightness: 128, hue: 0 },
-    });
-    expect(state.lightKinds).toEqual({
-      desk: "virtual",
-      shelf: "virtual",
-      onboard: "onboard",
-      remote: "ha",
-    });
-    expect(state.selected).toBe("onboard");
+    expect(state.lightKinds).toEqual({ desk: "virtual", shelf: "virtual", onboard: "onboard", remote: "ha" });
     expect(state.haConfigured).toBe(false);
     expect(state.haConnected).toBe(false);
-    expect(state.sensors).toBeNull();
+    expect(state.haLightConfigured).toBe(false);
+    expect(state.weather).toBeNull();
     expect(state.clockEpochSeconds).toBeNull();
-    expect(state.clockSynced).toBe(false);
+    expect(state).not.toHaveProperty("sensors");
   });
 
-  test("does not share mutable light state between initial states", () => {
-    const first = createInitialPanelState();
-    const second = createInitialPanelState();
-
-    expect(first.lights).not.toBe(second.lights);
-    expect(first.lights.desk).not.toBe(second.lights.desk);
-    expect(first.lightKinds).not.toBe(second.lightKinds);
+  test("keeps the onboard RGB as a light", () => {
+    expect(createInitialPanelState().lights.onboard).toEqual({ on: false, brightness: 128, hue: 199, saturation: 68 });
   });
 });
 
-describe("reducePanel light actions", () => {
-  test("selects and toggles lights immutably", () => {
-    const initial = createInitialPanelState();
-    const selected = reducePanel(initial, { type: "select-light", lightId: "desk" });
-    const toggled = reducePanel(selected, { type: "toggle-light", lightId: "desk" });
-
-    expect(selected.selected).toBe("desk");
-    expect(selected.lights).toBe(initial.lights);
-    expect(toggled.lights.desk).toEqual({ on: false, brightness: 180, hue: 40 });
-    expect(toggled.lights.shelf).toBe(initial.lights.shelf);
-    expect(initial.lights.desk.on).toBe(true);
+describe("light availability", () => {
+  test("the HA light needs a connection and a configured entity", () => {
+    const offline = createInitialPanelState();
+    expect(isLightAvailable(offline, "remote")).toBe(false);
+    expect(availableLights(offline)).toEqual(["desk", "shelf", "onboard"]);
+    const noEntity = reducePanel(offline, { type: "ha", haConfigured: true, haConnected: true, haLightConfigured: false });
+    expect(isLightAvailable(noEntity, "remote")).toBe(false);
+    expect(availableLights(connected())).toEqual(["desk", "shelf", "onboard", "remote"]);
   });
 
-  test("rounds and clamps brightness, with zero off and positive values on", () => {
-    const initial = createInitialPanelState();
-    const rounded = reducePanel(initial, { type: "set-brightness", lightId: "shelf", brightness: 100.6 });
-    const off = reducePanel(rounded, { type: "set-brightness", lightId: "shelf", brightness: 0.2 });
-    const high = reducePanel(off, { type: "set-brightness", lightId: "shelf", brightness: 300 });
-    const low = reducePanel(high, { type: "set-brightness", lightId: "shelf", brightness: -10 });
-
-    expect(rounded.lights.shelf).toEqual({ on: true, brightness: 101, hue: 200 });
-    expect(off.lights.shelf).toEqual({ on: false, brightness: 0, hue: 200 });
-    expect(high.lights.shelf).toEqual({ on: true, brightness: 255, hue: 200 });
-    expect(low.lights.shelf).toEqual({ on: false, brightness: 0, hue: 200 });
+  test("user actions on an unavailable light are no-ops", () => {
+    const state = createInitialPanelState();
+    expect(reducePanel(state, { type: "toggle-light", lightId: "remote" })).toBe(state);
+    expect(reducePanel(state, { type: "set-brightness", lightId: "remote", brightness: 40 })).toBe(state);
   });
 
-  test("rounds and wraps hue in both directions", () => {
-    const initial = createInitialPanelState();
-    const wrappedHigh = reducePanel(initial, { type: "set-hue", lightId: "remote", hue: 720.6 });
-    const wrappedLow = reducePanel(wrappedHigh, { type: "set-hue", lightId: "remote", hue: -0.4 });
-
-    expect(wrappedHigh.lights.remote.hue).toBe(1);
-    expect(wrappedLow.lights.remote.hue).toBe(0);
-    expect(reducePanel(wrappedLow, { type: "set-hue", lightId: "remote", hue: -1 }).lights.remote.hue).toBe(359);
-  });
-});
-
-describe("reducePanel sensor, clock, and HA actions", () => {
-  const sample: SensorSample = {
-    acceleration: { x: 1, y: 2, z: 3 },
-    angularRate: { x: 4, y: 5, z: 6 },
-    chipCelsius: 42.5,
-  };
-
-  test("updates and clears sensor samples", () => {
-    const initial = createInitialPanelState();
-    const updated = reducePanel(initial, { type: "sensors", sensors: sample });
-    const cleared = reducePanel(updated, { type: "sensors", sensors: null });
-
-    expect(updated.sensors).toBe(sample);
-    expect(updated.lights).toBe(initial.lights);
-    expect(cleared.sensors).toBeNull();
-  });
-
-  test("updates clock fields together and supports an unsynced empty clock", () => {
-    const initial = createInitialPanelState();
-    const updated = reducePanel(initial, {
-      type: "clock",
-      clockEpochSeconds: 1_762_000_000,
-      clockSynced: true,
+  test("HA state still lands while the light is unavailable", () => {
+    const next = reducePanel(createInitialPanelState(), {
+      type: "remote-light", light: { on: true, brightness: 200, hue: 120, saturation: 50 },
     });
-    const cleared = reducePanel(updated, {
-      type: "clock",
-      clockEpochSeconds: null,
-      clockSynced: false,
-    });
-
-    expect(updated.clockEpochSeconds).toBe(1_762_000_000);
-    expect(updated.clockSynced).toBe(true);
-    expect(cleared.clockEpochSeconds).toBeNull();
-    expect(cleared.clockSynced).toBe(false);
-  });
-
-  test("updates HA configuration and connection state", () => {
-    const initial = createInitialPanelState();
-    const configured = reducePanel(initial, { type: "ha", haConfigured: true, haConnected: false });
-    const connected = reducePanel(configured, { type: "ha", haConfigured: true, haConnected: true });
-
-    expect(configured.haConfigured).toBe(true);
-    expect(configured.haConnected).toBe(false);
-    expect(connected.haConfigured).toBe(true);
-    expect(connected.haConnected).toBe(true);
+    expect(next.lights.remote).toEqual({ on: true, brightness: 200, hue: 120, saturation: 50 });
   });
 });
 
-describe("reducePanel idempotence", () => {
-  test("returns the original reference for every no-op action", () => {
-    const sample: SensorSample = {
-      acceleration: { x: 1, y: 2, z: 3 },
-      angularRate: { x: 4, y: 5, z: 6 },
-      chipCelsius: 42.5,
-    };
-    const initial = reducePanel(createInitialPanelState(), { type: "sensors", sensors: sample });
-    const equivalentSample: SensorSample = {
-      acceleration: { x: 1, y: 2, z: 3 },
-      angularRate: { x: 4, y: 5, z: 6 },
-      chipCelsius: 42.5,
-    };
+describe("light actions", () => {
+  test("toggle flips power and keeps the brightness", () => {
+    const state = createInitialPanelState();
+    const next = reducePanel(state, { type: "toggle-light", lightId: "shelf" });
+    expect(next.lights.shelf).toEqual({ ...state.lights.shelf, on: true });
+    expect(next.lights.desk).toBe(state.lights.desk);
+  });
 
-    expect(reducePanel(initial, { type: "select-light", lightId: "onboard" })).toBe(initial);
-    expect(reducePanel(initial, { type: "set-brightness", lightId: "desk", brightness: 180.2 })).toBe(initial);
-    expect(reducePanel(initial, { type: "set-brightness", lightId: "shelf", brightness: -1 })).not.toBe(initial);
-    expect(reducePanel(initial, { type: "set-hue", lightId: "desk", hue: 400 })).toBe(initial);
-    expect(reducePanel(initial, { type: "sensors", sensors: equivalentSample })).toBe(initial);
-    expect(reducePanel(initial, { type: "clock", clockEpochSeconds: null, clockSynced: false })).toBe(initial);
-    expect(reducePanel(initial, { type: "ha", haConfigured: false, haConnected: false })).toBe(initial);
+  test("brightness 0 turns a light off and switching it on restores the default", () => {
+    const off = reducePanel(createInitialPanelState(), { type: "set-brightness", lightId: "desk", brightness: 0 });
+    expect(off.lights.desk).toMatchObject({ on: false, brightness: 0 });
+    const on = reducePanel(off, { type: "toggle-light", lightId: "desk" });
+    expect(on.lights.desk).toMatchObject({ on: true, brightness: 128 });
+  });
+
+  test("brightness above 0 turns a light on and is clamped", () => {
+    const next = reducePanel(createInitialPanelState(), { type: "set-brightness", lightId: "shelf", brightness: 400.4 });
+    expect(next.lights.shelf).toMatchObject({ on: true, brightness: 255 });
+  });
+
+  test("set-color wraps hue and clamps saturation without touching power", () => {
+    const next = reducePanel(createInitialPanelState(), { type: "set-color", lightId: "shelf", hue: -30, saturation: 140 });
+    expect(next.lights.shelf).toMatchObject({ on: false, hue: 330, saturation: 100 });
+  });
+
+  test("unchanged values return the same state", () => {
+    const state = createInitialPanelState();
+    const desk = state.lights.desk;
+    expect(reducePanel(state, { type: "set-brightness", lightId: "desk", brightness: desk.brightness })).toBe(state);
+    expect(reducePanel(state, { type: "set-color", lightId: "desk", hue: desk.hue, saturation: desk.saturation })).toBe(state);
+    expect(reducePanel(state, { type: "set-lights", changes: {} })).toBe(state);
+  });
+
+  test("set-lights changes several lights in one step", () => {
+    const next = reducePanel(connected(), { type: "set-lights", changes: { desk: { on: false }, remote: { on: true, brightness: 51 } } });
+    expect(next.lights.desk.on).toBe(false);
+    expect(next.lights.remote).toMatchObject({ on: true, brightness: 51 });
+    expect(changedLights(connected(), next)).toEqual(["desk", "remote"]);
+  });
+});
+
+describe("HA and weather", () => {
+  const weather = { entityId: "weather.home", condition: "cloudy", temperature: 18, unit: "°C" };
+
+  test("stores live weather and drops it when HA disconnects", () => {
+    const withWeather = reducePanel(connected(), { type: "weather", weather });
+    expect(withWeather.weather).toEqual(weather);
+    expect(reducePanel(withWeather, { type: "weather", weather: { ...weather } })).toBe(withWeather);
+    const offline = reducePanel(withWeather, { type: "ha", haConfigured: true, haConnected: false, haLightConfigured: true });
+    expect(offline.weather).toBeNull();
+  });
+
+  test("ignores repeated status and clock updates", () => {
+    const state = connected();
+    expect(reducePanel(state, { type: "ha", haConfigured: true, haConnected: true, haLightConfigured: true })).toBe(state);
+    const clocked = reducePanel(state, { type: "clock", clockEpochSeconds: 10, clockSynced: true });
+    expect(reducePanel(clocked, { type: "clock", clockEpochSeconds: 10, clockSynced: true })).toBe(clocked);
   });
 });

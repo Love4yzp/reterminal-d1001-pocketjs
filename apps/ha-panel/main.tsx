@@ -3,10 +3,9 @@ import { mount } from "@pocketjs/framework/solid";
 import { View } from "@pocketjs/framework/solid/components";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { worker } from "@pocketjs/framework/worker/channels";
-import { ClockCard, SensorsCard, WeatherCard } from "./ui/cards";
-import { LightsCard } from "./ui/lights";
 import { createLightAdapter, type LightAdapter } from "./devices";
 import {
+  changedLights,
   createInitialPanelState,
   reducePanel,
   type LightId,
@@ -14,25 +13,46 @@ import {
   type PanelAction,
   type PanelState,
 } from "./model";
-import { readHaConfig, readNativeSensors, readRtcSeconds, readUtcOffsetMinutes, syncNativeClock } from "./native";
+import {
+  readBacklight,
+  readFirmwareVersion,
+  readHaConfig,
+  readNetwork,
+  readRtcSeconds,
+  readUtcOffsetMinutes,
+  screenOffNative,
+  syncNativeClock,
+  writeBacklight,
+} from "./native";
+import { activeTab, INITIAL_ROUTE, navigate, type NavEvent, type Route } from "./navigation";
 import { encodeMessage, decodeMessage } from "./protocol";
-import { DEMO_WEATHER } from "./weather";
+import { createScreenOffControl, createSettings, reduceSettings, type SettingsAction } from "./settings";
 import { theme } from "./theme";
 import type { PanelHaConfig, WorkerCommand, WorkerEvent } from "./protocol";
+import { DimmerScreen } from "./ui/dimmer-screen";
+import { HomeScreen } from "./ui/home-screen";
+import { LightsScreen } from "./ui/lights-screen";
+import { NavBar } from "./ui/nav-bar";
+import { ProvisionScreen } from "./ui/provision-screen";
+import { SettingsScreen } from "./ui/settings-screen";
 
 function Panel() {
   const [state, setState] = createSignal<PanelState>(createInitialPanelState());
+  const [route, setRoute] = createSignal<Route>(INITIAL_ROUTE);
+  const [network, setNetwork] = createSignal(readNetwork());
+  const [settings, setSettings] = createSignal(createSettings(readBacklight()));
   const config: PanelHaConfig = readHaConfig();
   const utcOffsetMinutes = readUtcOffsetMinutes();
+  const firmwareVersion = readFirmwareVersion();
   const configured = config.baseUrl.length > 0 && config.token.length > 0;
   const configChannel = worker.channel("ha-config");
   const commands = worker.channel("ha-commands");
   const events = worker.channel("ha-events");
+  const screenOffControl = createScreenOffControl(screenOffNative());
   let frame = 0;
   let pendingHa: LightState | null = null;
   let sendHaAt = 0;
   let selftestSent = false;
-  let sensorLogged = false;
   let lastHaError = "";
 
   const queueHa = (light: LightState) => {
@@ -53,14 +73,29 @@ function Panel() {
     if (next === previous) return;
     setState(next);
     if (fromHa) return;
-    if (action.type === "toggle-light" || action.type === "set-brightness" || action.type === "set-hue") {
-      try {
-        adapters[action.lightId].apply(next.lights[action.lightId]);
-      } catch (error) {
-        setState(previous);
-        console.error(`[ha-panel] ${action.lightId} failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
+    try {
+      for (const lightId of changedLights(previous, next)) adapters[lightId].apply(next.lights[lightId]);
+    } catch (error) {
+      setState(previous);
+      console.error(`[ha-panel] light update failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  };
+
+  const onNav = (event: NavEvent) => setRoute(navigate(route(), event));
+
+  const onSettings = (action: SettingsAction) => {
+    const previous = settings();
+    const next = reduceSettings(previous, action);
+    if (next === previous) return;
+    if (action.type === "backlight") {
+      if (next.backlight === null || !writeBacklight(next.backlight)) {
+        console.warn("[ha-panel] backlight binding rejected the update");
+        return;
+      }
+    } else {
+      screenOffControl.apply(next.screenOffSeconds);
+    }
+    setSettings(next);
   };
 
   const publishCommand = (command: WorkerCommand): boolean => {
@@ -74,41 +109,42 @@ function Panel() {
   const configBytes = new Uint8Array(512);
   encodeMessage(config, configBytes);
   if (!configChannel.publish(configBytes)) throw new Error("HA config channel rejected the configuration");
-  dispatch({ type: "ha", haConfigured: configured, haConnected: false });
+  dispatch({ type: "ha", haConfigured: configured, haConnected: false, haLightConfigured: Boolean(config.lightEntityId) });
   dispatch({ type: "clock", clockEpochSeconds: readRtcSeconds(), clockSynced: false });
-  dispatch({ type: "sensors", sensors: readNativeSensors() });
-  console.log("[ha-panel] cards: clock, weather, lights, sensors");
+  console.log("[ha-panel] dashboard: home, lights, dimmer, settings");
   if (config.selftest) {
-    dispatch({ type: "select-light", lightId: "onboard" });
     dispatch({ type: "set-brightness", lightId: "onboard", brightness: 160 });
-    dispatch({ type: "set-hue", lightId: "onboard", hue: 210 });
+    dispatch({ type: "set-color", lightId: "onboard", hue: 210, saturation: 68 });
     console.log("[ha-panel] onboard RGB self-test hue=210");
   }
 
   onFrame(() => {
     frame += 1;
     if (config.selftest && frame === 60)
-      dispatch({ type: "set-hue", lightId: "onboard", hue: 0 });
+      dispatch({ type: "set-color", lightId: "onboard", hue: 0, saturation: 70 });
     for (const record of events.observe()) {
       const event = decodeMessage<WorkerEvent>(record.copy());
       if (event.type === "status") {
-        dispatch({ type: "ha", haConfigured: event.configured, haConnected: event.connected });
+        dispatch({
+          type: "ha",
+          haConfigured: event.configured,
+          haConnected: event.connected,
+          haLightConfigured: Boolean(config.lightEntityId),
+        });
         if (event.error !== lastHaError) {
           if (event.error) console.error(`[ha-panel] HA: ${event.error}`);
           lastHaError = event.error;
         }
         if (event.connected && config.selftest && config.lightEntityId && !selftestSent) {
           selftestSent = true;
-          dispatch({ type: "select-light", lightId: "remote" });
           dispatch({ type: "set-brightness", lightId: "remote", brightness: 160 });
-          dispatch({ type: "set-hue", lightId: "remote", hue: 210 });
+          dispatch({ type: "set-color", lightId: "remote", hue: 210, saturation: 68 });
           console.log("[ha-panel] mock light self-test requested");
         }
+      } else if (event.type === "light") {
+        dispatch({ type: "remote-light", light: event.light }, true);
       } else {
-        dispatch({ type: "set-brightness", lightId: "remote", brightness: event.light.brightness }, true);
-        dispatch({ type: "set-hue", lightId: "remote", hue: event.light.hue }, true);
-        if (state().lights.remote.on !== event.light.on)
-          dispatch({ type: "toggle-light", lightId: "remote" }, true);
+        dispatch({ type: "weather", weather: event.weather }, true);
       }
     }
 
@@ -124,35 +160,44 @@ function Panel() {
         clockSynced: syncNativeClock() === "synchronized",
       });
     }
-    if (frame % 15 === 0) {
-      const sample = readNativeSensors();
-      dispatch({ type: "sensors", sensors: sample });
-      if (sample && !sensorLogged) {
-        sensorLogged = true;
-        console.log(`[ha-panel] IMU chip=${sample.chipCelsius.toFixed(1)}C accel_z=${sample.acceleration.z.toFixed(2)}m/s2`);
-      }
-    }
-    if (configured && frame % 900 === 0 && state().sensors) {
-      publishCommand({ type: "sensors", sample: state().sensors! });
-    }
+    if (frame % 90 === 0) setNetwork(readNetwork());
   });
+
+  const screen = () => {
+    const current = route();
+    if (current.kind === "dimmer")
+      return <DimmerScreen state={state()} lightId={current.lightId} onAction={dispatch} onNav={onNav} />;
+    if (current.kind === "provision")
+      return <ProvisionScreen topic={current.topic} onNav={onNav} />;
+    if (current.tab === "lights")
+      return <LightsScreen state={state()} network={network()} onAction={dispatch} onNav={onNav} />;
+    if (current.tab === "settings")
+      return (
+        <SettingsScreen
+          state={state()}
+          settings={settings()}
+          network={network()}
+          utcOffsetMinutes={utcOffsetMinutes}
+          firmwareVersion={firmwareVersion}
+          onSettings={onSettings}
+          onNav={onNav}
+        />
+      );
+    return (
+      <HomeScreen
+        state={state()}
+        network={network()}
+        utcOffsetMinutes={utcOffsetMinutes}
+        onAction={dispatch}
+        onNav={onNav}
+      />
+    );
+  };
 
   return (
     <View class="relative overflow-hidden" style={{ width: 400, height: 640, bgColor: theme.page }}>
-      <ClockCard
-        epoch={state().clockEpochSeconds}
-        utcOffsetMinutes={utcOffsetMinutes}
-        synced={state().clockSynced}
-        haConfigured={state().haConfigured}
-        haConnected={state().haConnected}
-      />
-      <WeatherCard weather={DEMO_WEATHER} />
-      <LightsCard
-        state={state()}
-        haLightEnabled={configured && Boolean(config.lightEntityId)}
-        onAction={dispatch}
-      />
-      <SensorsCard sample={state().sensors} />
+      {screen()}
+      {route().kind === "tab" ? <NavBar active={activeTab(route())} onNav={onNav} /> : null}
     </View>
   );
 }

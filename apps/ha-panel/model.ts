@@ -1,51 +1,62 @@
 export type LightKind = "virtual" | "onboard" | "ha";
 export type LightId = "desk" | "shelf" | "onboard" | "remote";
 
+/** Display order everywhere: tiles, list rows, dimmer chips, swipe cycle. */
+export const LIGHT_IDS: readonly LightId[] = ["desk", "shelf", "onboard", "remote"];
+
 export interface LightState {
   on: boolean;
+  /** 0..255, the Home Assistant brightness scale. */
   brightness: number;
+  /** 0..359 degrees. */
   hue: number;
+  /** 0..100 percent, the Home Assistant hs_color saturation scale. */
+  saturation: number;
 }
 
-export interface Vector3 {
-  x: number;
-  y: number;
-  z: number;
-}
-
-export interface SensorSample {
-  acceleration: Vector3;
-  angularRate: Vector3;
-  chipCelsius: number;
+/** A Home Assistant weather entity as read from the instance; never invented. */
+export interface Weather {
+  entityId: string;
+  /** HA condition string such as "partlycloudy" or "rainy". */
+  condition: string;
+  temperature: number | null;
+  unit: string;
 }
 
 export interface PanelState {
   lights: Record<LightId, LightState>;
   lightKinds: Record<LightId, LightKind>;
-  selected: LightId;
   haConfigured: boolean;
   haConnected: boolean;
-  sensors: SensorSample | null;
+  /** HA config names a light entity for the remote tile. */
+  haLightConfigured: boolean;
+  weather: Weather | null;
   clockEpochSeconds: number | null;
   clockSynced: boolean;
 }
 
+export type LightChanges = Partial<Record<LightId, Partial<LightState>>>;
+
 export type PanelAction =
-  | { type: "select-light"; lightId: LightId }
   | { type: "toggle-light"; lightId: LightId }
   | { type: "set-brightness"; lightId: LightId; brightness: number }
-  | { type: "set-hue"; lightId: LightId; hue: number }
-  | { type: "sensors"; sensors: SensorSample | null }
+  | { type: "set-color"; lightId: LightId; hue: number; saturation: number }
+  | { type: "set-lights"; changes: LightChanges }
+  | { type: "remote-light"; light: LightState }
   | { type: "clock"; clockEpochSeconds: number | null; clockSynced: boolean }
-  | { type: "ha"; haConfigured: boolean; haConnected: boolean };
+  | { type: "ha"; haConfigured: boolean; haConnected: boolean; haLightConfigured: boolean }
+  | { type: "weather"; weather: Weather | null };
+
+/** Brightness restored when a light at 0 is switched on. */
+export const DEFAULT_ON_BRIGHTNESS = 128;
 
 export function createInitialPanelState(): PanelState {
   return {
     lights: {
-      desk: { on: true, brightness: 180, hue: 40 },
-      shelf: { on: false, brightness: 160, hue: 200 },
-      onboard: { on: false, brightness: 128, hue: 210 },
-      remote: { on: false, brightness: 128, hue: 0 },
+      desk: { on: true, brightness: 180, hue: 36, saturation: 70 },
+      shelf: { on: false, brightness: 160, hue: 37, saturation: 12 },
+      onboard: { on: false, brightness: 128, hue: 199, saturation: 68 },
+      remote: { on: false, brightness: 128, hue: 36, saturation: 70 },
     },
     lightKinds: {
       desk: "virtual",
@@ -53,66 +64,109 @@ export function createInitialPanelState(): PanelState {
       onboard: "onboard",
       remote: "ha",
     },
-    selected: "onboard",
     haConfigured: false,
     haConnected: false,
-    sensors: null,
+    haLightConfigured: false,
+    weather: null,
     clockEpochSeconds: null,
     clockSynced: false,
   };
 }
 
-function updateLight(state: PanelState, lightId: LightId, light: LightState): PanelState {
-  if (state.lights[lightId] === light) return state;
-  return { ...state, lights: { ...state.lights, [lightId]: light } };
+/** The HA light only answers when HA is reachable and a light entity is configured. */
+export function isLightAvailable(state: PanelState, lightId: LightId): boolean {
+  if (state.lightKinds[lightId] !== "ha") return true;
+  return state.haConnected && state.haLightConfigured;
 }
 
-function sameVector(left: Vector3, right: Vector3): boolean {
-  return left.x === right.x && left.y === right.y && left.z === right.z;
+export function availableLights(state: PanelState): LightId[] {
+  return LIGHT_IDS.filter(lightId => isLightAvailable(state, lightId));
 }
 
-function sameSensors(left: SensorSample | null, right: SensorSample | null): boolean {
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function normalizeLight(light: LightState): LightState {
+  return {
+    on: light.on,
+    brightness: clamp(light.brightness, 0, 255),
+    hue: ((Math.round(light.hue) % 360) + 360) % 360,
+    saturation: clamp(light.saturation, 0, 100),
+  };
+}
+
+function sameLight(left: LightState, right: LightState): boolean {
+  return left.on === right.on && left.brightness === right.brightness &&
+    left.hue === right.hue && left.saturation === right.saturation;
+}
+
+/** Merge a partial update; a light switched on at brightness 0 comes back at the default. */
+function mergeLight(current: LightState, change: Partial<LightState>): LightState {
+  const next = normalizeLight({ ...current, ...change });
+  if (change.brightness !== undefined && change.on === undefined) next.on = next.brightness > 0;
+  if (next.on && next.brightness === 0) next.brightness = DEFAULT_ON_BRIGHTNESS;
+  return next;
+}
+
+function withLights(state: PanelState, changes: LightChanges, userAction: boolean): PanelState {
+  let lights = state.lights;
+  for (const lightId of LIGHT_IDS) {
+    const change = changes[lightId];
+    if (!change) continue;
+    if (userAction && !isLightAvailable(state, lightId)) continue;
+    const next = mergeLight(lights[lightId], change);
+    if (sameLight(next, lights[lightId])) continue;
+    if (lights === state.lights) lights = { ...lights };
+    lights[lightId] = next;
+  }
+  return lights === state.lights ? state : { ...state, lights };
+}
+
+function sameWeather(left: Weather | null, right: Weather | null): boolean {
   if (left === right) return true;
-  if (left === null || right === null) return false;
-  return sameVector(left.acceleration, right.acceleration) &&
-    sameVector(left.angularRate, right.angularRate) &&
-    left.chipCelsius === right.chipCelsius;
+  if (!left || !right) return false;
+  return left.entityId === right.entityId && left.condition === right.condition &&
+    left.temperature === right.temperature && left.unit === right.unit;
 }
 
 export function reducePanel(state: PanelState, action: PanelAction): PanelState {
   switch (action.type) {
-    case "select-light":
-      return state.selected === action.lightId ? state : { ...state, selected: action.lightId };
-    case "toggle-light": {
-      const current = state.lights[action.lightId];
-      return updateLight(state, action.lightId, { ...current, on: !current.on });
-    }
-    case "set-brightness": {
-      const current = state.lights[action.lightId];
-      const brightness = Math.min(255, Math.max(0, Math.round(action.brightness)));
-      const on = brightness > 0;
-      if (current.brightness === brightness && current.on === on) return state;
-      return updateLight(state, action.lightId, { ...current, brightness, on });
-    }
-    case "set-hue": {
-      const current = state.lights[action.lightId];
-      const hue = ((Math.round(action.hue) % 360) + 360) % 360;
-      if (current.hue === hue) return state;
-      return updateLight(state, action.lightId, { ...current, hue });
-    }
-    case "sensors":
-      return sameSensors(state.sensors, action.sensors) ? state : { ...state, sensors: action.sensors };
+    case "toggle-light":
+      return withLights(state, { [action.lightId]: { on: !state.lights[action.lightId].on } }, true);
+    case "set-brightness":
+      return withLights(state, { [action.lightId]: { brightness: action.brightness } }, true);
+    case "set-color":
+      return withLights(state, {
+        [action.lightId]: { hue: action.hue, saturation: action.saturation },
+      }, true);
+    case "set-lights":
+      return withLights(state, action.changes, true);
+    case "remote-light":
+      return withLights(state, { remote: { ...action.light } }, false);
     case "clock":
       if (state.clockEpochSeconds === action.clockEpochSeconds && state.clockSynced === action.clockSynced)
         return state;
+      return { ...state, clockEpochSeconds: action.clockEpochSeconds, clockSynced: action.clockSynced };
+    case "ha":
+      if (state.haConfigured === action.haConfigured && state.haConnected === action.haConnected &&
+          state.haLightConfigured === action.haLightConfigured)
+        return state;
       return {
         ...state,
-        clockEpochSeconds: action.clockEpochSeconds,
-        clockSynced: action.clockSynced,
+        haConfigured: action.haConfigured,
+        haConnected: action.haConnected,
+        haLightConfigured: action.haLightConfigured,
+        // Weather is only shown while it is live.
+        weather: action.haConnected ? state.weather : null,
       };
-    case "ha":
-      if (state.haConfigured === action.haConfigured && state.haConnected === action.haConnected)
-        return state;
-      return { ...state, haConfigured: action.haConfigured, haConnected: action.haConnected };
+    case "weather":
+      return sameWeather(state.weather, action.weather) ? state : { ...state, weather: action.weather };
   }
+}
+
+/** Lights whose state differs between two snapshots; drives the device adapters. */
+export function changedLights(previous: PanelState, next: PanelState): LightId[] {
+  if (previous.lights === next.lights) return [];
+  return LIGHT_IDS.filter(lightId => !sameLight(previous.lights[lightId], next.lights[lightId]));
 }

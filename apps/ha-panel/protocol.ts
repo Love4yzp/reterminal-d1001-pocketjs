@@ -1,17 +1,17 @@
 import type { HaConfig } from "./ha-request";
-import type { LightState, SensorSample } from "./model";
+import type { LightState, Weather } from "./model";
 
 export interface PanelHaConfig extends HaConfig {
   selftest: boolean;
 }
 
-export type WorkerCommand =
-  | { type: "light"; light: LightState }
-  | { type: "sensors"; sample: SensorSample };
+export type WorkerCommand = { type: "light"; light: LightState };
 
 export type WorkerEvent =
   | { type: "status"; configured: boolean; connected: boolean; error: string }
-  | { type: "light"; light: LightState };
+  | { type: "light"; light: LightState }
+  /** `null` when the instance has no usable weather entity. */
+  | { type: "weather"; weather: Weather | null };
 
 export function statusErrorText(error: string): string {
   return error.slice(0, 160);
@@ -20,7 +20,7 @@ export function statusErrorText(error: string): string {
 export function encodeMessage(value: unknown, into: Uint8Array): number {
   const json = JSON.stringify(value);
   if (json === undefined) throw new Error("value is not JSON serializable");
-  const asciiJson = json.replace(/[\u0080-\uffff]/g, character =>
+  const asciiJson = json.replace(/[\u0080-￿]/g, character =>
     `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
   if (asciiJson.length + 1 > into.length) throw new Error("message buffer overflow");
 

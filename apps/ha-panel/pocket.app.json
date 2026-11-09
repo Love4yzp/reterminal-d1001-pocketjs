@@ -6,7 +6,7 @@
   "version": "0.1.0",
   "engine": {
     "capabilities": {
-      "requires": ["input.touch", "runtime.worker", "net.http", "text.glyphs.baked"]
+      "requires": ["input.touch", "runtime.worker", "net.http", "text.glyphs.baked", "system.device", "system.wifi"]
     }
   },
   "app": {
@@ -28,7 +28,7 @@
       "channels": [
         { "name": "ha-config", "kind": "snapshot", "direction": "ui-to-worker", "recordBytes": 512, "capacity": 1 },
         { "name": "ha-commands", "kind": "ring", "direction": "ui-to-worker", "recordBytes": 1024, "capacity": 8 },
-        { "name": "ha-events", "kind": "snapshot", "direction": "worker-to-ui", "recordBytes": 512, "capacity": 1 }
+        { "name": "ha-events", "kind": "ring", "direction": "worker-to-ui", "recordBytes": 512, "capacity": 8 }
       ]
     }
   }

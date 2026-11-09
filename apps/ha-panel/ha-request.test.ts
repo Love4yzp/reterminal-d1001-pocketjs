@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  createApiProbeRequest,
   createGetLightStateRequest,
-  createSensorStateRequests,
+  createGetWeatherRequest,
   createSetLightStateRequest,
+  FIRST_WEATHER_TEMPLATE,
+  parseLightEntity,
 } from "./ha-request";
 import type { HaConfig, HttpRequest } from "./ha-request";
-import type { SensorSample } from "./model";
+import type { LightState } from "./model";
 
 const config: HaConfig = {
   baseUrl: "http://home-assistant.test:8123///",
@@ -30,8 +33,8 @@ describe("HA light requests", () => {
     });
   });
 
-  test("builds turn_on with brightness and RGB derived from hue", () => {
-    const request = createSetLightStateRequest(config, { on: true, brightness: 180, hue: 120 });
+  test("builds turn_on with brightness and RGB derived from hue and saturation", () => {
+    const request = createSetLightStateRequest(config, { on: true, brightness: 180, hue: 120, saturation: 100 });
 
     expect(request.method).toBe("POST");
     expect(request.url).toBe("http://home-assistant.test:8123/api/services/light/turn_on");
@@ -46,8 +49,13 @@ describe("HA light requests", () => {
     });
   });
 
+  test("a low saturation sends a pale color", () => {
+    const request = createSetLightStateRequest(config, { on: true, brightness: 255, hue: 0, saturation: 50 });
+    expect((jsonBody(request) as { rgb_color: number[] }).rgb_color).toEqual([255, 128, 128]);
+  });
+
   test("builds turn_off with only the entity id", () => {
-    const request = createSetLightStateRequest(config, { on: false, brightness: 180, hue: 120 });
+    const request = createSetLightStateRequest(config, { on: false, brightness: 180, hue: 120, saturation: 100 });
 
     expect(request.url).toBe("http://home-assistant.test:8123/api/services/light/turn_off");
     expect(jsonBody(request)).toEqual({ entity_id: "light.mock lamp/1" });
@@ -58,65 +66,54 @@ describe("HA light requests", () => {
     expect(() => createGetLightStateRequest({ token: "test-token", baseUrl: "http://example.test" })).toThrow("lightEntityId");
     expect(() => createSetLightStateRequest(
       { token: "test-token", baseUrl: "http://example.test" },
-      { on: false, brightness: 128, hue: 0 },
+      { on: false, brightness: 128, hue: 0, saturation: 0 },
     )).toThrow("lightEntityId");
   });
 });
 
-describe("HA sensor requests", () => {
-  const sample: SensorSample = {
-    acceleration: { x: 1.25, y: -2.5, z: 9.75 },
-    angularRate: { x: 10, y: -20, z: 30 },
-    chipCelsius: 43.5,
-  };
+describe("HA light entity parsing", () => {
+  const fallback: LightState = { on: false, brightness: 128, hue: 36, saturation: 70 };
 
-  test("creates all seven authenticated numeric state posts in a stable order", () => {
-    const requests = createSensorStateRequests(config, sample);
-
-    expect(requests.map(request => request.url)).toEqual([
-      "http://home-assistant.test:8123/api/states/sensor.d1001_accel_x",
-      "http://home-assistant.test:8123/api/states/sensor.d1001_accel_y",
-      "http://home-assistant.test:8123/api/states/sensor.d1001_accel_z",
-      "http://home-assistant.test:8123/api/states/sensor.d1001_gyro_x",
-      "http://home-assistant.test:8123/api/states/sensor.d1001_gyro_y",
-      "http://home-assistant.test:8123/api/states/sensor.d1001_gyro_z",
-      "http://home-assistant.test:8123/api/states/sensor.d1001_chip_temperature",
-    ]);
-    expect(requests.every(request => request.method === "POST")).toBe(true);
-    expect(requests.every(request => request.headers.Authorization === "Bearer test-token")).toBe(true);
-    expect(requests.every(request => request.headers["Content-Type"] === "application/json")).toBe(true);
-    expect(requests.map(request => (jsonBody(request) as { state: number }).state)).toEqual([
-      1.25, -2.5, 9.75, 10, -20, 30, 43.5,
-    ]);
+  test("reads power, brightness and hs_color", () => {
+    const body = JSON.stringify({ state: "on", attributes: { brightness: 200.4, hs_color: [210.6, 40.2] } });
+    expect(parseLightEntity(body, fallback)).toEqual({ on: true, brightness: 200, hue: 211, saturation: 40 });
   });
 
-  test("adds units, nullable device classes, and friendly names", () => {
-    const requests = createSensorStateRequests(config, sample);
-    const bodies = requests.map(request => jsonBody(request) as {
-      attributes: {
-        unit_of_measurement: string;
-        device_class: string | null;
-        friendly_name: string;
-      };
-    });
+  test("keeps the last color when HA reports an off light without attributes", () => {
+    expect(parseLightEntity(JSON.stringify({ state: "off", attributes: {} }), fallback)).toEqual(fallback);
+  });
 
-    expect(bodies[0]?.attributes).toEqual({
-      unit_of_measurement: "m/s²",
-      device_class: null,
-      friendly_name: "D1001 Acceleration X",
+  test("rejects unavailable entities and bad JSON", () => {
+    expect(parseLightEntity(JSON.stringify({ state: "unavailable" }), fallback)).toBeNull();
+    expect(parseLightEntity("not json", fallback)).toBeNull();
+    expect(parseLightEntity("null", fallback)).toBeNull();
+  });
+});
+
+describe("HA weather requests", () => {
+  test("probes the API root to learn whether HA is reachable", () => {
+    expect(createApiProbeRequest(config)).toEqual({
+      method: "GET",
+      url: "http://home-assistant.test:8123/api/",
+      headers: { Authorization: "Bearer test-token" },
     });
-    expect(bodies[3]?.attributes).toEqual({
-      unit_of_measurement: "°/s",
-      device_class: null,
-      friendly_name: "D1001 Gyroscope X",
+  });
+
+  test("reads a configured weather entity directly", () => {
+    const request = createGetWeatherRequest({ ...config, weatherEntityId: "weather.forecast_home" });
+    expect(request).toEqual({
+      method: "GET",
+      url: "http://home-assistant.test:8123/api/states/weather.forecast_home",
+      headers: { Authorization: "Bearer test-token" },
     });
-    expect(bodies[6]?.attributes).toEqual({
-      unit_of_measurement: "°C",
-      device_class: "temperature",
-      friendly_name: "D1001 Chip Temperature",
-    });
-    for (const body of bodies) {
-      expect(body.attributes.friendly_name.length).toBeGreaterThan(0);
-    }
+  });
+
+  test("otherwise renders the first weather entity through the template API", () => {
+    const request = createGetWeatherRequest(config);
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe("http://home-assistant.test:8123/api/template");
+    expect(jsonBody(request)).toEqual({ template: FIRST_WEATHER_TEMPLATE });
+    expect(FIRST_WEATHER_TEMPLATE).toContain("states.weather | first");
+    expect(FIRST_WEATHER_TEMPLATE).toContain("null");
   });
 });

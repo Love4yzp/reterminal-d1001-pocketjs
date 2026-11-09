@@ -1,10 +1,12 @@
 import { hsvToRgb } from "./color";
-import type { LightState, SensorSample } from "./model";
+import type { LightState } from "./model";
 
 export interface HaConfig {
   baseUrl: string;
   token: string;
   lightEntityId?: string;
+  /** Optional; without it the first weather.* entity on the instance is used. */
+  weatherEntityId?: string;
 }
 
 export interface HttpRequest {
@@ -38,13 +40,25 @@ function postRequest(config: HaConfig, path: string, value: unknown): HttpReques
   };
 }
 
-export function createGetLightStateRequest(config: HaConfig): HttpRequest {
-  const entityId = lightEntityId(config);
+function getStateRequest(config: HaConfig, entityId: string): HttpRequest {
   return {
     method: "GET",
     url: `${normalizedBaseUrl(config)}/api/states/${encodeURIComponent(entityId)}`,
     headers: { Authorization: `Bearer ${config.token}` },
   };
+}
+
+/** GET /api/ answers {"message":"API running."} for any valid token. */
+export function createApiProbeRequest(config: HaConfig): HttpRequest {
+  return {
+    method: "GET",
+    url: `${normalizedBaseUrl(config)}/api/`,
+    headers: { Authorization: `Bearer ${config.token}` },
+  };
+}
+
+export function createGetLightStateRequest(config: HaConfig): HttpRequest {
+  return getStateRequest(config, lightEntityId(config));
 }
 
 export function createSetLightStateRequest(config: HaConfig, light: LightState): HttpRequest {
@@ -54,76 +68,43 @@ export function createSetLightStateRequest(config: HaConfig, light: LightState):
   return postRequest(config, "/api/services/light/turn_on", {
     entity_id: entityId,
     brightness: light.brightness,
-    rgb_color: hsvToRgb(light.hue),
+    rgb_color: hsvToRgb(light.hue, light.saturation / 100),
   });
 }
 
-interface SensorDescriptor {
-  entityId: string;
-  state: number;
-  unit: string;
-  deviceClass: string | null;
-  friendlyName: string;
+/**
+ * Renders the first weather entity in the same JSON shape as /api/states/<id>,
+ * or `null` when the instance has none. /api/template needs an admin token.
+ */
+export const FIRST_WEATHER_TEMPLATE =
+  "{% set w = states.weather | first %}{% if w %}" +
+  "{{ {'entity_id': w.entity_id, 'state': w.state, 'attributes': " +
+  "{'temperature': w.attributes.temperature, 'temperature_unit': w.attributes.temperature_unit}} | tojson }}" +
+  "{% else %}null{% endif %}";
+
+export function createGetWeatherRequest(config: HaConfig): HttpRequest {
+  if (config.weatherEntityId) return getStateRequest(config, config.weatherEntityId);
+  return postRequest(config, "/api/template", { template: FIRST_WEATHER_TEMPLATE });
 }
 
-export function createSensorStateRequests(config: HaConfig, sample: SensorSample): HttpRequest[] {
-  const sensors: SensorDescriptor[] = [
-    {
-      entityId: "sensor.d1001_accel_x",
-      state: sample.acceleration.x,
-      unit: "m/s²",
-      deviceClass: null,
-      friendlyName: "D1001 Acceleration X",
-    },
-    {
-      entityId: "sensor.d1001_accel_y",
-      state: sample.acceleration.y,
-      unit: "m/s²",
-      deviceClass: null,
-      friendlyName: "D1001 Acceleration Y",
-    },
-    {
-      entityId: "sensor.d1001_accel_z",
-      state: sample.acceleration.z,
-      unit: "m/s²",
-      deviceClass: null,
-      friendlyName: "D1001 Acceleration Z",
-    },
-    {
-      entityId: "sensor.d1001_gyro_x",
-      state: sample.angularRate.x,
-      unit: "°/s",
-      deviceClass: null,
-      friendlyName: "D1001 Gyroscope X",
-    },
-    {
-      entityId: "sensor.d1001_gyro_y",
-      state: sample.angularRate.y,
-      unit: "°/s",
-      deviceClass: null,
-      friendlyName: "D1001 Gyroscope Y",
-    },
-    {
-      entityId: "sensor.d1001_gyro_z",
-      state: sample.angularRate.z,
-      unit: "°/s",
-      deviceClass: null,
-      friendlyName: "D1001 Gyroscope Z",
-    },
-    {
-      entityId: "sensor.d1001_chip_temperature",
-      state: sample.chipCelsius,
-      unit: "°C",
-      deviceClass: "temperature",
-      friendlyName: "D1001 Chip Temperature",
-    },
-  ];
-  return sensors.map(sensor => postRequest(config, `/api/states/${sensor.entityId}`, {
-    state: sensor.state,
-    attributes: {
-      unit_of_measurement: sensor.unit,
-      device_class: sensor.deviceClass,
-      friendly_name: sensor.friendlyName,
-    },
-  }));
+/** Reads an HA light entity body; brightness and hs_color fall back when the light is off. */
+export function parseLightEntity(body: string, fallback: LightState): LightState | null {
+  let entity: { state?: unknown; attributes?: { brightness?: unknown; hs_color?: unknown } };
+  try {
+    entity = JSON.parse(body) as typeof entity;
+  } catch {
+    return null;
+  }
+  if (typeof entity !== "object" || entity === null) return null;
+  if (entity.state !== "on" && entity.state !== "off") return null;
+  const attributes = entity.attributes ?? {};
+  const hs = Array.isArray(attributes.hs_color) ? attributes.hs_color : [];
+  const number = (value: unknown, otherwise: number) =>
+    typeof value === "number" && Number.isFinite(value) ? value : otherwise;
+  return {
+    on: entity.state === "on",
+    brightness: Math.round(number(attributes.brightness, fallback.brightness)),
+    hue: Math.round(number(hs[0], fallback.hue)),
+    saturation: Math.round(number(hs[1], fallback.saturation)),
+  };
 }

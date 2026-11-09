@@ -1,11 +1,14 @@
 import { FactKind, io, ResourceStatus, utf8Text } from "@pocketjs/framework/io";
 import { settle, sleep } from "@pocketjs/framework/worker";
 import {
+  createApiProbeRequest,
   createGetLightStateRequest,
-  createSensorStateRequests,
+  createGetWeatherRequest,
   createSetLightStateRequest,
+  parseLightEntity,
   type HttpRequest,
 } from "./ha-request";
+import type { LightState } from "./model";
 import {
   decodeMessage,
   encodeMessage,
@@ -14,17 +17,26 @@ import {
   type WorkerCommand,
   type WorkerEvent,
 } from "./protocol";
+import { parseWeatherEntity } from "./weather";
 
 interface HaResponse {
   code: number;
   body: string;
 }
 
+/** One loop tick is 100 ms. */
+const TICK_MICROS = 100_000;
+const RETRY_TICKS = 20;
+const LIGHT_TICKS = 300;
+const WEATHER_TICKS = 6_000;
+
 let config: PanelHaConfig | undefined;
 let configured = false;
 let connected = false;
 let lastConfig: Uint8Array | undefined;
 let requests = Promise.resolve();
+/** Last known remote light, the fallback for attributes HA omits when off. */
+let remoteLight: LightState = { on: false, brightness: 128, hue: 36, saturation: 70 };
 
 function errorMessage(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
@@ -94,45 +106,45 @@ function configuredConfig(value: PanelHaConfig): boolean {
   return value.baseUrl.length > 0 && value.token.length > 0;
 }
 
-async function readRemoteLight(): Promise<void> {
-  if (!config?.lightEntityId) {
+/** A valid light/API response is required before the UI can show HA as connected. */
+async function connect(): Promise<void> {
+  if (!config) return;
+  if (!config.lightEntityId) {
+    await enqueue(createApiProbeRequest(config));
+    connected = true;
     publishStatus();
     return;
   }
   const response = await enqueue(createGetLightStateRequest(config));
+  const light = parseLightEntity(response.body, remoteLight);
+  if (!light) throw new Error("HA light entity is unavailable or malformed");
+  remoteLight = light;
+  publish({ type: "light", light });
   connected = true;
-  const entity = JSON.parse(response.body) as {
-    state?: unknown;
-    attributes?: { brightness?: unknown; hs_color?: unknown };
-  };
-  const attributes = entity.attributes;
-  const hue = Array.isArray(attributes?.hs_color) && typeof attributes.hs_color[0] === "number"
-    ? attributes.hs_color[0]
-    : 0;
-  publish({
-    type: "light",
-    light: {
-      on: entity.state === "on",
-      brightness: typeof attributes?.brightness === "number" ? attributes.brightness : 128,
-      hue,
-    },
-  });
   publishStatus();
+}
+
+/** Weather is optional: a failure or a missing entity hides it, HA stays connected. */
+async function readWeather(): Promise<void> {
+  if (!config) return;
+  try {
+    const response = await enqueue(createGetWeatherRequest(config));
+    publish({ type: "weather", weather: parseWeatherEntity(response.body) });
+  } catch (error) {
+    publish({ type: "weather", weather: null });
+    console.warn(`[ha-panel] HA weather unavailable: ${errorMessage(error)}`);
+  }
 }
 
 async function handleCommand(command: WorkerCommand): Promise<void> {
   if (!config || !configured) return;
-  if (command.type === "light") {
-    const response = await enqueue(createSetLightStateRequest(config, command.light));
-    connected = response.code >= 200 && response.code < 400;
+  await enqueue(createSetLightStateRequest(config, command.light));
+  remoteLight = command.light;
+  publish({ type: "light", light: remoteLight });
+  if (!connected) {
+    connected = true;
     publishStatus();
-    return;
   }
-  const reports = createSensorStateRequests(config, command.sample);
-  for (const report of reports) await enqueue(report);
-  connected = true;
-  console.log(`[ha-panel] reported ${reports.length} sensor states`);
-  publishStatus();
 }
 
 async function commandLoop(): Promise<void> {
@@ -157,7 +169,9 @@ function sameBytes(left: Uint8Array, right: Uint8Array | undefined): boolean {
 async function run(): Promise<void> {
   void commandLoop();
   let retryDelay = 0;
-  let remoteReadActive = false;
+  let lightDelay = 0;
+  let weatherDelay = 0;
+  let busy = false;
   for (;;) {
     const bytes = io.channel("ha-config").snapshot();
     if (bytes && !sameBytes(bytes, lastConfig)) {
@@ -167,6 +181,8 @@ async function run(): Promise<void> {
         configured = configuredConfig(config);
         connected = false;
         retryDelay = 0;
+        lightDelay = 0;
+        weatherDelay = 0;
         publishStatus();
       } catch (error) {
         configured = false;
@@ -176,20 +192,37 @@ async function run(): Promise<void> {
       }
     }
     if (retryDelay > 0) retryDelay -= 1;
-    if (configured && config?.lightEntityId && !connected && retryDelay === 0 && !remoteReadActive) {
-      remoteReadActive = true;
-      try {
-        await readRemoteLight();
-      } catch (error) {
-        connected = false;
-        retryDelay = 20;
-        publishStatus(errorMessage(error));
-        console.error(`[ha-panel] HA state read failed: ${errorMessage(error)}`);
-      } finally {
-        remoteReadActive = false;
+    if (lightDelay > 0) lightDelay -= 1;
+    if (weatherDelay > 0) weatherDelay -= 1;
+    if (configured && !busy) {
+      const reconnect = !connected && retryDelay === 0;
+      const refresh = connected && lightDelay === 0;
+      if (reconnect || refresh) {
+        busy = true;
+        try {
+          await connect();
+          lightDelay = LIGHT_TICKS;
+          if (reconnect) weatherDelay = 0;
+        } catch (error) {
+          connected = false;
+          retryDelay = RETRY_TICKS;
+          publishStatus(errorMessage(error));
+          console.error(`[ha-panel] HA connect failed: ${errorMessage(error)}`);
+        } finally {
+          busy = false;
+        }
+      }
+      if (connected && weatherDelay === 0) {
+        busy = true;
+        weatherDelay = WEATHER_TICKS;
+        try {
+          await readWeather();
+        } finally {
+          busy = false;
+        }
       }
     }
-    await sleep(100_000);
+    await sleep(TICK_MICROS);
   }
 }
 

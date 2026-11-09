@@ -1,19 +1,30 @@
-import type { SensorSample, Vector3 } from "./model";
+import { deviceStatus, setBrightness } from "@pocketjs/framework/device";
+import { wifiStatus } from "@pocketjs/framework/wifi";
 import type { PanelHaConfig } from "./protocol";
+import type { ScreenOffNative } from "./settings";
 
-interface D1001Native {
+/** `globalThis.d1001`, installed by programs/reterminal-d1001 (pocket_d1001). */
+interface D1001Native extends ScreenOffNative {
   readRtc(): number;
   utcOffsetMinutes(): number;
   syncClock(): string;
-  readSensors(): string;
   setRgb(red: number, green: number, blue: number): boolean;
   haConfig(): unknown;
+  /** Not installed yet: esp_app_get_description()->version. */
+  firmwareVersion?(): string;
 }
 
 export type ClockSyncState = "offline" | "pending" | "synchronized" | "error";
 
+export const NOT_CONNECTED_TEXT = "未连接";
+export const UNKNOWN_TEXT = "未知";
+
 function native(): D1001Native | undefined {
   return (globalThis as typeof globalThis & { d1001?: D1001Native }).d1001;
+}
+
+export function screenOffNative(): ScreenOffNative | undefined {
+  return native();
 }
 
 export function readRtcSeconds(): number | null {
@@ -31,45 +42,65 @@ export function syncNativeClock(): ClockSyncState {
   return value === "pending" || value === "synchronized" || value === "offline" ? value : "error";
 }
 
-function vector(value: unknown): Vector3 | null {
-  if (typeof value !== "object" || value === null) return null;
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate.x === "number" && Number.isFinite(candidate.x) &&
-    typeof candidate.y === "number" && Number.isFinite(candidate.y) &&
-    typeof candidate.z === "number" && Number.isFinite(candidate.z)
-    ? { x: candidate.x, y: candidate.y, z: candidate.z }
-    : null;
-}
-
-export function readNativeSensors(): SensorSample | null {
-  const binding = native();
-  if (!binding) return null;
-  try {
-    const value = JSON.parse(binding.readSensors()) as Record<string, unknown>;
-    if (value.available !== true) return null;
-    const acceleration = vector(value.acceleration);
-    const angularRate = vector(value.angularRate);
-    if (!acceleration || !angularRate || typeof value.chipCelsius !== "number" ||
-        !Number.isFinite(value.chipCelsius)) return null;
-    return { acceleration, angularRate, chipCelsius: value.chipCelsius };
-  } catch {
-    return null;
-  }
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 export function readHaConfig(): PanelHaConfig {
   const value = native()?.haConfig();
   if (typeof value !== "object" || value === null)
-    return { baseUrl: "", token: "", lightEntityId: "", selftest: false };
+    return { baseUrl: "", token: "", lightEntityId: "", weatherEntityId: "", selftest: false };
   const candidate = value as Record<string, unknown>;
   return {
-    baseUrl: typeof candidate.baseUrl === "string" ? candidate.baseUrl : "",
-    token: typeof candidate.token === "string" ? candidate.token : "",
-    lightEntityId: typeof candidate.lightEntityId === "string" ? candidate.lightEntityId : "",
+    baseUrl: text(candidate.baseUrl),
+    token: text(candidate.token),
+    lightEntityId: text(candidate.lightEntityId),
+    weatherEntityId: text(candidate.weatherEntityId),
     selftest: candidate.selftest === true,
   };
 }
 
 export function setNativeRgb(color: readonly [number, number, number]): boolean {
   return native()?.setRgb(...color) ?? false;
+}
+
+/** The firmware image version, or 未知 until the binding exists. */
+export function readFirmwareVersion(): string {
+  try {
+    const version = native()?.firmwareVersion?.();
+    return typeof version === "string" && version.length > 0 ? version : UNKNOWN_TEXT;
+  } catch {
+    return UNKNOWN_TEXT;
+  }
+}
+
+export interface NetworkInfo {
+  connected: boolean;
+  /** SSID when connected, otherwise 未连接. */
+  ssid: string;
+  /** IPv4 address when connected, otherwise 未连接. */
+  address: string;
+  /** 0..3 bars. */
+  strength: number;
+}
+
+export function readNetwork(): NetworkInfo {
+  const status = wifiStatus();
+  const connected = status?.state === "connected" && status.ssid.length > 0;
+  return {
+    connected,
+    ssid: connected ? status!.ssid : NOT_CONNECTED_TEXT,
+    address: connected && status!.address ? status!.address : NOT_CONNECTED_TEXT,
+    strength: connected ? Math.max(0, Math.min(3, Math.round(status!.strength))) : 0,
+  };
+}
+
+/** Backlight percent, or null when the host has no device module. */
+export function readBacklight(): number | null {
+  const brightness = deviceStatus()?.display?.brightness;
+  return typeof brightness === "number" && Number.isFinite(brightness) ? brightness : null;
+}
+
+export function writeBacklight(percent: number): boolean {
+  return setBrightness(percent);
 }
