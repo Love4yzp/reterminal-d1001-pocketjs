@@ -402,7 +402,7 @@ typedef struct {
 static void select_package_task(void *context) {
   package_selection_work *work = context;
   d1001_package_release(&work->host->package);
-  d1001_package_select(&work->host->package);
+  d1001_package_select_for(&work->host->package, work->host->landscape);
   xSemaphoreGive(work->done);
   vTaskDelete(NULL);
 }
@@ -438,11 +438,23 @@ static void run_app(void *context) {
   for (;;) {
     (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));
     if (host.rotate_pending) {
-      const bool landscape = host.rotate_landscape;
+      bool landscape = host.rotate_landscape;
       host.rotate_pending = false;
       stop_guest(&host);
       host.landscape = landscape;
       d1001_screen_set_landscape(d1001_screen_get(), landscape);
+      /* Partition mmap/unmap disables flash caches, so it must run on an
+       * internal-stack task rather than the PSRAM-backed runtime task. */
+      select_package_internal(&host);
+      if (landscape && !host.package.external) {
+        /* The embedded fallback is portrait-only. Refuse to boot a 640x400
+         * runtime against a 400x640 package; keep the panel usable instead. */
+        ESP_LOGW(TAG, "landscape needs an installed package; staying portrait");
+        landscape = false;
+        host.landscape = false;
+        d1001_screen_set_landscape(d1001_screen_get(), false);
+        select_package_internal(&host);
+      }
       /* Keep the last frame while the new runtime compiles and presents; a
        * black clear here reads as a flash between orientations. */
       create_display(&host);
