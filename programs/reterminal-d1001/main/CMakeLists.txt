@@ -29,5 +29,5 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 pocketjs_compile_app(
     TARGET ${COMPONENT_LIB}
     NAME app
-    MANIFEST "../../../apps/worker-http/pocket.app.json"
+    MANIFEST "../../../apps/factory-d1001/pocket.app.json"
     HOST_CONFIG "../pocket.host.config.ts")

@@ -23,7 +23,7 @@ idf.py -C programs/reterminal-d1001 build
 
 An existing `programs/reterminal-d1001/sdkconfig` is loaded after `SDKCONFIG_DEFAULTS` and overrides values from `sdkconfig.local`. After changing local settings, move the existing file aside before rebuilding, for example `mv programs/reterminal-d1001/sdkconfig .pocket-build/sdkconfig.previous`. Both locations are ignored by Git.
 
-The embedded application is `apps/worker-http`; `apps/system-test`, `apps/input-test` and `apps/hello-d1001` remain system, input and minimal development-loop examples. The selected app is compiled with `pocketjs_compile_app`. `partitions.csv` assigns 5 MiB to `factory` and 7 MiB to `apps` at 0x510000. `storage` remains at 0xc10000 with size 0x3f0000.
+The embedded application is `apps/factory-d1001`, a self-contained portrait/landscape factory demo. `apps/worker-http`, `apps/system-test`, `apps/input-test` and `apps/hello-d1001` remain worker, system, input and minimal development-loop examples and can be pushed over it. The selected app is compiled with `pocketjs_compile_app`. `partitions.csv` assigns 5 MiB to `factory` and 7 MiB to `apps` at 0x510000. `storage` remains at 0xc10000 with size 0x3f0000.
 
 ## Partition migration
 
@@ -90,6 +90,20 @@ bun run app:push apps/worker-http
 ```
 
 The app starts a worker with one `http` node, GETs Home Assistant at `http://192.168.77.126:8123/` and retries every five seconds until the STA is online. HTTP status, body bytes and errors are sent to the UI through the `progress` channel and printed to serial.
+
+## Factory demo
+
+```sh
+bun test apps/factory-d1001/orientation.test.ts
+bun run app:push apps/factory-d1001
+```
+
+The app is embedded as the factory fallback and has no network or worker
+dependency. Its portrait screen is native PocketJS UI; its landscape screen is
+a 640x400 canvas turned inside the 400x640 raster, with the typography baked
+into a power-of-two background texture. The green on-screen button and the
+GPIO3/CIRCLE side button cycle portrait, clockwise landscape and
+counter-clockwise landscape. See `apps/factory-d1001/README.md`.
 
 ## HA panel
 
