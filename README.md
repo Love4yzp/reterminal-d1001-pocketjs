@@ -94,11 +94,11 @@ The app starts a worker with one `http` node, GETs Home Assistant at `http://192
 ## HA panel
 
 ```sh
-bun test apps/ha-panel
+bun test apps/ha-panel tools/partitions.test.ts
 bun run app:push apps/ha-panel --wifi <device-ip>
 ```
 
-The panel provides clock/weather/light/IMU cards and virtual, onboard and HA light adapters. HA is disabled without local configuration. See `apps/ha-panel/README.md` for Kconfig settings, RTC/SNTP, sensor units and the authenticated local mock server.
+The panel provides home, light-list, dimmer and settings screens with virtual, onboard and HA light adapters. Live HA weather appears when an entity is available; there are no IMU or demonstration-weather cards. HA is disabled without local configuration. See `apps/ha-panel/README.md` for Kconfig settings, RTC/SNTP, host previews and the authenticated local mock server.
 
 ## Development Wi-Fi hot push
 
