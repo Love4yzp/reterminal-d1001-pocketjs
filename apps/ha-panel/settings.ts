@@ -1,6 +1,5 @@
 // Settings page state. The backlight goes through the framework device
-// binding; auto screen-off is kept here behind ScreenOffControl until the
-// native timer lands (d1001.setScreenOffSeconds on another branch).
+// binding; auto screen-off goes through the native input state machine.
 
 export const SCREEN_OFF_OPTIONS: readonly { seconds: number; label: string }[] = [
   { seconds: 30, label: "30 秒" },
@@ -53,15 +52,14 @@ export function reduceSettings(state: SettingsState, action: SettingsAction): Se
   }
 }
 
-/** Where a chosen screen-off timeout goes. The native side is not built yet. */
 export interface ScreenOffControl {
-  /** True when the device applied the timeout; false means app state only. */
+  /** True when the native state machine accepted the timeout. */
   apply(seconds: number): boolean;
 }
 
-/** Optional native hook; 0 means never turn the screen off. */
+/** Native timer hook; 0 means never turn the screen off. */
 export interface ScreenOffNative {
-  setScreenOffSeconds?(seconds: number): boolean;
+  setScreenOffSeconds(seconds: number): boolean;
 }
 
 export function createScreenOffControl(native: ScreenOffNative | undefined): ScreenOffControl {

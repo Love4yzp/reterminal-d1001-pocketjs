@@ -6,7 +6,7 @@
   "version": "0.1.0",
   "engine": {
     "capabilities": {
-      "requires": ["input.touch", "runtime.worker", "net.http", "text.glyphs.baked", "system.device", "system.wifi"]
+      "requires": ["input.touch", "input.buttons", "runtime.worker", "net.http", "text.glyphs.baked", "system.device", "system.wifi"]
     }
   },
   "app": {
@@ -16,7 +16,7 @@
     "tickHz": 30,
     "viewport": {
       "fixed": {
-        "logical": [400, 640],
+        "logical": [[400, 640], [640, 400]],
         "presentation": "native"
       }
     }

@@ -26,6 +26,7 @@
 #include "pocket/http_esp.h"
 #include "pocket/package_source.h"
 #include "pocket/runner.h"
+#include "pocket/screen_geometry.h"
 #include "pocket/worker_esp.h"
 #include "pocket/worker_ui.h"
 #include "pocket_quickjs_abi.h"
@@ -36,11 +37,7 @@
 #include "pocketjs/esp32p4_ppa_status.h"
 #include "pocketjs_package_app.h"
 
-#define D1001_RASTER_WIDTH 800U
-#define D1001_RASTER_HEIGHT 1280U
 #define D1001_PRESENT_SCALE 1U
-#define D1001_STRIP_ROWS 40U
-#define D1001_STRIP_BYTES (D1001_RASTER_WIDTH * D1001_STRIP_ROWS * 2U)
 #define D1001_GUEST_HEAP (8U * 1024U * 1024U)
 #define D1001_GUEST_STACK (192U * 1024U)
 #define D1001_GUEST_STACK_LIMIT (144U * 1024U)
@@ -55,6 +52,11 @@ typedef struct {
   pocketjs_esp32p4_ppa_t *ppa[2];
   pocketjs_esp32p4_ppa_lanes_t *lanes;
   pocket_display_esp_dpi *display;
+  async_memcpy_handle_t copy;
+  size_t strip_bytes;
+  bool landscape;
+  volatile bool rotate_pending;
+  volatile bool rotate_landscape;
   pocket_runner_t *runner;
   pocket_http_esp *http;
   pocket_worker_node http_node;
@@ -74,6 +76,41 @@ static void require_status(int32_t status) {
   assert(status == POCKET_STATUS_OK);
 }
 
+static void create_display(d1001_host *host) {
+  const uint32_t width = d1001_screen_raster_width(host->landscape);
+  const uint32_t height = d1001_screen_raster_height(host->landscape);
+  const uint32_t strip_rows = d1001_screen_strip_rows(host->landscape);
+  host->strip_bytes = (size_t)width * strip_rows * 2U;
+  const pocket_display_esp_dpi_config display_config = {
+      .struct_size = sizeof(display_config),
+      .framebuffer = host->board.framebuffer,
+      .panel_width = D1001_PANEL_WIDTH,
+      .panel_height = D1001_PANEL_HEIGHT,
+      .role = POCKET_DISPLAY_ROLE_PRIMARY,
+      .width = width,
+      .height = height,
+      .turned = host->landscape,
+      .scale = D1001_PRESENT_SCALE,
+      .origin_x = 0,
+      .origin_y = 0,
+      .strip_rows = strip_rows,
+      .row_alignment = 4,
+      .frame_buffer_budget = 2U * host->strip_bytes,
+      .copy = host->copy,
+      .move_copy = host->copy,
+  };
+  host->display = pocket_display_esp_dpi_create(&display_config);
+  assert(host->display != NULL);
+  assert(pocket_display_esp_dpi_buffer_bytes(host->display) ==
+         2U * host->strip_bytes);
+  assert(2U * host->strip_bytes <= 128U * 1024U);
+  ESP_LOGI(TAG, "raster %ux%u, logical %ux%u at density 2, strips 2 x %u bytes",
+           (unsigned)width, (unsigned)height,
+           (unsigned)d1001_screen_logical_width(host->landscape),
+           (unsigned)d1001_screen_logical_height(host->landscape),
+           (unsigned)host->strip_bytes);
+}
+
 static void start_display(d1001_host *host) {
   ESP_ERROR_CHECK(d1001_board_init(&host->board));
   const size_t frame_bytes =
@@ -84,36 +121,11 @@ static void start_display(d1001_host *host) {
   ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(host->board.panel, true));
   ESP_ERROR_CHECK(d1001_board_backlight_set(100));
 
-  async_memcpy_handle_t copy = NULL;
   async_memcpy_config_t copy_config = ASYNC_MEMCPY_DEFAULT_CONFIG();
   copy_config.backlog = 12;
   copy_config.dma_burst_size = 64;
-  ESP_ERROR_CHECK(esp_async_memcpy_install_gdma_axi(&copy_config, &copy));
-
-  const pocket_display_esp_dpi_config display_config = {
-      .struct_size = sizeof(display_config),
-      .framebuffer = host->board.framebuffer,
-      .panel_width = D1001_PANEL_WIDTH,
-      .panel_height = D1001_PANEL_HEIGHT,
-      .role = POCKET_DISPLAY_ROLE_PRIMARY,
-      .width = D1001_RASTER_WIDTH,
-      .height = D1001_RASTER_HEIGHT,
-      .turned = false,
-      .scale = D1001_PRESENT_SCALE,
-      .origin_x = 0,
-      .origin_y = 0,
-      .strip_rows = D1001_STRIP_ROWS,
-      .row_alignment = 4,
-      .frame_buffer_budget = 2U * D1001_STRIP_BYTES,
-      .copy = copy,
-      .move_copy = copy,
-  };
-  host->display = pocket_display_esp_dpi_create(&display_config);
-  assert(host->display != NULL);
-  assert(pocket_display_esp_dpi_buffer_bytes(host->display) ==
-         2U * D1001_STRIP_BYTES);
-  ESP_LOGI(TAG, "raster 800x1280, logical 400x640 at density 2, strips 2 x %u bytes",
-           (unsigned)D1001_STRIP_BYTES);
+  ESP_ERROR_CHECK(esp_async_memcpy_install_gdma_axi(&copy_config, &host->copy));
+  create_display(host);
 }
 
 static bool network_online(void *context) {
@@ -148,13 +160,20 @@ static void before_tick(void *context) {
     assert(pocket_worker_ui_latch(host->worker_ui) == POCKET_WORKER_OK);
 }
 
+static void rotation_requested(void *context, bool landscape) {
+  d1001_host *host = context;
+  host->rotate_landscape = landscape;
+  host->rotate_pending = true;
+  xTaskNotifyGive(host->app_task);
+}
+
 static void start_guest(d1001_host *host) {
   pocket_runtime_config config = {
       .struct_size = sizeof(config),
       .host_abi = pocket_profile.host_abi,
       .tick_hz = pocket_profile.tick_hz,
       .heap_limit = D1001_GUEST_HEAP,
-      .frame_buffer_budget = 2U * D1001_STRIP_BYTES,
+      .frame_buffer_budget = 2U * host->strip_bytes,
       .profile = pocket_profile.facts,
   };
   memcpy(config.profile_hash, pocket_profile.profile_hash, 32);
@@ -174,6 +193,8 @@ static void start_guest(d1001_host *host) {
   require_status(pocket_runtime_set_package_source(
       host->runtime, pocket_memory_package_vtable(), &host->package.source));
   ESP_ERROR_CHECK(d1001_inputs_init(&host->board, host->runtime, &host->inputs));
+  d1001_screen_set_rotation_callback(host->inputs.screen, rotation_requested,
+                                     host);
 
   JSContext *realm = pocket_guest_idf_context(host->guest);
   const uint32_t features = host->package.facts.features;
@@ -224,7 +245,7 @@ static void start_guest(d1001_host *host) {
       .min_fill_pixels = 1024,
       .min_blend_pixels = 256,
       .min_srm_pixels = 256,
-      .mask_budget = D1001_STRIP_BYTES / 2U,
+      .mask_budget = host->strip_bytes / 2U,
   };
   for (size_t i = 0; i < 2U; ++i) {
     ESP_ERROR_CHECK(pocketjs_esp32p4_ppa_create(&host->ppa[i]));
@@ -298,12 +319,9 @@ static void stop_guest(d1001_host *host) {
   }
   memset(host->renderers, 0, sizeof host->renderers);
   memset(host->ppa, 0, sizeof host->ppa);
-  if (host->inputs.touch != NULL)
-    pocket_input_touch_destroy(host->inputs.touch);
-  if (host->inputs.button != NULL)
-    pocket_input_gpio_destroy(host->inputs.button);
   memset(&host->inputs, 0, sizeof host->inputs);
-  pocket_display_esp_dpi_invalidate(host->display);
+  pocket_display_esp_dpi_destroy(host->display);
+  host->display = NULL;
 }
 
 static void select_package_internal(d1001_host *host);
@@ -419,6 +437,22 @@ static void run_app(void *context) {
   int64_t logged = esp_timer_get_time();
   for (;;) {
     (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));
+    if (host.rotate_pending) {
+      const bool landscape = host.rotate_landscape;
+      host.rotate_pending = false;
+      stop_guest(&host);
+      host.landscape = landscape;
+      d1001_screen_set_landscape(d1001_screen_get(), landscape);
+      /* Keep the last frame while the new runtime compiles and presents; a
+       * black clear here reads as a flash between orientations. */
+      create_display(&host);
+      start_guest(&host);
+      last = (pocket_runner_stats_t){.struct_size = sizeof(last)};
+      logged = esp_timer_get_time();
+      sample_pending = true;
+      ESP_LOGI(TAG, "runtime rotated without chip reset");
+      continue;
+    }
     if (host.hot_operation != 0U) {
       const uint32_t operation = host.hot_operation;
       if (operation == 1U) {
@@ -430,6 +464,7 @@ static void run_app(void *context) {
           ESP_ERROR_CHECK(d1001_fs_init(host.package.facts.slot));
         if ((host.package.facts.features & POCKET_IDF_FEATURE_DEVICE) != 0U)
           ESP_ERROR_CHECK(pocket_device_setup());
+        create_display(&host);
         start_guest(&host);
         last = (pocket_runner_stats_t){.struct_size = sizeof(last)};
         logged = esp_timer_get_time();

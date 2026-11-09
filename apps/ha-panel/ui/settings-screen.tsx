@@ -18,6 +18,7 @@ interface SettingsProps {
   firmwareVersion: string;
   onSettings(action: SettingsAction): void;
   onNav(event: NavEvent): void;
+  onRotate(): void;
 }
 
 function SectionLabel(props: { top: number; children: string }) {
@@ -33,6 +34,13 @@ export function SettingsScreen(props: SettingsProps) {
   return (
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: 400, height: 640 }}>
       <Text class="absolute text-lg font-bold" style={{ insetL: 20, insetT: 14, width: 200, textColor: theme.text }}>设置</Text>
+      <Pressable
+        box={{ left: 312, top: 12, width: 72, height: 28 }}
+        style={{ radius: 14, bgColor: theme.secondaryBackground }}
+        onTap={props.onRotate}
+      >
+        <Text class="absolute text-xs text-center font-bold" style={{ insetL: 0, insetT: 7, width: 72, textColor: theme.text }}>横屏</Text>
+      </Pressable>
       <SectionLabel top={48}>屏幕</SectionLabel>
       <View class="absolute" style={{ insetL: 16, insetT: 74, width: 368, height: 160, radius: 12, bgColor: theme.card }}>
         <Text class="absolute text-sm" style={{ insetL: 14, insetT: 18, width: 60, textColor: theme.text }}>亮度</Text>

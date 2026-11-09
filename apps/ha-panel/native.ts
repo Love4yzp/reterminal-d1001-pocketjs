@@ -10,8 +10,11 @@ interface D1001Native extends ScreenOffNative {
   syncClock(): string;
   setRgb(red: number, green: number, blue: number): boolean;
   haConfig(): unknown;
-  /** Not installed yet: esp_app_get_description()->version. */
-  firmwareVersion?(): string;
+  firmwareVersion(): string;
+  landscape(): boolean;
+  setLandscape(landscape: boolean): boolean;
+  savePanelState(json: string): boolean;
+  takePanelState(): string;
 }
 
 export type ClockSyncState = "offline" | "pending" | "synchronized" | "error";
@@ -25,6 +28,25 @@ function native(): D1001Native | undefined {
 
 export function screenOffNative(): ScreenOffNative | undefined {
   return native();
+}
+
+export function readLandscape(): boolean {
+  return native()?.landscape() === true;
+}
+
+export function requestLandscape(landscape: boolean): boolean {
+  return native()?.setLandscape(landscape) === true;
+}
+
+/** Keep the UI session across the native orientation restart. */
+export function savePanelState(json: string): boolean {
+  return native()?.savePanelState(json) === true;
+}
+
+/** Read and clear the native session snapshot; empty when none is pending. */
+export function takePanelState(): string {
+  const value = native()?.takePanelState();
+  return typeof value === "string" ? value : "";
 }
 
 export function readRtcSeconds(): number | null {
@@ -64,10 +86,10 @@ export function setNativeRgb(color: readonly [number, number, number]): boolean 
   return native()?.setRgb(...color) ?? false;
 }
 
-/** The firmware image version, or 未知 until the binding exists. */
+/** The running ESP-IDF image version, or 未知 when unavailable. */
 export function readFirmwareVersion(): string {
   try {
-    const version = native()?.firmwareVersion?.();
+    const version = native()?.firmwareVersion();
     return typeof version === "string" && version.length > 0 ? version : UNKNOWN_TEXT;
   } catch {
     return UNKNOWN_TEXT;

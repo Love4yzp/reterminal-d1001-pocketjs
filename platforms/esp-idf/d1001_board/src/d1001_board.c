@@ -26,6 +26,7 @@
 
 static const char *TAG = "d1001_board";
 static esp_ldo_channel_handle_t dsi_ldo;
+static uint32_t backlight_percent;
 
 static esp_err_t init_i2c(i2c_master_bus_handle_t *touch_bus,
                           i2c_master_bus_handle_t *system_bus) {
@@ -158,7 +159,12 @@ esp_err_t d1001_board_backlight_set(uint32_t percent) {
       ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty), TAG, "brightness");
   ESP_RETURN_ON_ERROR(
       ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0), TAG, "apply brightness");
+  backlight_percent = percent;
   return ESP_OK;
+}
+
+uint32_t d1001_board_backlight_get(void) {
+  return backlight_percent;
 }
 
 esp_err_t d1001_board_rgb_set_color(uint8_t red, uint8_t green, uint8_t blue) {

@@ -5,7 +5,7 @@
   "form": "takeover",
   "cadences": [30],
   "display": {
-    "logicalViewports": [[400, 640]],
+    "logicalViewports": [[400, 640], [640, 400]],
     "presentations": ["native"],
     "rasterDensity": 2,
     "animation": "repaint"

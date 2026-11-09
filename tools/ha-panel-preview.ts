@@ -16,8 +16,8 @@ const args = process.argv.slice(2);
 const flag = (name: string) => args.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
 const buildDirectory = resolve(root, ".pocket-build/preview/ha-panel");
 const outDirectory = resolve(flag("out") ?? join(root, ".pocket-build/validation/dashboard", new Date().toISOString().replace(/[:.]/g, "-")));
-const WIDTH = 400;
-const HEIGHT = 640;
+const WIDTH = args.includes("--landscape") ? 640 : 400;
+const HEIGHT = args.includes("--landscape") ? 400 : 640;
 const DENSITY = 2;
 
 function wasmPath(): string {
@@ -49,6 +49,7 @@ export interface Shot { name: string; tape: readonly { frames: number; touch: To
 function installNativeStubs(options: { haConfigured: boolean }) {
   const g = globalThis as any;
   let rgb = [0, 0, 0];
+  let session = "";
   g.d1001 = {
     readRtc: () => Date.UTC(2026, 10, 8, 6, 32, 0) / 1000,
     utcOffsetMinutes: () => 480,
@@ -58,6 +59,11 @@ function installNativeStubs(options: { haConfigured: boolean }) {
       ? { baseUrl: "http://ha.local:8123", token: "preview", lightEntityId: "light.living_room", selftest: false }
       : { baseUrl: "", token: "", lightEntityId: "", selftest: false },
     firmwareVersion: () => "host-preview",
+    setScreenOffSeconds: () => true,
+    landscape: () => args.includes("--landscape"),
+    setLandscape: () => true,
+    savePanelState: (json: string) => { session = json; return true; },
+    takePanelState: () => { const value = session; session = ""; return value; },
   };
   g.wifi = {
     status: () => JSON.stringify({ state: "connected", ssid: "Home-5G", strength: 3, address: "192.168.1.42", saved: [], error: "", scanning: false, networks: [] }),
@@ -140,8 +146,9 @@ export const gestures = { tap, hold, drag };
 if (import.meta.main) {
   if (!args.includes("--no-build")) compile();
   mkdirSync(outDirectory, { recursive: true });
-  const { SHOTS } = await import("./ha-panel-preview-shots.ts");
-  await run(SHOTS.connected, { haConfigured: true, weather: true, prefix: "" });
-  await run(SHOTS.offline, { haConfigured: false, weather: false, prefix: "offline-" });
-  await run(SHOTS.noWeather, { haConfigured: true, weather: false, prefix: "no-weather-" });
+  const { SHOTS, LANDSCAPE_SHOTS } = await import("./ha-panel-preview-shots.ts");
+  const shots = args.includes("--landscape") ? LANDSCAPE_SHOTS : SHOTS;
+  await run(shots.connected, { haConfigured: true, weather: true, prefix: "" });
+  await run(shots.offline, { haConfigured: false, weather: false, prefix: "offline-" });
+  await run(shots.noWeather, { haConfigured: true, weather: false, prefix: "no-weather-" });
 }
