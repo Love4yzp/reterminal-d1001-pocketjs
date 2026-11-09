@@ -1,14 +1,16 @@
 # D1001 Home Assistant panel
 
-A 400x640 logical, density-2 portrait dashboard. It has a tiled home screen, a light list, a touch dimmer, settings, and a clearly marked provisioning placeholder. Weather appears only when a live HA weather entity is available. The app has no IMU card, tilt readout, chip-temperature card, or demonstration weather.
+A density-2 dashboard with a 400x640 portrait layout and a genuinely rearranged 640x400 landscape layout. Landscape uses left navigation, four-column home tiles, two-column lights and settings, and a horizontal dimmer control area; its settings page includes 返回竖屏. Weather appears only when a live HA weather entity is available. The app has no IMU card, tilt readout, chip-temperature card, or demonstration weather.
 
 ## Run and test
 
 From the repository root:
 
 ```sh
-bun test apps/ha-panel tools/partitions.test.ts
+bun test apps/ha-panel tools/screen-state.test.ts tools/partitions.test.ts
 bun tools/ha-panel-fonts.ts --check
+bun run pocket check --manifest apps/ha-panel/pocket.app.json \
+  --host-config programs/reterminal-d1001/pocket.host.config.ts
 bun run app:push apps/ha-panel --wifi <device-ip>
 ```
 
@@ -18,13 +20,14 @@ The two virtual lamps and the onboard RGB lamp share `LightState`. The HA lamp r
 
 ## Host preview
 
-The preview compiles the real app, boots it in the PocketJS WASM core, replays touch gestures, and writes 800x1280 PNGs. It uses fixed native fixtures and does not access a device, serial port, or network.
+The preview compiles the real app, boots it in the PocketJS WASM core, replays touch gestures, and writes 800x1280 portrait PNGs or 1280x800 landscape PNGs. It uses fixed native fixtures and does not access a device, serial port, or network.
 
 ```sh
 bun tools/ha-panel-preview.ts --wasm=/path/to/pocketjs.wasm
+bun tools/ha-panel-preview.ts --landscape --wasm=/path/to/pocketjs.wasm
 ```
 
-Use `--no-build` to reuse the package in `.pocket-build/preview/ha-panel`, and `--out=<dir>` to choose the screenshot directory. The default is a new ignored directory under `.pocket-build/validation/dashboard/`. `tools/ha-panel-preview-shots.ts` defines connected, offline, no-weather, navigation, scene, dimmer, and settings interactions.
+Use `--no-build` to reuse the package in `.pocket-build/preview/ha-panel`, and `--out=<dir>` to choose the screenshot directory. The default is a new ignored directory under `.pocket-build/validation/dashboard/`. `tools/ha-panel-preview-shots.ts` defines portrait and landscape connected, offline, no-weather, navigation, scene, dimmer, and settings interactions.
 
 `tools/ha-panel-assets.py` generates the icons, display numerals, QR placeholder, and dimmer corner mask. Regenerate them through mise-managed uv:
 
@@ -50,7 +53,7 @@ The worker reads the configured HA light and uses the HA template API to discove
 
 `D1001_SNTP_SERVER` defaults to `pool.ntp.org`. The PCF8563 stores UTC. When the station is online, the panel starts SNTP and writes a successful synchronization back to the RTC. `D1001_TIMEZONE` accepts a POSIX TZ value and defaults to `CST-8`; the clock and settings display the resulting UTC offset without altering the stored RTC epoch.
 
-The backlight slider calls the existing framework device binding. Auto screen-off choices remain in application state and pass through `ScreenOffControl`; `d1001.setScreenOffSeconds(seconds)` is the optional native hook, with `0` meaning never. The about row calls optional `d1001.firmwareVersion()` and displays `未知` when that build-info binding is unavailable. Wi-Fi and HA provisioning currently open a placeholder only; softAP, a real QR payload, and the configuration web page are not implemented.
+The backlight slider calls the existing framework device binding. Auto screen-off choices pass through `ScreenOffControl` to `d1001.setScreenOffSeconds(seconds)`; 30/60/300-second choices and `0` (never) run in the native input task. Touch/button activity resets the timer, waking restores the previous nonzero brightness, and a wake contact is swallowed until release. A GPIO3 short press (after the 350 ms double-click window) and the portrait settings `横屏` button, or the landscape `返回竖屏` button, call `d1001.setLandscape()`; the runtime restarts with synchronized display/touch orientation and `d1001.landscape()` selects the rearranged UI at boot. Before the restart the app writes its lights, current route and screen timeout with `d1001.savePanelState()`; the new realm consumes that snapshot with `d1001.takePanelState()`, so the same tab, dimmer light and local state return. Native Wi-Fi/HA configuration is read again by the worker. The manifest requires `input.buttons` so the GPIO3/CIRCLE stream is admitted. The about row calls `d1001.firmwareVersion()`, which returns `esp_app_get_description()->version` from the running image, and displays `未知` if the value is unavailable. Wi-Fi and HA provisioning currently open a placeholder only; softAP, a real QR payload, and the configuration web page are not implemented.
 
 ## Fonts
 

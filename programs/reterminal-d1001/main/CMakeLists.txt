@@ -15,8 +15,6 @@ idf_component_register(
         pocket_guest_quickjs
         pocket_hot_push_esp
         pocket_http_esp
-        pocket_input_gpio
-        pocket_input_touch
         pocket_render_esp_ppa
         pocket_runner
         pocket_runtime

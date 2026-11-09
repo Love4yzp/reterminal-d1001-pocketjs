@@ -17,38 +17,52 @@ import {
   readBacklight,
   readFirmwareVersion,
   readHaConfig,
+  readLandscape,
   readNetwork,
   readRtcSeconds,
   readUtcOffsetMinutes,
+  requestLandscape,
+  savePanelState,
   screenOffNative,
   syncNativeClock,
+  takePanelState,
   writeBacklight,
 } from "./native";
 import { activeTab, INITIAL_ROUTE, navigate, type NavEvent, type Route } from "./navigation";
 import { encodeMessage, decodeMessage } from "./protocol";
 import { createScreenOffControl, createSettings, reduceSettings, type SettingsAction } from "./settings";
+import { decodeSession, encodeSession, restorePanelState, restoreSettings } from "./session";
 import { theme } from "./theme";
 import type { PanelHaConfig, WorkerCommand, WorkerEvent } from "./protocol";
 import { DimmerScreen } from "./ui/dimmer-screen";
 import { HomeScreen } from "./ui/home-screen";
+import { LandscapeScreen } from "./ui/landscape-screen";
 import { LightsScreen } from "./ui/lights-screen";
 import { NavBar } from "./ui/nav-bar";
 import { ProvisionScreen } from "./ui/provision-screen";
 import { SettingsScreen } from "./ui/settings-screen";
 
 function Panel() {
-  const [state, setState] = createSignal<PanelState>(createInitialPanelState());
-  const [route, setRoute] = createSignal<Route>(INITIAL_ROUTE);
+  const saved = decodeSession(takePanelState());
+  const initialBacklight = readBacklight();
+  const [state, setState] = createSignal<PanelState>(
+    saved ? restorePanelState(createInitialPanelState(), saved) : createInitialPanelState(),
+  );
+  const [route, setRoute] = createSignal<Route>(saved?.route ?? INITIAL_ROUTE);
   const [network, setNetwork] = createSignal(readNetwork());
-  const [settings, setSettings] = createSignal(createSettings(readBacklight()));
+  const [settings, setSettings] = createSignal(
+    saved ? restoreSettings(createSettings(initialBacklight), saved) : createSettings(initialBacklight),
+  );
   const config: PanelHaConfig = readHaConfig();
   const utcOffsetMinutes = readUtcOffsetMinutes();
   const firmwareVersion = readFirmwareVersion();
+  const landscape = readLandscape();
   const configured = config.baseUrl.length > 0 && config.token.length > 0;
   const configChannel = worker.channel("ha-config");
   const commands = worker.channel("ha-commands");
   const events = worker.channel("ha-events");
   const screenOffControl = createScreenOffControl(screenOffNative());
+  screenOffControl.apply(settings().screenOffSeconds);
   let frame = 0;
   let pendingHa: LightState | null = null;
   let sendHaAt = 0;
@@ -82,6 +96,12 @@ function Panel() {
   };
 
   const onNav = (event: NavEvent) => setRoute(navigate(route(), event));
+
+  const rotate = (landscape: boolean) => {
+    if (!savePanelState(encodeSession(state(), route(), settings())))
+      console.warn("[ha-panel] native session snapshot rejected the update");
+    if (!requestLandscape(landscape)) console.warn("[ha-panel] rotation binding rejected the update");
+  };
 
   const onSettings = (action: SettingsAction) => {
     const previous = settings();
@@ -181,6 +201,7 @@ function Panel() {
           firmwareVersion={firmwareVersion}
           onSettings={onSettings}
           onNav={onNav}
+          onRotate={() => rotate(true)}
         />
       );
     return (
@@ -194,6 +215,21 @@ function Panel() {
     );
   };
 
+  if (landscape)
+    return (
+      <LandscapeScreen
+        state={state()}
+        route={route()}
+        settings={settings()}
+        network={network()}
+        utcOffsetMinutes={utcOffsetMinutes}
+        firmwareVersion={firmwareVersion}
+        onAction={dispatch}
+        onSettings={onSettings}
+        onNav={onNav}
+        onRotate={rotate}
+      />
+    );
   return (
     <View class="relative overflow-hidden" style={{ width: 400, height: 640, bgColor: theme.page }}>
       {screen()}

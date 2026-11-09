@@ -1,6 +1,6 @@
 # PocketJS for reTerminal D1001
 
-PocketJS firmware for the Seeed reTerminal D1001: ESP32-P4 and an 800x1280 JD9365 MIPI-DSI panel. Applications use a 400x640 logical viewport and render an 800x1280 RGB565 raster at density 2, presented at DPI scale 1.
+PocketJS firmware for the Seeed reTerminal D1001: ESP32-P4 and an 800x1280 JD9365 MIPI-DSI panel. Portrait applications use a 400x640 logical viewport and an 800x1280 RGB565 raster; landscape uses 640x400 logical and a 1280x800 raster. Both render at density 2, presented at DPI scale 1.
 
 The board component owns the I2C buses, PCA9535, panel power/reset, DPI panel and backlight. It has no LVGL dependency and creates no tasks. PocketJS is a read-only submodule; QuickJS guests use quickjs-ng 0.14.0.
 
@@ -46,7 +46,7 @@ esptool --port /dev/ttyACM0 flash_id
 idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 flash monitor
 ```
 
-Runtime logs report the largest internal DMA heap block and runner frame statistics every five seconds. `high_res_even_pairs_different` counts unequal horizontally adjacent pixels, proving native-resolution rendering instead of 2x2 replication. Move counters include pixel volume and aggregate/max duration for scroll profiling.
+Runtime logs report the largest internal DMA heap block and runner frame statistics every five seconds. Display logs identify portrait 800x1280/400x640 or landscape 1280x800/640x400 raster/logical dimensions and two staging buffers totaling at most 128 KiB. `high_res_even_pairs_different` counts unequal horizontally adjacent pixels, proving native-resolution rendering instead of 2x2 replication. Move counters include pixel volume and aggregate/max duration for scroll profiling.
 
 ## App development loop (M2)
 
@@ -71,7 +71,7 @@ Push `apps/input-test` to exercise the touch panel, side button and retained-mov
 bun run app:push apps/input-test
 ```
 
-The app counts contact hits in four corners and the centre, counts GPIO3/CIRCLE presses and automatically scrolls an 80-row virtual list in both directions. The full-width rectangular list uses the stock GDMA retained-move path; narrow partial-width lists use slower PPA staging bands. Firmware logs include raw, mirrored physical and logical touch coordinates, runner statistics, DMA heap and display-move counters/timings. Calibration follows Seeed's `swap_xy=0, mirror_x=1, mirror_y=1`, followed by 0.5 scaling to the logical viewport; see `platforms/esp-idf/d1001_board/README.md`. Physical touch and button hits require validation by a user with the device.
+The app counts contact hits in four corners and the centre, counts GPIO3/CIRCLE presses and automatically scrolls an 80-row virtual list in both directions. The native input task still delivers raw debounced CIRCLE press/release state to this app while independently arbitrating screen power: a single release below 600 ms rotates after a 350 ms double-click window, two short releases toggle screen power, one second gives wake feedback, and three seconds logs a reason and restarts. Releasing before three seconds cancels without a short/double action. Touch wakes and is swallowed until release when the screen was off. Rotation restarts only the runtime with a new layout and synchronized touch coordinates; the panel snapshots lights, route and screen timeout into native RAM and consumes it in the new realm, and landscape settings return to portrait. The full-width rectangular list uses the stock GDMA retained-move path; narrow partial-width lists use slower PPA staging bands. Firmware logs include raw, mirrored physical and orientation-aware logical touch coordinates, runner statistics, DMA heap and display-move counters/timings. Calibration follows Seeed's `swap_xy=0, mirror_x=1, mirror_y=1`, followed by orientation-aware logical mapping; see `platforms/esp-idf/d1001_board/README.md`. Physical touch and button hits require validation by a user with the device. Run `tools/d1001-input-acceptance.sh` for the guided timeout, wake, button, rotation and touch acceptance sequence.
 
 ## System services self-test (M4)
 

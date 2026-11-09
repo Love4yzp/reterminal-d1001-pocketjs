@@ -13,8 +13,10 @@
 
 #include "d1001_drivers.h"
 #include "d1001_wifi.h"
+#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
+#include "pocket/screen.h"
 #include "sdkconfig.h"
 
 #ifndef CONFIG_D1001_HA_SELFTEST
@@ -187,6 +189,34 @@ static JSValue ha_config(JSContext *realm) {
   return config;
 }
 
+#define D1001_PANEL_STATE_BYTES 4096U
+static char panel_state[D1001_PANEL_STATE_BYTES];
+static size_t panel_state_length;
+
+static JSValue save_panel_state(JSContext *realm, int argc, JSValueConst *argv) {
+  if (argc < 1)
+    return JS_FALSE;
+  size_t length = 0;
+  const char *text = JS_ToCStringLen(realm, &length, argv[0]);
+  if (text == NULL)
+    return JS_EXCEPTION;
+  bool accepted = length < D1001_PANEL_STATE_BYTES && memchr(text, '\0', length) == NULL;
+  if (accepted) {
+    memcpy(panel_state, text, length);
+    panel_state[length] = '\0';
+    panel_state_length = length;
+  }
+  JS_FreeCString(realm, text);
+  return JS_NewBool(realm, accepted);
+}
+
+static JSValue take_panel_state(JSContext *realm) {
+  JSValue value = JS_NewStringLen(realm, panel_state, panel_state_length);
+  panel_state[0] = '\0';
+  panel_state_length = 0;
+  return value;
+}
+
 enum {
   OP_READ_RTC,
   OP_UTC_OFFSET_MINUTES,
@@ -194,6 +224,12 @@ enum {
   OP_READ_SENSORS,
   OP_SET_RGB,
   OP_HA_CONFIG,
+  OP_FIRMWARE_VERSION,
+  OP_SET_SCREEN_OFF_SECONDS,
+  OP_LANDSCAPE,
+  OP_SET_LANDSCAPE,
+  OP_SAVE_PANEL_STATE,
+  OP_TAKE_PANEL_STATE,
 };
 
 static JSValue operation(JSContext *realm, JSValueConst this_value, int argc,
@@ -212,6 +248,25 @@ static JSValue operation(JSContext *realm, JSValueConst this_value, int argc,
     return set_rgb(realm, argc, argv);
   case OP_HA_CONFIG:
     return ha_config(realm);
+  case OP_FIRMWARE_VERSION:
+    return JS_NewString(realm, esp_app_get_description()->version);
+  case OP_SET_SCREEN_OFF_SECONDS: {
+    int32_t seconds = -1;
+    if (argc > 0 && JS_ToInt32(realm, &seconds, argv[0]) != 0)
+      return JS_EXCEPTION;
+    return JS_NewBool(realm, seconds >= 0 &&
+        d1001_screen_set_timeout_seconds(d1001_screen_get(), (uint32_t)seconds));
+  }
+  case OP_LANDSCAPE:
+    return JS_NewBool(realm, d1001_screen_landscape(d1001_screen_get()));
+  case OP_SET_LANDSCAPE:
+    return JS_NewBool(realm, argc > 0 &&
+        d1001_screen_request_landscape(d1001_screen_get(),
+                                      JS_ToBool(realm, argv[0]) != 0));
+  case OP_SAVE_PANEL_STATE:
+    return save_panel_state(realm, argc, argv);
+  case OP_TAKE_PANEL_STATE:
+    return take_panel_state(realm);
   default:
     return JS_UNDEFINED;
   }
@@ -233,6 +288,7 @@ esp_err_t d1001_panel_install(JSContext *realm, const d1001_board_handles *board
     return ESP_ERR_NO_MEM;
   }
   tzset();
+  ESP_LOGI(TAG, "firmware version=%s", esp_app_get_description()->version);
   ESP_LOGI(TAG, "display timezone=%s UTC offset=%d minutes",
            CONFIG_D1001_TIMEZONE, utc_offset_minutes());
   panel.board = board;
@@ -248,6 +304,12 @@ esp_err_t d1001_panel_install(JSContext *realm, const d1001_board_handles *board
   add(realm, object, "readSensors", OP_READ_SENSORS);
   add(realm, object, "setRgb", OP_SET_RGB);
   add(realm, object, "haConfig", OP_HA_CONFIG);
+  add(realm, object, "firmwareVersion", OP_FIRMWARE_VERSION);
+  add(realm, object, "setScreenOffSeconds", OP_SET_SCREEN_OFF_SECONDS);
+  add(realm, object, "landscape", OP_LANDSCAPE);
+  add(realm, object, "setLandscape", OP_SET_LANDSCAPE);
+  add(realm, object, "savePanelState", OP_SAVE_PANEL_STATE);
+  add(realm, object, "takePanelState", OP_TAKE_PANEL_STATE);
   JS_SetPropertyStr(realm, global, "d1001", object);
   const bool failed = JS_HasException(realm);
   JS_FreeValue(realm, global);

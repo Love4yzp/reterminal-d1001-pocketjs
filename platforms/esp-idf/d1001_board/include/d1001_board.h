@@ -32,6 +32,7 @@ typedef struct {
 
 esp_err_t d1001_board_init(d1001_board_handles *handles);
 esp_err_t d1001_board_backlight_set(uint32_t percent);
+uint32_t d1001_board_backlight_get(void);
 esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue);
 esp_err_t d1001_board_rgb_set_color(uint8_t red, uint8_t green, uint8_t blue);
 
