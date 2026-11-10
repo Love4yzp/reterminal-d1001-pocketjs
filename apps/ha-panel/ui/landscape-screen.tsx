@@ -91,7 +91,7 @@ function Home(props: LandscapeProps) {
       {weather() ? (
         <View class="absolute" style={{ insetL: 440, insetT: 34, width: 80, height: 76 }}>
           <Icon name={weatherIcon(weather()!)} left={22} top={0} size={36} />
-          <Text class="absolute text-xl font-bold text-right" style={{ insetL: 0, insetT: 36, width: 80, textColor: theme.text }}>{weatherTemperature(weather()!)}</Text>
+          <Text class="absolute text-lg font-bold text-right" style={{ insetL: 0, insetT: 36, width: 80, textColor: theme.text }}>{weatherTemperature(weather()!)}</Text>
           <Text class="absolute text-2xs text-right" style={{ insetL: 0, insetT: 60, width: 80, textColor: theme.secondaryText }}>{weatherLabel(weather()!)}</Text>
         </View>
       ) : null}
@@ -136,7 +136,7 @@ function Lights(props: LandscapeProps) {
   return (
     <View class="absolute" style={{ insetL: 88, insetT: 0, width: 552, height: 400 }}>
       <StatusLine {...props} />
-      <Text class="absolute text-xl font-bold" style={{ insetL: 16, insetT: 38, width: 200, textColor: theme.text }}>灯光</Text>
+      <Text class="absolute text-lg font-bold" style={{ insetL: 16, insetT: 38, width: 200, textColor: theme.text }}>灯光</Text>
       <Text class="absolute text-xs" style={{ insetL: 16, insetT: 72, width: 240, textColor: theme.secondaryText }}>
         {`${availableLights(props.state).length} / ${props.state.lightOrder.length} 盏可用`}
       </Text>
@@ -181,7 +181,7 @@ function Sensors(props: LandscapeProps) {
   return (
     <View class="absolute" style={{ insetL: 88, insetT: 0, width: 552, height: 400 }}>
       <StatusLine {...props} />
-      <Text class="absolute text-xl font-bold" style={{ insetL: 16, insetT: 38, width: 200, textColor: theme.text }}>环境</Text>
+      <Text class="absolute text-lg font-bold" style={{ insetL: 16, insetT: 38, width: 200, textColor: theme.text }}>环境</Text>
       <Text class="absolute text-xs" style={{ insetL: 16, insetT: 72, width: 260, textColor: theme.secondaryText }}>只读状态</Text>
       <For each={window().items}>{(sensorId, index) => (
         <SensorCard
