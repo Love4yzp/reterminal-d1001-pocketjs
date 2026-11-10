@@ -1,12 +1,11 @@
 ---
 name: pocketjs-app-dev
-description: Fast edit-check-push loop for PocketJS apps under apps/ on the reTerminal D1001 — panel text and fonts, screen layout, smoke previews and Wi-Fi app push. Use when changing an app's UI, text, assets or app-level logic (for example apps/ha-panel). Don't use for firmware, board, host-config or partition changes; those follow the heavy gates in AGENTS.md.
+description: Edit-check-push loop for PocketJS apps under apps/ on the reTerminal D1001 — panel text and fonts, screen layout, smoke previews and Wi-Fi app push. Use when changing an app's UI, text, assets or app-level logic (for example apps/ha-panel). Don't use for firmware, board, host-config or partition changes; those follow the heavy gates in AGENTS.md.
 ---
 # PocketJS app development
 
-An app change should take minutes. Every daily check below finishes in seconds;
-the slow steps (full screenshot set, firmware build, flashing) are heavy gates
-and stay out of the loop.
+Work in a loop of edit, check the affected part, push. The full screenshot set,
+firmware build and flashing are heavy gates and stay out of the loop.
 
 Run every command from the repository root. Bun comes from mise: prefix with
 `/usr/bin/mise x --` if `bun` is not on `PATH`.
@@ -29,14 +28,14 @@ check.
 
 After each edit, run only the checks that apply:
 
-| Changed | Command | Time |
-|---|---|---|
-| Any CJK text (ha-panel) | `bun run fonts` | <1 s, ~0.3 s when it rebuilds |
-| Any app source | `bun run pocket check --manifest apps/<app>/pocket.app.json --host-config programs/reterminal-d1001/pocket.host.config.ts` | ~2 s |
-| Pure logic in a `*.ts` with tests | `bun test apps/<app>` | <1 s |
-| A screen (ha-panel) | `bun run preview --only=<shot>[,<shot>]` add `--landscape` for that orientation | ~13 s compile, <1 s with `--no-build` |
-| Startup or home screen (ha-panel) | `bun run preview --smoke` | ~13 s, both orientations |
-| Behaviour on hardware | `bun run app:push apps/<app> --wifi <device-ip>` | seconds, restarts only the runtime |
+| Changed | Command |
+|---|---|
+| Any CJK text (ha-panel) | `bun run fonts` |
+| Any app source | `bun run pocket check --manifest apps/<app>/pocket.app.json --host-config programs/reterminal-d1001/pocket.host.config.ts` |
+| Pure logic in a `*.ts` with tests | `bun test apps/<app>` |
+| A screen (ha-panel) | `bun run preview --only=<shot>[,<shot>]` add `--landscape` for that orientation |
+| Startup or home screen (ha-panel) | `bun run preview --smoke` |
+| Behaviour on hardware | `bun run app:push apps/<app> --wifi <device-ip>` |
 
 - `bun run fonts` collects the CJK characters in the app's string literals and
   JSX text, rewrites `fonts/characters.txt` and rebuilds
@@ -68,7 +67,7 @@ After each edit, run only the checks that apply:
    you changed both.
 4. `git status --short`: stage source, art and the regenerated font subset.
    Leave `.pocket-build/` and screenshots out of Git.
-5. One local Conventional Commit, for example `feat(ha-panel): …`. No push.
+5. One Conventional Commit, for example `feat(ha-panel): …`.
 
 Report the app push and on-device behaviour as unverified if no device was
 reachable.
@@ -78,7 +77,6 @@ reachable.
 Run these only for firmware, board, host-config, `partitions.csv` or preview
 harness changes, for a release, or when the user asks:
 
-- `bun run preview --all`: every shot in both orientations, about 4 s plus
-  the compile.
+- `bun run preview --all`: every shot in both orientations.
 - The ESP-IDF firmware build, serial flashing and the 30-second serial
   capture described in `AGENTS.md`.
