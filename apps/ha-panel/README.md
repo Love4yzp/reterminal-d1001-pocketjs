@@ -1,6 +1,6 @@
 # D1001 Home Assistant panel
 
-A density-2 dashboard with a 400x640 portrait layout and a genuinely rearranged 640x400 landscape layout. Landscape uses left navigation, four-column home tiles, two-column lights and settings, and a horizontal dimmer control area; its settings page includes 返回竖屏. Weather appears only when a live HA weather entity is available. The app has no IMU card, tilt readout, chip-temperature card, or demonstration weather.
+A density-2 dashboard with 400x640 portrait and genuinely rearranged 640x400 landscape layouts. Both orientations provide home, lights, read-only sensors and settings; landscape uses left navigation and a horizontal dimmer control area. Weather appears only when a live HA weather entity is available. The app has no IMU card, tilt readout, chip-temperature card, or demonstration weather.
 
 ## Run and test
 
@@ -14,13 +14,21 @@ bun run pocket check --manifest apps/ha-panel/pocket.app.json \
 bun run app:push apps/ha-panel --wifi <device-ip>
 ```
 
-`model.ts` owns immutable light and connection state. `navigation.ts`, `dimmer.ts`, `scenes.ts`, and `settings.ts` contain the pure navigation, gesture-mapping, batch-scene, and settings transitions. `devices.ts` is the virtual/onboard/HA adapter boundary, `native.ts` validates host data, `worker.ts` serializes HA network I/O, and `ui/` contains the screens and controls.
+`model.ts` owns immutable entity and connection state. `navigation.ts`, `dimmer.ts`, `scenes.ts`, `input.ts`, and `settings.ts` contain pure navigation, input, scene, and settings transitions. `devices.ts` is the virtual/onboard/HA adapter boundary, `native.ts` validates host data, `worker.ts` serializes HA network I/O, and `ui/` contains the screens and controls.
 
-The two virtual lamps and the onboard RGB lamp share `LightState`. The HA lamp requires a configured entity and a live connection. The onboard color API accepts normalized 8-bit channels and scales them to the existing white-balanced LEDC maxima R/G/B=20/8/50; the older boolean board API remains compatible.
+## Showroom configuration and front-end seams
+
+`showroom.ts` contains the versioned example configuration. Stable display keys separate UI references from HA entity IDs; virtual, onboard and HA lights share `LightState`. Home sections are limited to four lights, two sensors and three scenes, while full light/sensor lists use fixed-size pages. Configuration validation rejects duplicate keys and dangling references. Labels are local display text, not HA `friendly_name`, so their CJK glyphs enter the existing font subset.
+
+The two virtual lamps and onboard RGB retain local behavior. The legacy HA lamp still requires `lightEntityId` from Kconfig and a live connection; `worker.ts` and `WorkerCommand` remain single-light. Additional HA lights start as `待接入`. A keyed `entity-light` event supplies their snapshots but marks them read-only until a keyed command adapter exists. Sensors start with no value and `待接入`; keyed `sensor` events carry value, freshness status and RTC update time. Live readings become `过期` after `staleAfterSeconds`; a disconnect retains the last value with `离线`. Unknown display keys are ignored.
+
+`scenes.ts` distinguishes local presets from HA scene effects. Local scenes report unavailable members or adapter failure instead of always reporting completion. There is no HA scene command adapter yet, so HA scene activation returns `待接入` without reusing the light command.
+
+`input.ts` defines the logical keyboard/button `InputSource` seam and shared focus intents. A source is optional; settings shows `待接入` when none is installed. Physical keyboard events are not currently supplied by the D1001 host. GPIO3/CIRCLE remains owned by native rotation, screen and restart arbitration and is deliberately not mapped to panel activation.
 
 ## Host preview
 
-The preview compiles the real app, boots it in the PocketJS WASM core, replays touch gestures, and writes 800x1280 portrait PNGs or 1280x800 landscape PNGs. It uses fixed native fixtures and does not access a device, serial port, or network.
+The preview compiles the real app, boots it in the PocketJS WASM core, replays touch and logical keyboard/button input, and writes 800x1280 portrait PNGs or 1280x800 landscape PNGs. Compilation rejects packages larger than the 7 MiB `apps` partition. The preview uses fixed native fixtures and does not access a device, serial port, or network. Keyed sensor events are explicitly marked `mock` and rendered as `示例`; they are not production readings.
 
 ```sh
 bun run preview --smoke                       # home screen, portrait and landscape
@@ -30,7 +38,7 @@ bun run preview                               # every portrait shot
 bun run preview --all                         # every shot in both orientations
 ```
 
-The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. Shot names are the PNG names in `tools/ha-panel-preview-shots.ts`; offline and no-weather variants carry the `offline-` and `no-weather-` prefixes.
+The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. Shot names are the PNG names in `tools/ha-panel-preview-shots.ts`; offline and no-weather variants carry the `offline-` and `no-weather-` prefixes. The shot set covers home, sensors, focus, offline, navigation, scenes, dimmer and settings interactions.
 
 `tools/ha-panel-assets.py` generates the icons, display numerals, QR placeholder, and dimmer corner mask. Regenerate them through mise-managed uv:
 

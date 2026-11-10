@@ -1,6 +1,7 @@
 import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { timezoneLabel } from "../clock";
+import type { InputDisplayState } from "../input";
 import type { NetworkInfo } from "../native";
 import type { NavEvent } from "../navigation";
 import { SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
@@ -16,6 +17,7 @@ interface SettingsProps {
   network: NetworkInfo;
   utcOffsetMinutes: number;
   firmwareVersion: string;
+  input: InputDisplayState;
   onSettings(action: SettingsAction): void;
   onNav(event: NavEvent): void;
   onRotate(): void;
@@ -120,10 +122,16 @@ export function SettingsScreen(props: SettingsProps) {
       </View>
 
       <SectionLabel top={472}>关于</SectionLabel>
-      <View class="absolute" style={{ insetL: 16, insetT: 498, width: 368, height: 52, radius: 12, bgColor: theme.card }}>
-        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 17, width: 90, textColor: theme.text }}>设备地址</Text>
-        <Text class="absolute text-2xs text-right" style={{ insetL: 112, insetT: 20, width: 228, textColor: theme.secondaryText }}>
+      <View class="absolute" style={{ insetL: 16, insetT: 498, width: 368, height: 70, radius: 12, bgColor: theme.card }}>
+        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 10, width: 90, textColor: theme.text }}>设备地址</Text>
+        <Text class="absolute text-2xs text-right" style={{ insetL: 112, insetT: 11, width: 228, textColor: theme.secondaryText }}>
           {`${props.network.address}  固件 ${props.firmwareVersion}`}
+        </Text>
+        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 41, width: 90, textColor: theme.text }}>输入</Text>
+        <Text class="absolute text-2xs text-right" style={{ insetL: 112, insetT: 43, width: 228, textColor: props.input.available ? theme.primary : theme.disabledText }}>
+          {props.input.available
+            ? `${props.input.source === "button" ? "按键" : props.input.source === "touch" ? "触摸" : "键盘"} ${props.input.lastAction}`
+            : "待接入"}
         </Text>
       </View>
     </View>

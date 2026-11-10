@@ -11,6 +11,7 @@ const COLUMN = 400 / TABS.length;
 const ICON: Record<Tab, { active: IconName; idle: IconName }> = {
   home: { active: "home-primary", idle: "home-secondary" },
   lights: { active: "bulb-primary", idle: "bulb-secondary" },
+  sensors: { active: "weather-partly", idle: "weather-partly" },
   settings: { active: "cog-primary", idle: "cog-secondary" },
 };
 

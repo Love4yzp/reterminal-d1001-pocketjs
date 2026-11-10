@@ -1,5 +1,6 @@
 import type { HaConfig } from "./ha-request";
 import type { LightState, Weather } from "./model";
+import type { SensorReading } from "./showroom";
 
 export interface PanelHaConfig extends HaConfig {
   selftest: boolean;
@@ -10,6 +11,9 @@ export type WorkerCommand = { type: "light"; light: LightState };
 export type WorkerEvent =
   | { type: "status"; configured: boolean; connected: boolean; error: string }
   | { type: "light"; light: LightState }
+  /** Front-end seam for a future multi-entity adapter; the legacy worker does not emit this. */
+  | { type: "entity-light"; lightId: string; light: LightState }
+  | { type: "sensor"; sensorId: string; reading: SensorReading }
   /** `null` when the instance has no usable weather entity. */
   | { type: "weather"; weather: Weather | null };
 

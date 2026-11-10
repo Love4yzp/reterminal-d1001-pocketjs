@@ -21,11 +21,19 @@ export const LIGHT_INFO: Record<LightId, LightInfo> = {
 };
 
 export const UNAVAILABLE_TEXT = "未连接 HA";
+export const PENDING_TEXT = "待接入";
+
+export function lightInfo(state: PanelState, lightId: LightId): LightInfo {
+  return state.lightInfo[lightId] ?? { name: lightId, chip: lightId, tag: "Home Assistant" };
+}
 
 export function lightStatusText(state: PanelState, lightId: LightId): string {
-  if (!isLightAvailable(state, lightId)) return UNAVAILABLE_TEXT;
+  const availability = state.lightAvailability[lightId];
+  if (availability === "pending") return PENDING_TEXT;
+  if (!isLightAvailable(state, lightId) && availability !== "read-only") return UNAVAILABLE_TEXT;
   const light = state.lights[lightId];
-  return light.on ? `开 ${percentFromBrightness(light.brightness)}%` : "关";
+  const value = light.on ? `开 ${percentFromBrightness(light.brightness)}%` : "关";
+  return availability === "read-only" ? `${value} · 只读` : value;
 }
 
 /** The light's own color at full value, as a PocketJS ABGR color. */
@@ -37,7 +45,8 @@ export function lightColor(light: LightState): number {
 export type LightTone = "on" | "cool" | "off" | "unavailable";
 
 export function lightTone(state: PanelState, lightId: LightId): LightTone {
-  if (!isLightAvailable(state, lightId)) return "unavailable";
+  const availability = state.lightAvailability[lightId];
+  if (availability === "pending" || availability === "offline") return "unavailable";
   const light = state.lights[lightId];
   if (!light.on) return "off";
   return light.hue >= 150 && light.hue <= 270 && light.saturation >= 30 ? "cool" : "on";

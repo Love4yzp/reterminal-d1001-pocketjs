@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createWasmUi } from "../third_party/pocketjs/platforms/web/wasm-ops.js";
 import { encodePNG } from "../third_party/pocketjs/tests/png.ts";
+import type { InputEvent } from "../apps/ha-panel/input";
 import { encodeMessage, type WorkerEvent } from "../apps/ha-panel/protocol";
 import { readAppsPartition } from "./partitions";
 import { assertFitsApps, pkapExtentBytes } from "./pkap";
@@ -52,7 +53,10 @@ function compile() {
 }
 
 export type Touch = readonly [number, number] | null;
-export interface Shot { name: string; tape: readonly { frames: number; touch: Touch }[] }
+export interface Shot {
+  name: string;
+  tape: readonly { frames: number; touch: Touch; input?: InputEvent }[];
+}
 
 /** Fixtures for the device namespaces the panel reads. */
 function installNativeStubs(options: { haConfigured: boolean; landscape: boolean }) {
@@ -94,7 +98,20 @@ function installNativeStubs(options: { haConfigured: boolean; landscape: boolean
     observe: (id: number) => { const records = inbox.get(id) ?? []; inbox.delete(id); return records; },
   };
   const deliver = (id: number, data: Uint8Array) => inbox.set(id, [...inbox.get(id) ?? [], data]);
-  return { rgb: () => rgb, brightness: () => brightness, outbox, deliver };
+  let inputListener: ((event: InputEvent) => void) | undefined;
+  g.__haPanelInput = {
+    subscribe: (listener: (event: InputEvent) => void) => {
+      inputListener = listener;
+      return () => { if (inputListener === listener) inputListener = undefined; };
+    },
+  };
+  return {
+    rgb: () => rgb,
+    brightness: () => brightness,
+    outbox,
+    deliver,
+    input: (event: InputEvent) => inputListener?.(event),
+  };
 }
 
 interface RunOptions { haConfigured: boolean; weather: boolean; prefix: string; landscape: boolean; out: string }
@@ -122,12 +139,20 @@ async function run(shots: readonly Shot[], options: RunOptions) {
       };
       deliver({ type: "status", configured: true, connected: true, error: "" });
       deliver({ type: "light", light: { on: false, brightness: 128, hue: 36, saturation: 70 } });
+      deliver({
+        type: "entity-light",
+        lightId: "remote",
+        light: { on: false, brightness: 128, hue: 36, saturation: 70 },
+      });
+      deliver({ type: "sensor", sensorId: "temperature", reading: { value: 21.5, status: "mock", updatedAt: 100 } });
+      deliver({ type: "sensor", sensorId: "humidity", reading: { value: 48, status: "mock", updatedAt: 100 } });
       if (options.weather)
         deliver({ type: "weather", weather: { entityId: "weather.home", condition: "partlycloudy", temperature: 18, unit: "°C" } });
     }
     let touch: Touch = null;
     let hit = 0;
-    const step = (next: Touch) => {
+    const step = (next: Touch, input?: InputEvent) => {
+      if (input) bridge.input(input);
       if (next && !touch) hit = wasm.ops.hitTestBounds?.(next[0], next[1]) ?? 0;
       touch = next;
       g.__pocketWorkerChannelFrame?.();
@@ -135,7 +160,8 @@ async function run(shots: readonly Shot[], options: RunOptions) {
       wasm.tick();
     };
     for (let i = 0; i < 4; i++) step(null);
-    for (const segment of shot.tape) for (let i = 0; i < segment.frames; i++) step(segment.touch);
+    for (const segment of shot.tape)
+      for (let i = 0; i < segment.frames; i++) step(segment.touch, i === 0 ? segment.input : undefined);
     for (let i = 0; i < 4; i++) step(null);
     const pixels = wasm.renderScaled(DENSITY);
     const path = join(options.out, `${options.prefix}${shot.name}.png`);

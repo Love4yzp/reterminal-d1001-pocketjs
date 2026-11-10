@@ -41,4 +41,23 @@ describe("UI/worker message protocol", () => {
     expect(() => encodeMessage({ type: "status", configured: true, connected: false, error }, bytes)).not.toThrow();
     expect(decodeMessage<{ error: string }>(bytes).error).toBe(error);
   });
+
+  test("fits keyed light and sensor mock events in the existing event record", () => {
+    const bytes = new Uint8Array(512);
+    encodeMessage({
+      type: "entity-light",
+      lightId: "accent",
+      light: { on: true, brightness: 128, hue: 200, saturation: 50 },
+    }, bytes);
+    expect(decodeMessage<{ lightId: string }>(bytes).lightId).toBe("accent");
+
+    encodeMessage({
+      type: "sensor",
+      sensorId: "temperature",
+      reading: { value: 21.5, status: "mock", updatedAt: 100 },
+    }, bytes);
+    expect(decodeMessage<{ sensorId: string; reading: { status: string } }>(bytes)).toMatchObject({
+      sensorId: "temperature", reading: { status: "mock" },
+    });
+  });
 });
