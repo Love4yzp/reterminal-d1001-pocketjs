@@ -53,6 +53,15 @@ After each edit, run only the checks that apply:
 - Screenshots go to a new ignored directory under
   `.pocket-build/validation/`. Open each rendered image once and judge it; if
   it is wrong, edit and rerender that shot only.
+- Watch the compile line: `.pocket N bytes, PKAP extent E/7340032, headroom H`.
+  The limit is the whole `.pocket` bundle (pak plus JS) with a 64-byte header,
+  rounded up to 64 KiB pages; the `.pak` size alone is not the limit. The
+  preview and `app:push` fail when the extent exceeds the `apps` partition.
+- Every text style (font size and weight) bakes a glyph atlas for every
+  character in `characters.txt`. A new size, a new bold variant or a batch of
+  new CJK characters can add hundreds of KiB. Reuse the shared 10/12/14 px
+  styles; if headroom drops below one 64 KiB page, cut a style before adding
+  more text.
 - If a compile takes far longer than 15 s, look for a new large `<path>` SVG
   in the app art. The SVG baker supersamples paths; emit `<rect>` shapes for
   grid art such as QR codes.

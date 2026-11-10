@@ -11,11 +11,13 @@
 // Common flags: --wasm=<pocketjs.wasm> (or POCKETJS_WASM), --out=<dir>, --no-build.
 // --only matches output names exactly: home, lights, offline-home, no-weather-home, ...
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createWasmUi } from "../third_party/pocketjs/platforms/web/wasm-ops.js";
 import { encodePNG } from "../third_party/pocketjs/tests/png.ts";
 import { encodeMessage, type WorkerEvent } from "../apps/ha-panel/protocol";
+import { readAppsPartition } from "./partitions";
+import { assertFitsApps, pkapExtentBytes } from "./pkap";
 
 const root = resolve(import.meta.dir, "..");
 const args = process.argv.slice(2);
@@ -42,8 +44,11 @@ function compile() {
     "--output", `${buildDirectory}.pocket`,
   ], { cwd: root, stdout: "pipe", stderr: "pipe" });
   if (!result.success) throw new Error(`compile failed\n${result.stdout}${result.stderr}`);
-  const pak = String(result.stdout).match(/pak: .*?(\d+) bytes/);
-  console.log(`compiled ha-panel${pak ? ` (pak ${pak[1]} bytes)` : ""}`);
+  // Guard the bytes app:push writes: the whole .pocket bundle as a PKAP extent.
+  const bundle = statSync(`${buildDirectory}.pocket`).size;
+  const partition = readAppsPartition(resolve(root, "programs/reterminal-d1001/partitions.csv")).size;
+  const headroom = assertFitsApps(bundle, partition);
+  console.log(`compiled ha-panel: .pocket ${bundle} bytes, PKAP extent ${pkapExtentBytes(bundle)}/${partition}, headroom ${headroom}`);
 }
 
 export type Touch = readonly [number, number] | null;

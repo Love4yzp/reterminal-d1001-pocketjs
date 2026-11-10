@@ -24,3 +24,20 @@ describe("D1001 flash layout", () => {
     expect(readPartition(table, "phy_init")).toMatchObject({ offset: 0xf000, size: 0x1000 });
   });
 });
+
+describe("PKAP extent guard", () => {
+  test("rounds header plus .pocket bundle up to 64 KiB pages", async () => {
+    const { pkapExtentBytes } = await import("./pkap");
+    expect(pkapExtentBytes(65_536 - 64)).toBe(65_536);
+    expect(pkapExtentBytes(65_536 - 63)).toBe(131_072);
+  });
+
+  test("rejects a bundle whose extent overflows the 7 MiB apps partition", async () => {
+    const { assertFitsApps } = await import("./pkap");
+    const apps = readAppsPartition(table).size;
+    // A 7,387,208-byte .pocket (7,123,072-byte pak) needs 113 pages = 7,405,568 bytes.
+    expect(() => assertFitsApps(7_387_208, apps)).toThrow(/7405568/);
+    expect(assertFitsApps(apps - 64, apps)).toBe(0);
+    expect(() => assertFitsApps(apps - 63, apps)).toThrow();
+  });
+});

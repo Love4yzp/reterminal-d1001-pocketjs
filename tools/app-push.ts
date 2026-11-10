@@ -3,15 +3,13 @@ import { existsSync, mkdirSync } from "node:fs";
 import { isIP } from "node:net";
 import { basename, extname, resolve } from "node:path";
 import { readAppsPartition } from "./partitions";
+import { assertFitsApps, PKAP_HEADER_BYTES as HEADER_BYTES, pkapPages } from "./pkap";
 
 const root = resolve(import.meta.dir, "..");
 const buildDirectory = resolve(root, ".pocket-build/apps");
 const hostConfig = resolve(root, "programs/reterminal-d1001/pocket.host.config.ts");
 const partitionsPath = resolve(root, "programs/reterminal-d1001/partitions.csv");
 
-// PKAP v1 layout: pocket_system/src/flash_store.c in the M5Stack Tab5 reference.
-const HEADER_BYTES = 64;
-const PAGE_BYTES = 65_536;
 const MIN_PACKAGE_BYTES = 40;
 
 interface Options {
@@ -98,9 +96,8 @@ async function compileApp(directory: string): Promise<{ packagePath: string; id:
 function shortImage(packageBytes: Uint8Array, id: string, partitionSize: number) {
   if (packageBytes.length < MIN_PACKAGE_BYTES)
     throw new Error(`package is ${packageBytes.length} bytes; PKAP v1 requires at least ${MIN_PACKAGE_BYTES}`);
-  const pages = Math.ceil((HEADER_BYTES + packageBytes.length) / PAGE_BYTES);
-  if (pages * PAGE_BYTES > partitionSize)
-    throw new Error(`package extent needs ${pages * PAGE_BYTES} bytes; apps partition has ${partitionSize}`);
+  assertFitsApps(packageBytes.length, partitionSize);
+  const pages = pkapPages(packageBytes.length);
 
   const packageView = new DataView(packageBytes.buffer, packageBytes.byteOffset, packageBytes.byteLength);
   const hash = packageView.getBigUint64(packageBytes.length - 8, true);
