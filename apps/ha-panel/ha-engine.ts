@@ -45,10 +45,13 @@ class SerialLanes {
   }
 }
 
-const LIGHT_RETRY_TICKS = 50;
-const SENSOR_RETRY_TICKS = 50;
-const ERROR_RETRY_TICKS = 20;
-const HEARTBEAT_TICKS = 100;
+// The ESP-Hosted transport on this factory image has a costly blocking HTTP
+// receive. Poll showroom state every five minutes after the initial snapshot;
+// direct UI commands still use the independent command lane immediately.
+const LIGHT_RETRY_TICKS = 3_000;
+const SENSOR_RETRY_TICKS = 3_000;
+const ERROR_RETRY_TICKS = 300;
+const HEARTBEAT_TICKS = 3_000;
 const WEATHER_TICKS = 6_000;
 
 export class HaEngine {
@@ -218,7 +221,7 @@ export class HaEngine {
         this.due[key] = this.tickCount + ERROR_RETRY_TICKS;
       } finally {
         this.inFlight.delete(key);
-        if (this.due[key] === 0) this.due[key] = this.tickCount + LIGHT_RETRY_TICKS;
+        if ((this.due[key] ?? 0) === 0) this.due[key] = this.tickCount + LIGHT_RETRY_TICKS;
       }
     });
   }
@@ -258,7 +261,7 @@ export class HaEngine {
         this.due[key] = this.tickCount + ERROR_RETRY_TICKS;
       } finally {
         this.inFlight.delete(key);
-        if (this.due[key] === 0) this.due[key] = this.tickCount + SENSOR_RETRY_TICKS;
+        if ((this.due[key] ?? 0) === 0) this.due[key] = this.tickCount + SENSOR_RETRY_TICKS;
       }
     });
   }

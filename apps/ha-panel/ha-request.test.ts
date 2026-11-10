@@ -32,7 +32,7 @@ describe("HA light requests", () => {
     expect(request).toEqual({
       method: "GET",
       url: "http://home-assistant.test:8123/api/states/light.mock%20lamp%2F1",
-      headers: { Authorization: "Bearer test-token" },
+      headers: { Authorization: "Bearer test-token", Connection: "close" },
     });
   });
 
@@ -44,6 +44,7 @@ describe("HA light requests", () => {
     expect(request.headers).toEqual({
       Authorization: "Bearer test-token",
       "Content-Type": "application/json",
+      Connection: "close",
     });
     expect(jsonBody(request)).toEqual({
       entity_id: "light.mock lamp/1",
@@ -98,7 +99,7 @@ describe("HA weather requests", () => {
     expect(createApiProbeRequest(config)).toEqual({
       method: "GET",
       url: "http://home-assistant.test:8123/api/",
-      headers: { Authorization: "Bearer test-token" },
+      headers: { Authorization: "Bearer test-token", Connection: "close" },
     });
   });
 
@@ -107,7 +108,7 @@ describe("HA weather requests", () => {
     expect(request).toEqual({
       method: "GET",
       url: "http://home-assistant.test:8123/api/states/weather.forecast_home",
-      headers: { Authorization: "Bearer test-token" },
+      headers: { Authorization: "Bearer test-token", Connection: "close" },
     });
   });
 

@@ -26,7 +26,7 @@
       "entry": "worker.ts",
       "nodes": [{ "name": "http", "kind": "http" }],
       "channels": [
-        { "name": "ha-config", "kind": "snapshot", "direction": "ui-to-worker", "recordBytes": 4096, "capacity": 1 },
+        { "name": "ha-config", "kind": "snapshot", "direction": "ui-to-worker", "recordBytes": 1024, "capacity": 1 },
         { "name": "ha-commands", "kind": "ring", "direction": "ui-to-worker", "recordBytes": 1024, "capacity": 8 },
         { "name": "ha-events", "kind": "ring", "direction": "worker-to-ui", "recordBytes": 512, "capacity": 8 }
       ]

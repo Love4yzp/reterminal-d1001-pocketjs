@@ -1,6 +1,7 @@
 import { deviceStatus, setBrightness } from "@pocketjs/framework/device";
 import { wifiStatus } from "@pocketjs/framework/wifi";
 import type { PanelHaConfig } from "./protocol";
+import { LOCAL_HA_CONFIG } from "./local-config";
 import type { ScreenOffNative } from "./settings";
 import { parseShowroomEntityMap } from "./showroom";
 
@@ -70,6 +71,7 @@ function text(value: unknown): string {
 }
 
 export function readHaConfig(): PanelHaConfig {
+  if (LOCAL_HA_CONFIG) return LOCAL_HA_CONFIG;
   const value = native()?.haConfig();
   if (typeof value !== "object" || value === null)
     return { baseUrl: "", token: "", lightEntityId: "", weatherEntityId: "", selftest: false };

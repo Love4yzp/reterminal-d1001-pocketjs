@@ -148,8 +148,15 @@ function Panel() {
 
   const onScene = (sceneId: string) => {
     const effect = sceneEffect(state(), sceneId);
-    // A future HA scene adapter can accept effect.entityId here. No current
-    // worker command is reused or emitted for an unsupported scene.
+    if (effect.type === "ha") {
+      const runId = (serviceRuns[sceneId] ?? 0) + 1;
+      serviceRuns[sceneId] = runId;
+      if (publishCommand({ type: "service", sceneId, runId }))
+        dispatch({ type: "scene-result", sceneId, status: "pending" });
+      else
+        dispatch({ type: "scene-result", sceneId, status: "failed" });
+      return;
+    }
     const applied = effect.type === "local" ? dispatch(effect.action) : false;
     dispatch({ type: "scene-result", sceneId, status: sceneRunStatus(effect, applied) });
   };
@@ -267,10 +274,15 @@ function Panel() {
     return accepted;
   };
 
-  const configBytes = new Uint8Array(4096);
+  const configBytes = new Uint8Array(1024);
   encodeMessage(config, configBytes);
   if (!configChannel.publish(configBytes)) throw new Error("HA config channel rejected the configuration");
-  dispatch({ type: "ha", haConfigured: configured, haConnected: false, haLightConfigured: Boolean(config.lightEntityId) });
+  dispatch({
+    type: "ha",
+    haConfigured: configured,
+    haConnected: false,
+    haLightConfigured: Boolean(config.lightEntityId || Object.keys(config.entityMap?.lights ?? {}).length),
+  });
   dispatch({ type: "clock", clockEpochSeconds: readRtcSeconds(), clockSynced: false });
   console.log("[ha-panel] dashboard: home, lights, sensors, dimmer, settings");
   if (config.selftest && onboardLightId) {
@@ -290,7 +302,7 @@ function Panel() {
           type: "ha",
           haConfigured: event.configured,
           haConnected: event.connected,
-          haLightConfigured: Boolean(config.lightEntityId),
+          haLightConfigured: Boolean(config.lightEntityId || Object.keys(config.entityMap?.lights ?? {}).length),
         });
         if (event.error !== lastHaError) {
           if (event.error) console.error(`[ha-panel] HA: ${event.error}`);
@@ -310,15 +322,28 @@ function Panel() {
         dispatch({ type: "entity-light", lightId: event.lightId, light: event.light }, true);
       } else if (event.type === "sensor") {
         dispatch({ type: "sensor", sensorId: event.sensorId, reading: event.reading }, true);
-      } else {
+      } else if (event.type === "entity-error") {
+        dispatch({
+          type: "entity-error",
+          domain: event.domain,
+          key: event.key,
+          availability: event.availability,
+          error: event.error,
+        }, true);
+      } else if (event.type === "service-result") {
+        if (serviceRuns[event.sceneId] === event.runId)
+          dispatch({ type: "scene-result", sceneId: event.sceneId, status: event.status }, true);
+      } else if (event.type === "weather") {
         dispatch({ type: "weather", weather: event.weather }, true);
       }
     }
 
-    if (pendingHa && frame >= sendHaAt) {
-      const light = pendingHa;
-      if (publishCommand({ type: "light", light })) pendingHa = null;
-      else sendHaAt = frame + 15;
+    for (const [lightId, pending] of Object.entries(pendingHa)) {
+      if (frame < pending.sendAt) continue;
+      if (publishCommand({ type: "entity-light", lightId, light: pending.light, seq: pending.seq }))
+        delete pendingHa[lightId];
+      else
+        pending.sendAt = frame + 15;
     }
     if (frame % 30 === 0) {
       const now = readRtcSeconds();

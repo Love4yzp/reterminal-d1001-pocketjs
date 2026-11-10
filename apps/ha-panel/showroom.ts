@@ -68,7 +68,7 @@ export const SHOWROOM: ShowroomConfig = {
   home: {
     lights: ["desk", "shelf", "onboard", "remote"],
     sensors: ["temperature", "humidity"],
-    scenes: ["all-off", "night", "reading"],
+    scenes: ["reachy-intro-retail", "reachy-intro-space", "reachy-intro-emergency"],
   },
   lights: [
     {
@@ -123,9 +123,9 @@ export const SHOWROOM: ShowroomConfig = {
         remote: { on: true, brightness: 204, hue: 37, saturation: 12 },
       },
     },
-    { key: "reachy-intro-retail", name: "讲解", kind: "ha", entityId: "input_button.example_reachy_intro_retail" },
-    { key: "reachy-intro-space", name: "导览", kind: "ha", entityId: "input_button.example_reachy_intro_space" },
-    { key: "reachy-intro-emergency", name: "应急", kind: "ha", entityId: "input_button.example_reachy_intro_emergency" },
+    { key: "reachy-intro-retail", name: "智慧空间", kind: "ha", entityId: "input_button.example_reachy_intro_retail" },
+    { key: "reachy-intro-space", name: "智慧社区", kind: "ha", entityId: "input_button.example_reachy_intro_space" },
+    { key: "reachy-intro-emergency", name: "智慧乡野", kind: "ha", entityId: "input_button.example_reachy_intro_emergency" },
     { key: "reachy-stop", name: "停止", kind: "ha", entityId: "input_button.example_reachy_stop" },
     { key: "reachy-wake", name: "唤醒", kind: "ha", entityId: "input_button.example_reachy_wake" },
     { key: "reachy-lang-toggle", name: "语言", kind: "ha", entityId: "input_button.example_reachy_lang_toggle" },
@@ -300,7 +300,6 @@ export function sensorStatusText(reading: SensorReading, error = ""): string {
     case "pending": return "待接入";
     case "mock": return "示例";
     case "offline": return "离线";
-    case "stale": return "过期";
     case "unavailable": return "不可用";
     case "live": return "在线";
   }

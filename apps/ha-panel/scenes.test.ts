@@ -13,7 +13,7 @@ const apply = (state: PanelState, scene: Parameters<typeof sceneAction>[1]) => r
 
 describe("scenes", () => {
   test("lists the three design scenes in order", () => {
-    expect(SCENES.map(scene => scene.label)).toEqual(["全部关闭", "夜间模式", "阅读"]);
+    expect(SCENES.map(scene => scene.label)).toEqual(["智慧空间", "智慧社区", "智慧乡野"]);
   });
 
   test("全部关闭 turns every light off in one batch", () => {

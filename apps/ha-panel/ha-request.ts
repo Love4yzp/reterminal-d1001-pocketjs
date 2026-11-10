@@ -35,6 +35,7 @@ function postRequest(config: HaConfig, path: string, value: unknown): HttpReques
     headers: {
       Authorization: `Bearer ${config.token}`,
       "Content-Type": "application/json",
+      Connection: "close",
     },
     body: JSON.stringify(value),
   };
@@ -45,7 +46,7 @@ export function createGetEntityStateRequest(config: HaConfig, entityId: string):
   return {
     method: "GET",
     url: `${normalizedBaseUrl(config)}/api/states/${encodeURIComponent(entityId)}`,
-    headers: { Authorization: `Bearer ${config.token}` },
+    headers: { Authorization: `Bearer ${config.token}`, Connection: "close" },
   };
 }
 
@@ -54,7 +55,7 @@ export function createApiProbeRequest(config: HaConfig): HttpRequest {
   return {
     method: "GET",
     url: `${normalizedBaseUrl(config)}/api/`,
-    headers: { Authorization: `Bearer ${config.token}` },
+    headers: { Authorization: `Bearer ${config.token}`, Connection: "close" },
   };
 }
 

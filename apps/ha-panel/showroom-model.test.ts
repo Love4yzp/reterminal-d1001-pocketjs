@@ -18,7 +18,7 @@ const extraLight = {
 const config: ShowroomConfig = { ...SHOWROOM, lights: [...SHOWROOM.lights, extraLight] };
 
 describe("multi-entity front-end seam", () => {
-  test("an additional HA light snapshot is visible but read-only without a command adapter", () => {
+  test("an additional HA light becomes controllable after its first live snapshot", () => {
     const initial = createInitialPanelState(config);
     const connected = reducePanel(initial, {
       type: "ha", haConfigured: true, haConnected: true, haLightConfigured: true,
@@ -32,9 +32,9 @@ describe("multi-entity front-end seam", () => {
       light: { on: true, brightness: 80, hue: 200, saturation: 40 },
     });
     expect(live.lights.accent).toEqual({ on: true, brightness: 80, hue: 200, saturation: 40 });
-    expect(live.lightAvailability.accent).toBe("read-only");
-    expect(isLightAvailable(live, "accent")).toBe(false);
-    expect(reducePanel(live, { type: "toggle-light", lightId: "accent" })).toBe(live);
+    expect(live.lightAvailability.accent).toBe("available");
+    expect(isLightAvailable(live, "accent")).toBe(true);
+    expect(reducePanel(live, { type: "toggle-light", lightId: "accent" }).lights.accent?.on).toBe(false);
     expect(reducePanel(live, { type: "entity-light", lightId: "missing", light: live.lights.accent! })).toBe(live);
     expect(reducePanel(live, { type: "entity-light", lightId: "desk", light: live.lights.accent! })).toBe(live);
   });
