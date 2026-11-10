@@ -8,7 +8,7 @@ From the repository root:
 
 ```sh
 bun test apps/ha-panel tools/screen-state.test.ts tools/partitions.test.ts
-bun tools/ha-panel-fonts.ts --check
+bun run fonts --check
 bun run pocket check --manifest apps/ha-panel/pocket.app.json \
   --host-config programs/reterminal-d1001/pocket.host.config.ts
 bun run app:push apps/ha-panel --wifi <device-ip>
@@ -23,11 +23,14 @@ The two virtual lamps and the onboard RGB lamp share `LightState`. The HA lamp r
 The preview compiles the real app, boots it in the PocketJS WASM core, replays touch gestures, and writes 800x1280 portrait PNGs or 1280x800 landscape PNGs. It uses fixed native fixtures and does not access a device, serial port, or network.
 
 ```sh
-bun tools/ha-panel-preview.ts --wasm=/path/to/pocketjs.wasm
-bun tools/ha-panel-preview.ts --landscape --wasm=/path/to/pocketjs.wasm
+bun run preview --smoke                       # home screen, portrait and landscape
+bun run preview --only=lights,offline-home    # named shots, portrait
+bun run preview --only=dimmer --landscape     # named shots, landscape
+bun run preview                               # every portrait shot
+bun run preview --all                         # every shot in both orientations
 ```
 
-Use `--no-build` to reuse the package in `.pocket-build/preview/ha-panel`, and `--out=<dir>` to choose the screenshot directory. The default is a new ignored directory under `.pocket-build/validation/dashboard/`. `tools/ha-panel-preview-shots.ts` defines portrait and landscape connected, offline, no-weather, navigation, scene, dimmer, and settings interactions.
+The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. Shot names are the PNG names in `tools/ha-panel-preview-shots.ts`; offline and no-weather variants carry the `offline-` and `no-weather-` prefixes.
 
 `tools/ha-panel-assets.py` generates the icons, display numerals, QR placeholder, and dimmer corner mask. Regenerate them through mise-managed uv:
 
@@ -57,7 +60,7 @@ The backlight slider calls the existing framework device binding. Auto screen-of
 
 ## Fonts
 
-`fonts.json` declares the Simplified Chinese fallback glyphs. `theme.ts` owns the design's dark palette and radii. Run `bun tools/ha-panel-fonts.ts` after editing panel text and regenerate the subset according to `fonts/README.md`. Large clock and dimmer numerals are generated SVG outlines, so those sizes do not add full CJK font atlases.
+`fonts.json` declares the Simplified Chinese fallback glyphs. `theme.ts` owns the design's dark palette and radii. Run `bun run fonts` after editing panel text; it updates `fonts/characters.txt` and rebuilds the subset when the character set changes. Large clock and dimmer numerals are generated SVG outlines, so those sizes do not add full CJK font atlases.
 
 ## Mock HA
 

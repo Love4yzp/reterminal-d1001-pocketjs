@@ -1,9 +1,15 @@
 // Host-side preview of apps/ha-panel: compile the package for the D1001 host
-// profile, boot it in the PocketJS wasm core at 400x640 @2x and save PNGs
-// after a scripted touch tape. No device, serial port or network is used;
-// the native namespaces are stubbed with fixed fixtures.
+// profile, boot it in the PocketJS wasm core at 400x640 or 640x400 @2x and
+// save PNGs after a scripted touch tape. No device, serial port or network is
+// used; the native namespaces are stubbed with fixed fixtures.
 //
-//   bun tools/ha-panel-preview.ts [--wasm=<pocketjs.wasm>] [--out=<dir>] [--no-build]
+//   bun tools/ha-panel-preview.ts --smoke             portrait + landscape home (daily loop)
+//   bun tools/ha-panel-preview.ts --only=lights,settings [--landscape]
+//   bun tools/ha-panel-preview.ts [--landscape]       full shot list for one orientation
+//   bun tools/ha-panel-preview.ts --all               full shot list for both orientations
+//
+// Common flags: --wasm=<pocketjs.wasm> (or POCKETJS_WASM), --out=<dir>, --no-build.
+// --only matches output names exactly: home, lights, offline-home, no-weather-home, ...
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -16,8 +22,6 @@ const args = process.argv.slice(2);
 const flag = (name: string) => args.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
 const buildDirectory = resolve(root, ".pocket-build/preview/ha-panel");
 const outDirectory = resolve(flag("out") ?? join(root, ".pocket-build/validation/dashboard", new Date().toISOString().replace(/[:.]/g, "-")));
-const WIDTH = args.includes("--landscape") ? 640 : 400;
-const HEIGHT = args.includes("--landscape") ? 400 : 640;
 const DENSITY = 2;
 
 function wasmPath(): string {
@@ -46,7 +50,7 @@ export type Touch = readonly [number, number] | null;
 export interface Shot { name: string; tape: readonly { frames: number; touch: Touch }[] }
 
 /** Fixtures for the device namespaces the panel reads. */
-function installNativeStubs(options: { haConfigured: boolean }) {
+function installNativeStubs(options: { haConfigured: boolean; landscape: boolean }) {
   const g = globalThis as any;
   let rgb = [0, 0, 0];
   let session = "";
@@ -60,7 +64,7 @@ function installNativeStubs(options: { haConfigured: boolean }) {
       : { baseUrl: "", token: "", lightEntityId: "", selftest: false },
     firmwareVersion: () => "host-preview",
     setScreenOffSeconds: () => true,
-    landscape: () => args.includes("--landscape"),
+    landscape: () => options.landscape,
     setLandscape: () => true,
     savePanelState: (json: string) => { session = json; return true; },
     takePanelState: () => { const value = session; session = ""; return value; },
@@ -88,12 +92,16 @@ function installNativeStubs(options: { haConfigured: boolean }) {
   return { rgb: () => rgb, brightness: () => brightness, outbox, deliver };
 }
 
-async function run(shots: readonly Shot[], options: { haConfigured: boolean; weather: boolean; prefix: string }) {
+interface RunOptions { haConfigured: boolean; weather: boolean; prefix: string; landscape: boolean; out: string }
+
+async function run(shots: readonly Shot[], options: RunOptions) {
+  const width = options.landscape ? 640 : 400;
+  const height = options.landscape ? 400 : 640;
   const wasmBytes = await Bun.file(wasmPath()).arrayBuffer();
   const source = await Bun.file(join(buildDirectory, "ha-panel.js")).text();
   const pak = await Bun.file(join(buildDirectory, "ha-panel.pak")).arrayBuffer();
   for (const shot of shots) {
-    const wasm = await createWasmUi(wasmBytes, { width: WIDTH, height: HEIGHT, rasterDensity: DENSITY });
+    const wasm = await createWasmUi(wasmBytes, { width, height, rasterDensity: DENSITY });
     const g = globalThis as any;
     const bridge = installNativeStubs(options);
     g.ui = wasm.ops;
@@ -125,8 +133,8 @@ async function run(shots: readonly Shot[], options: { haConfigured: boolean; wea
     for (const segment of shot.tape) for (let i = 0; i < segment.frames; i++) step(segment.touch);
     for (let i = 0; i < 4; i++) step(null);
     const pixels = wasm.renderScaled(DENSITY);
-    const path = join(outDirectory, `${options.prefix}${shot.name}.png`);
-    writeFileSync(path, encodePNG(new Uint8Array(pixels), WIDTH * DENSITY, HEIGHT * DENSITY));
+    const path = join(options.out, `${options.prefix}${shot.name}.png`);
+    writeFileSync(path, encodePNG(new Uint8Array(pixels), width * DENSITY, height * DENSITY));
     console.log(`wrote ${path}`);
     wasm.dispose();
   }
@@ -143,12 +151,39 @@ const drag = (x0: number, y0: number, x1: number, y1: number, frames = 10) => [
 ];
 export const gestures = { tap, hold, drag };
 
+type ShotSet = { connected: Shot[]; offline: Shot[]; noWeather: Shot[] };
+const VARIANTS = [
+  { key: "connected", haConfigured: true, weather: true, prefix: "" },
+  { key: "offline", haConfigured: false, weather: false, prefix: "offline-" },
+  { key: "noWeather", haConfigured: true, weather: false, prefix: "no-weather-" },
+] as const;
+
+async function renderSet(set: ShotSet, landscape: boolean, out: string, only?: ReadonlySet<string>) {
+  let count = 0;
+  for (const variant of VARIANTS) {
+    const shots = set[variant.key].filter(shot => !only || only.has(`${variant.prefix}${shot.name}`));
+    if (shots.length === 0) continue;
+    mkdirSync(out, { recursive: true });
+    await run(shots, { ...variant, landscape, out });
+    count += shots.length;
+  }
+  return count;
+}
+
 if (import.meta.main) {
+  const started = performance.now();
   if (!args.includes("--no-build")) compile();
-  mkdirSync(outDirectory, { recursive: true });
   const { SHOTS, LANDSCAPE_SHOTS } = await import("./ha-panel-preview-shots.ts");
-  const shots = args.includes("--landscape") ? LANDSCAPE_SHOTS : SHOTS;
-  await run(shots.connected, { haConfigured: true, weather: true, prefix: "" });
-  await run(shots.offline, { haConfigured: false, weather: false, prefix: "offline-" });
-  await run(shots.noWeather, { haConfigured: true, weather: false, prefix: "no-weather-" });
+  const smoke = args.includes("--smoke");
+  const both = smoke || args.includes("--all");
+  const onlyFlag = flag("only");
+  const only = smoke ? new Set(["home"]) : onlyFlag ? new Set(onlyFlag.split(",").map(name => name.trim()).filter(Boolean)) : undefined;
+  const orientations = both ? [false, true] : [args.includes("--landscape")];
+  let count = 0;
+  for (const landscape of orientations) {
+    const out = both ? join(outDirectory, landscape ? "landscape" : "portrait") : outDirectory;
+    count += await renderSet(landscape ? LANDSCAPE_SHOTS : SHOTS, landscape, out, only);
+  }
+  if (count === 0) throw new Error(`no shots matched${onlyFlag ? ` --only=${onlyFlag}` : ""}; see tools/ha-panel-preview-shots.ts`);
+  console.log(`rendered ${count} shot(s) in ${((performance.now() - started) / 1000).toFixed(1)} s -> ${outDirectory}`);
 }

@@ -162,20 +162,38 @@ def icons() -> list[str]:
 def qr_placeholder() -> str:
     """A QR-shaped placeholder for the provisioning page: finder patterns plus
     seeded modules, like the design mock. It encodes nothing; the real code
-    comes with softAP provisioning."""
-    n, seed, modules = 29, 7, []
+    comes with softAP provisioning.
+
+    Modules are emitted as horizontal-run <rect> elements. The PocketJS SVG
+    baker covers rects analytically, while a single many-contour <path> is
+    supersampled against every edge for every pixel of its bounding box; the
+    path form cost about 39 s per compile."""
+    n, seed = 29, 7
     def finder(a: int, b: int) -> bool:
         return any(a0 <= a < a0 + 7 and b0 <= b < b0 + 7 for a0, b0 in ((0, 0), (0, n - 7), (n - 7, 0)))
+    grid = [[False] * n for _ in range(n)]
     for i in range(n):
         for j in range(n):
             seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
-            if not finder(i, j) and seed % 100 < 48:
-                modules.append(f"M{j} {i}h1v1h-1z")
+            grid[i][j] = not finder(i, j) and seed % 100 < 48
+    def rect(x: int, y: int, w: int, h: int, fill: str) -> str:
+        return f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{fill}"/>'
+    shapes = [rect(0, 0, n, n, WHITE)]
+    for i in range(n):
+        j = 0
+        while j < n:
+            if not grid[i][j]:
+                j += 1
+                continue
+            k = j
+            while k < n and grid[i][k]:
+                k += 1
+            shapes.append(rect(j, i, k - j, 1, "#000000"))
+            j = k
     for a, b in ((0, 0), (0, n - 7), (n - 7, 0)):
-        modules.append(f"M{b} {a}h7v7h-7zM{b + 1} {a + 1}v5h5v-5zM{b + 2} {a + 2}h3v3h-3z")
-    body = f'<path fill="{WHITE}" d="M0 0h{n}v{n}h-{n}z"/>\n<path fill="#000000" d="{"".join(modules)}"/>'
+        shapes += [rect(b, a, 7, 7, "#000000"), rect(b + 1, a + 1, 5, 5, WHITE), rect(b + 2, a + 2, 3, 3, "#000000")]
     name = "qr-placeholder.svg"
-    (ART / name).write_text(svg(200, 200, f"0 0 {n} {n}", body))
+    (ART / name).write_text(svg(200, 200, f"0 0 {n} {n}", "\n".join(shapes)))
     return name
 
 

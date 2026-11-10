@@ -10,7 +10,9 @@
   ],
   "scripts": {
     "pocket": "bun third_party/pocketjs/tools/pocket.ts",
-    "app:push": "bun tools/app-push.ts"
+    "app:push": "bun tools/app-push.ts",
+    "fonts": "bun tools/ha-panel-fonts.ts",
+    "preview": "bun tools/ha-panel-preview.ts"
   },
   "dependencies": {
     "@pocketjs/framework": "workspace:*",

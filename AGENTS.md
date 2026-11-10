@@ -18,9 +18,19 @@
 - Declare only capabilities registered by the firmware in `pocket.host.json`.
 - Compile C with `-Wall -Wextra -Werror`, declare the `esp32p4` target for each component, and keep generated files, build trees and validation logs out of Git.
 
+## App development fast path
+
+Changes confined to `apps/<app>/` and its asset tools follow this path; load `skills/pocketjs-app-dev/SKILL.md` for the commands.
+
+- Build the smallest vertical slice that works on the device. Implement only features with a registered native capability, a live backend or a requested fixture. Do not add placeholder enum states, adapter seams, runtime schema validators, focus or state machines, or tests for features that are not wired; record them as a one-line follow-up instead.
+- Add tests only for pure logic you changed, and keep them in the matching `*.test.ts`. Do not write a review of your own plan and then redo the work; decide, implement, check.
+- Change one orientation at a time. Put measurements both orientations share in one constant; finish and check portrait before landscape, or the reverse.
+- Daily checks, run after each edit and taking seconds each: `bun run fonts` when text changed, `bun run pocket check` for the app, `bun test apps/<app>`, `bun run preview --smoke` or `--only=<shot>` for the screens you touched, and `bun run app:push <app-dir> --wifi <ip>` when a device is reachable. View only the screenshots you rendered, once per change.
+- Heavy gates: `bun run preview --all`, the ESP-IDF firmware build, flashing and the 30-second serial capture. Run them for changes to firmware, board code, the host config, `partitions.csv` or the preview harness, for a release, or when the user asks. An app-only change skips them; its milestone commit needs the daily checks plus `bun run preview` for the orientation it changed.
+
 ## Verification and commits
 
-- Run the relevant host export and firmware build after changes. Run `bun test apps/ha-panel tools/partitions.test.ts` for panel logic and flash-layout checks. A successful build is not device validation.
+- Run the relevant host export and firmware build after firmware, board or host-config changes. Run `bun test apps/ha-panel tools/partitions.test.ts` for panel logic and flash-layout checks. A successful build is not device validation.
 - For device changes, identify the attached chip before flashing and capture at least 30 seconds of serial output, including internal DMA heap and runner statistics.
 - Store validation logs under ignored `.pocket-build/validation/<task>/<run>/`; report unrun checks as unverified.
 - Use one local Conventional Commit per milestone after its checks pass.

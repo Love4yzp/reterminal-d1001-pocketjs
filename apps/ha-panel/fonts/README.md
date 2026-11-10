@@ -6,7 +6,7 @@ Upstream: https://github.com/notofonts/noto-cjk
 
 Local source: `/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc`. Copyright 2014–2021 Adobe (http://www.adobe.com/). Licensed under the SIL Open Font License 1.1; see `OFL.txt`. The subset retains the original name and license metadata.
 
-From the repository root, update the source-derived character file with `bun tools/ha-panel-fonts.ts`. `bun tools/ha-panel-fonts.ts --check` and the font coverage tests detect missing characters. Rebuild the subset with fonttools through mise-managed uv, without global Python packages:
+From the repository root, run `bun run fonts`. It collects the CJK characters in the app's string literals and JSX text, writes `characters.txt`, and rebuilds the subset when the set changed. The rebuild runs fonttools through mise-managed uv and produces byte-identical output for the same character set. `bun run fonts --force` rebuilds without a character change; `bun run fonts --check` and the font coverage tests fail when `characters.txt` is stale. The underlying command is:
 
 ```sh
 mise x uv -- uvx --from fonttools pyftsubset \

@@ -32,15 +32,39 @@ export function sortedCharacters(characters: ReadonlySet<string>): string {
   return [...characters].sort((a, b) => a.codePointAt(0)! - b.codePointAt(0)!).join("");
 }
 
+const FONT_SOURCE = "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc";
+
+/** Rebuild fonts/D1001SansSC-Regular.otf from characters.txt (byte-deterministic). */
+export function rebuildSubset(root = HA_PANEL_ROOT) {
+  const result = Bun.spawnSync([
+    "mise", "x", "uv", "--", "uvx", "--from", "fonttools", "pyftsubset", FONT_SOURCE,
+    "--font-number=2",
+    `--text-file=${join(root, "fonts/characters.txt")}`,
+    `--output-file=${join(root, "fonts/D1001SansSC-Regular.otf")}`,
+    "--name-IDs=*", "--name-legacy", "--name-languages=*",
+    "--notdef-outline", "--recommended-glyphs",
+  ], { stdout: "pipe", stderr: "pipe" });
+  if (!result.success) throw new Error(`pyftsubset failed\n${result.stdout}${result.stderr}`);
+}
+
+// bun run fonts            sync characters.txt and rebuild the .otf subset when the set changed
+// bun run fonts --force    rebuild the subset even if characters.txt is unchanged
+// bun run fonts --check    fail if characters.txt is stale (no writes)
 if (import.meta.main) {
   const path = join(HA_PANEL_ROOT, "fonts/characters.txt");
   const expected = sortedCharacters(collectAppCharacters());
+  const actual = readFileSync(path, "utf8").trim();
   if (process.argv.includes("--check")) {
-    const actual = readFileSync(path, "utf8").trim();
-    if (actual !== expected) throw new Error("ha-panel character coverage is stale; run bun tools/ha-panel-fonts.ts");
+    if (actual !== expected) throw new Error("ha-panel character coverage is stale; run bun run fonts");
     console.log(`ha-panel font coverage: ${[...expected].length} characters`);
   } else {
-    writeFileSync(path, `${expected}\n`);
-    console.log(`wrote ${[...expected].length} characters to ${path}`);
+    const changed = actual !== expected;
+    if (changed) writeFileSync(path, `${expected}\n`);
+    if (changed || process.argv.includes("--force")) {
+      rebuildSubset();
+      console.log(`ha-panel fonts: ${[...expected].length} characters, subset rebuilt`);
+    } else {
+      console.log(`ha-panel fonts: ${[...expected].length} characters, unchanged`);
+    }
   }
 }
