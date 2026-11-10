@@ -9,6 +9,7 @@ export interface ShowroomLight {
   entityId?: string;
   /** The existing worker can control only this legacy single-HA-light slot. */
   legacy?: boolean;
+  staleAfterSeconds?: number;
   initial: { on: boolean; brightness: number; hue: number; saturation: number };
 }
 
@@ -51,7 +52,15 @@ export interface SensorReading {
   updatedAt: number | null;
 }
 
-export type SceneRunStatus = "idle" | "applied" | "partial" | "failed" | "unsupported";
+export type SceneRunStatus = "idle" | "pending" | "applied" | "partial" | "failed" | "unsupported";
+
+export interface ShowroomEntityMap {
+  version: 1;
+  lights: Record<string, string>;
+  sensors: Record<string, string>;
+  scenes: Record<string, string>;
+  weather?: string;
+}
 
 export const SHOWROOM: ShowroomConfig = {
   version: 1,
@@ -114,6 +123,12 @@ export const SHOWROOM: ShowroomConfig = {
         remote: { on: true, brightness: 204, hue: 37, saturation: 12 },
       },
     },
+    { key: "reachy-intro-retail", name: "讲解", kind: "ha", entityId: "input_button.example_reachy_intro_retail" },
+    { key: "reachy-intro-space", name: "导览", kind: "ha", entityId: "input_button.example_reachy_intro_space" },
+    { key: "reachy-intro-emergency", name: "应急", kind: "ha", entityId: "input_button.example_reachy_intro_emergency" },
+    { key: "reachy-stop", name: "停止", kind: "ha", entityId: "input_button.example_reachy_stop" },
+    { key: "reachy-wake", name: "唤醒", kind: "ha", entityId: "input_button.example_reachy_wake" },
+    { key: "reachy-lang-toggle", name: "语言", kind: "ha", entityId: "input_button.example_reachy_lang_toggle" },
   ],
 };
 
@@ -160,6 +175,9 @@ export function validateShowroomConfig(config: ShowroomConfig): string[] {
     if (light.legacy && light.source !== "ha") errors.push(`lights.${light.key} legacy source must be ha`);
     if (light.source === "ha" && !light.legacy && !light.entityId)
       errors.push(`lights.${light.key} missing entityId`);
+    if (light.staleAfterSeconds !== undefined &&
+        (!Number.isFinite(light.staleAfterSeconds) || light.staleAfterSeconds < 10))
+      errors.push(`lights.${light.key} invalid staleAfterSeconds`);
     const initial = light.initial;
     if (typeof initial.on !== "boolean" ||
         !Number.isFinite(initial.brightness) || initial.brightness < 0 || initial.brightness > 255 ||
@@ -174,7 +192,11 @@ export function validateShowroomConfig(config: ShowroomConfig): string[] {
       errors.push(`sensors.${sensor.key} invalid staleAfterSeconds`);
   }
   for (const scene of config.scenes) {
-    if (scene.kind !== "local") continue;
+    if (scene.kind === "ha") {
+      if (!/^(scene|script|input_button)\.[a-z0-9_]+$/.test(scene.entityId))
+        errors.push(`scenes.${scene.key} invalid service entityId`);
+      continue;
+    }
     for (const key of Object.keys(scene.changes))
       if (!lights.has(key)) errors.push(`scenes.${scene.key} unknown key ${key}`);
   }
@@ -184,6 +206,59 @@ export function validateShowroomConfig(config: ShowroomConfig): string[] {
 export function assertShowroomConfig(config: ShowroomConfig): void {
   const errors = validateShowroomConfig(config);
   if (errors.length > 0) throw new Error(`Invalid showroom config: ${errors.join("; ")}`);
+}
+
+function bindingObject(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error(`${path} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+export function parseShowroomEntityMap(text: string, config: ShowroomConfig = SHOWROOM): ShowroomEntityMap | undefined {
+  if (text.trim().length === 0) return undefined;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error("entityMap must be valid JSON");
+  }
+  const value = bindingObject(raw, "entityMap");
+  if (value.version !== 1) throw new Error("entityMap unsupported version");
+  for (const key of Object.keys(value))
+    if (!["version", "lights", "sensors", "scenes", "weather"].includes(key))
+      throw new Error(`entityMap unknown field ${key}`);
+
+  const result: ShowroomEntityMap = { version: 1, lights: {}, sensors: {}, scenes: {} };
+  const readEntries = (
+    field: "lights" | "sensors" | "scenes",
+    allowed: ReadonlyMap<string, string>,
+  ) => {
+    const group = bindingObject(value[field] ?? {}, `entityMap.${field}`);
+    for (const [key, entity] of Object.entries(group)) {
+      const domain = allowed.get(key);
+      if (!domain) throw new Error(`entityMap.${field} unknown key ${key}`);
+      if (typeof entity !== "string" || (domain !== "service" && !entity.startsWith(`${domain}.`)) ||
+          !/^[a-z_]+\.[a-z0-9_]+$/i.test(entity))
+        throw new Error(`entityMap.${field}.${key} invalid entityId`);
+      result[field][key] = entity;
+    }
+  };
+  readEntries("lights", new Map(config.lights.filter(light => light.source === "ha").map(light => [light.key, "light"])));
+  readEntries("sensors", new Map(config.sensors.map(sensor => [sensor.key, "sensor"])));
+  readEntries("scenes", new Map(config.scenes.filter(scene => scene.kind === "ha").map(scene => [scene.key, "service"])));
+  for (const [key, entity] of Object.entries(result.scenes)) {
+    if (!/^(scene|script|input_button)\.[a-z0-9_]+$/.test(entity))
+      throw new Error(`entityMap.scenes.${key} invalid service entityId`);
+  }
+  if (value.weather !== undefined) {
+    if (typeof value.weather !== "string" || !/^weather\.[a-z0-9_]+$/.test(value.weather))
+      throw new Error("entityMap.weather invalid entityId");
+    result.weather = value.weather;
+  }
+  if (Object.keys(result.lights).length + Object.keys(result.sensors).length +
+      Object.keys(result.scenes).length + (result.weather ? 1 : 0) === 0)
+    throw new Error("entityMap must contain at least one entity");
+  return result;
 }
 
 export function showroomSensor(key: string, config: ShowroomConfig = SHOWROOM): ShowroomSensor | undefined {
@@ -218,7 +293,9 @@ export function formatSensorValue(sensor: ShowroomSensor, reading: SensorReading
   return reading.value;
 }
 
-export function sensorStatusText(reading: SensorReading): string {
+export function sensorStatusText(reading: SensorReading, error = ""): string {
+  if (reading.status === "stale") return "过期";
+  if (error) return "更新失败";
   switch (reading.status) {
     case "pending": return "待接入";
     case "mock": return "示例";
@@ -231,6 +308,7 @@ export function sensorStatusText(reading: SensorReading): string {
 
 export function sceneStatusText(status: SceneRunStatus): string {
   switch (status) {
+    case "pending": return "执行中";
     case "applied": return "完成";
     case "partial": return "部分完成";
     case "failed": return "未完成";

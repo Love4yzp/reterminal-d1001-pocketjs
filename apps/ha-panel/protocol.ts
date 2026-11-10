@@ -1,19 +1,25 @@
 import type { HaConfig } from "./ha-request";
 import type { LightState, Weather } from "./model";
-import type { SensorReading } from "./showroom";
+import type { SensorReading, ShowroomEntityMap } from "./showroom";
 
 export interface PanelHaConfig extends HaConfig {
   selftest: boolean;
+  entityMap?: ShowroomEntityMap;
+  configError?: string;
 }
 
-export type WorkerCommand = { type: "light"; light: LightState };
+export type WorkerCommand =
+  | { type: "light"; light: LightState }
+  | { type: "entity-light"; lightId: string; light: LightState; seq: number }
+  | { type: "service"; sceneId: string; runId: number };
 
 export type WorkerEvent =
   | { type: "status"; configured: boolean; connected: boolean; error: string }
   | { type: "light"; light: LightState }
-  /** Front-end seam for a future multi-entity adapter; the legacy worker does not emit this. */
   | { type: "entity-light"; lightId: string; light: LightState }
   | { type: "sensor"; sensorId: string; reading: SensorReading }
+  | { type: "entity-error"; domain: "light" | "sensor"; key: string; availability: "offline" | "unavailable"; error: string }
+  | { type: "service-result"; sceneId: string; runId: number; status: "applied" | "failed"; error: string }
   /** `null` when the instance has no usable weather entity. */
   | { type: "weather"; weather: Weather | null };
 

@@ -1,14 +1,7 @@
 import { FactKind, io, ResourceStatus, utf8Text } from "@pocketjs/framework/io";
 import { settle, sleep } from "@pocketjs/framework/worker";
-import {
-  createApiProbeRequest,
-  createGetLightStateRequest,
-  createGetWeatherRequest,
-  createSetLightStateRequest,
-  parseLightEntity,
-  type HttpRequest,
-} from "./ha-request";
-import type { LightState } from "./model";
+import { HaEngine, type HaResponse } from "./ha-engine";
+import type { HttpRequest } from "./ha-request";
 import {
   decodeMessage,
   encodeMessage,
@@ -17,30 +10,14 @@ import {
   type WorkerCommand,
   type WorkerEvent,
 } from "./protocol";
-import { parseWeatherEntity } from "./weather";
 
-interface HaResponse {
-  code: number;
-  body: string;
-}
-
-/** One loop tick is 100 ms. */
 const TICK_MICROS = 100_000;
-const RETRY_TICKS = 20;
-const LIGHT_TICKS = 300;
-const WEATHER_TICKS = 6_000;
-
 let config: PanelHaConfig | undefined;
-let configured = false;
-let connected = false;
 let lastConfig: Uint8Array | undefined;
-let requests = Promise.resolve();
-/** Last known remote light, the fallback for attributes HA omits when off. */
-let remoteLight: LightState = { on: false, brightness: 128, hue: 36, saturation: 70 };
 
 function errorMessage(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
-  return config?.token ? text.split(config.token).join("<redacted>") : text;
+  return statusErrorText(config?.token ? text.split(config.token).join("<redacted>") : text);
 }
 
 function publish(event: WorkerEvent): void {
@@ -52,16 +29,6 @@ function publish(event: WorkerEvent): void {
   } catch (error) {
     console.error(`[ha-panel] event publish failed: ${errorMessage(error)}`);
   }
-}
-
-function publishStatus(error = ""): void {
-  publish({ type: "status", configured, connected, error: statusErrorText(error) });
-}
-
-function enqueue(request: HttpRequest): Promise<HaResponse> {
-  const result = requests.then(() => execute(request));
-  requests = result.then(() => undefined, () => undefined);
-  return result;
 }
 
 async function execute(request: HttpRequest): Promise<HaResponse> {
@@ -94,7 +61,7 @@ async function execute(request: HttpRequest): Promise<HaResponse> {
     const outcome = await completion;
     if (outcome.status !== ResourceStatus.ok)
       throw new Error(`HTTP resource status ${outcome.status}`);
-    if (code < 200 || code >= 400) throw new Error(`HTTP status ${code}`);
+    if (code < 200 || code >= 300) throw new Error(`HTTP status ${code}`);
     console.log(`[ha-panel] ${request.method} ${request.url} -> ${code}`);
     return { code, body };
   } finally {
@@ -102,59 +69,14 @@ async function execute(request: HttpRequest): Promise<HaResponse> {
   }
 }
 
-function configuredConfig(value: PanelHaConfig): boolean {
-  return value.baseUrl.length > 0 && value.token.length > 0;
-}
-
-/** A valid light/API response is required before the UI can show HA as connected. */
-async function connect(): Promise<void> {
-  if (!config) return;
-  if (!config.lightEntityId) {
-    await enqueue(createApiProbeRequest(config));
-    connected = true;
-    publishStatus();
-    return;
-  }
-  const response = await enqueue(createGetLightStateRequest(config));
-  const light = parseLightEntity(response.body, remoteLight);
-  if (!light) throw new Error("HA light entity is unavailable or malformed");
-  remoteLight = light;
-  publish({ type: "light", light });
-  connected = true;
-  publishStatus();
-}
-
-/** Weather is optional: a failure or a missing entity hides it, HA stays connected. */
-async function readWeather(): Promise<void> {
-  if (!config) return;
-  try {
-    const response = await enqueue(createGetWeatherRequest(config));
-    publish({ type: "weather", weather: parseWeatherEntity(response.body) });
-  } catch (error) {
-    publish({ type: "weather", weather: null });
-    console.warn(`[ha-panel] HA weather unavailable: ${errorMessage(error)}`);
-  }
-}
-
-async function handleCommand(command: WorkerCommand): Promise<void> {
-  if (!config || !configured) return;
-  await enqueue(createSetLightStateRequest(config, command.light));
-  remoteLight = command.light;
-  publish({ type: "light", light: remoteLight });
-  if (!connected) {
-    connected = true;
-    publishStatus();
-  }
-}
+const engine = new HaEngine(execute, publish);
 
 async function commandLoop(): Promise<void> {
   for await (const bytes of io.channel("ha-commands").observe()) {
     try {
-      await handleCommand(decodeMessage<WorkerCommand>(bytes));
+      await engine.command(decodeMessage<WorkerCommand>(bytes));
     } catch (error) {
-      connected = false;
-      publishStatus(errorMessage(error));
-      console.error(`[ha-panel] HA request failed: ${errorMessage(error)}`);
+      console.error(`[ha-panel] HA command failed: ${errorMessage(error)}`);
     }
   }
 }
@@ -168,60 +90,20 @@ function sameBytes(left: Uint8Array, right: Uint8Array | undefined): boolean {
 
 async function run(): Promise<void> {
   void commandLoop();
-  let retryDelay = 0;
-  let lightDelay = 0;
-  let weatherDelay = 0;
-  let busy = false;
   for (;;) {
     const bytes = io.channel("ha-config").snapshot();
     if (bytes && !sameBytes(bytes, lastConfig)) {
       lastConfig = bytes;
       try {
         config = decodeMessage<PanelHaConfig>(bytes);
-        configured = configuredConfig(config);
-        connected = false;
-        retryDelay = 0;
-        lightDelay = 0;
-        weatherDelay = 0;
-        publishStatus();
+        engine.setConfig(config);
       } catch (error) {
-        configured = false;
-        connected = false;
-        publishStatus(errorMessage(error));
+        config = { baseUrl: "", token: "", selftest: false, configError: errorMessage(error) };
+        engine.setConfig(config);
         console.error(`[ha-panel] HA configuration failed: ${errorMessage(error)}`);
       }
     }
-    if (retryDelay > 0) retryDelay -= 1;
-    if (lightDelay > 0) lightDelay -= 1;
-    if (weatherDelay > 0) weatherDelay -= 1;
-    if (configured && !busy) {
-      const reconnect = !connected && retryDelay === 0;
-      const refresh = connected && lightDelay === 0;
-      if (reconnect || refresh) {
-        busy = true;
-        try {
-          await connect();
-          lightDelay = LIGHT_TICKS;
-          if (reconnect) weatherDelay = 0;
-        } catch (error) {
-          connected = false;
-          retryDelay = RETRY_TICKS;
-          publishStatus(errorMessage(error));
-          console.error(`[ha-panel] HA connect failed: ${errorMessage(error)}`);
-        } finally {
-          busy = false;
-        }
-      }
-      if (connected && weatherDelay === 0) {
-        busy = true;
-        weatherDelay = WEATHER_TICKS;
-        try {
-          await readWeather();
-        } finally {
-          busy = false;
-        }
-      }
-    }
+    engine.tick();
     await sleep(TICK_MICROS);
   }
 }

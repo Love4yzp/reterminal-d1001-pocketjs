@@ -4,7 +4,10 @@ import { SHOWROOM, showroomScene, type SceneRunStatus, type ShowroomConfig } fro
 export type SceneId = string;
 
 export const SCENES: readonly { id: SceneId; label: string }[] =
-  SHOWROOM.scenes.map(scene => ({ id: scene.key, label: scene.name }));
+  SHOWROOM.home.scenes.map(key => {
+    const scene = showroomScene(key)!;
+    return { id: scene.key, label: scene.name };
+  });
 
 export type SceneEffect =
   | { type: "local"; sceneId: SceneId; action: PanelAction; skipped: LightId[]; appliedCount: number }

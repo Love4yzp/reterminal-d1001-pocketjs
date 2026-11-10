@@ -2,6 +2,7 @@ import { deviceStatus, setBrightness } from "@pocketjs/framework/device";
 import { wifiStatus } from "@pocketjs/framework/wifi";
 import type { PanelHaConfig } from "./protocol";
 import type { ScreenOffNative } from "./settings";
+import { parseShowroomEntityMap } from "./showroom";
 
 /** `globalThis.d1001`, installed by programs/reterminal-d1001 (pocket_d1001). */
 interface D1001Native extends ScreenOffNative {
@@ -73,12 +74,21 @@ export function readHaConfig(): PanelHaConfig {
   if (typeof value !== "object" || value === null)
     return { baseUrl: "", token: "", lightEntityId: "", weatherEntityId: "", selftest: false };
   const candidate = value as Record<string, unknown>;
+  let entityMap: PanelHaConfig["entityMap"];
+  let configError = "";
+  try {
+    entityMap = parseShowroomEntityMap(text(candidate.entityMapJson));
+  } catch (error) {
+    configError = error instanceof Error ? error.message : String(error);
+  }
   return {
     baseUrl: text(candidate.baseUrl),
     token: text(candidate.token),
     lightEntityId: text(candidate.lightEntityId),
-    weatherEntityId: text(candidate.weatherEntityId),
+    weatherEntityId: entityMap?.weather ?? text(candidate.weatherEntityId),
     selftest: candidate.selftest === true,
+    entityMap,
+    configError,
   };
 }
 

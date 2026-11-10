@@ -30,6 +30,9 @@ export function lightInfo(state: PanelState, lightId: LightId): LightInfo {
 export function lightStatusText(state: PanelState, lightId: LightId): string {
   const availability = state.lightAvailability[lightId];
   if (availability === "pending") return PENDING_TEXT;
+  if (availability === "stale") return "过期";
+  if (availability === "unavailable") return "不可用";
+  if (state.lightErrors[lightId]) return "更新失败";
   if (!isLightAvailable(state, lightId) && availability !== "read-only") return UNAVAILABLE_TEXT;
   const light = state.lights[lightId];
   const value = light.on ? `开 ${percentFromBrightness(light.brightness)}%` : "关";
@@ -46,7 +49,7 @@ export type LightTone = "on" | "cool" | "off" | "unavailable";
 
 export function lightTone(state: PanelState, lightId: LightId): LightTone {
   const availability = state.lightAvailability[lightId];
-  if (availability === "pending" || availability === "offline") return "unavailable";
+  if (availability === "pending" || availability === "offline" || availability === "unavailable") return "unavailable";
   const light = state.lights[lightId];
   if (!light.on) return "off";
   return light.hue >= 150 && light.hue <= 270 && light.saturation >= 30 ? "cool" : "on";

@@ -82,7 +82,7 @@ function Panel() {
   const utcOffsetMinutes = readUtcOffsetMinutes();
   const firmwareVersion = readFirmwareVersion();
   const landscape = readLandscape();
-  const configured = config.baseUrl.length > 0 && config.token.length > 0;
+  const configured = config.baseUrl.length > 0 && config.token.length > 0 && !config.configError;
   const onboardLightId = SHOWROOM.lights.find(light => light.source === "onboard")?.key;
   const configChannel = worker.channel("ha-config");
   const commands = worker.channel("ha-commands");
@@ -90,23 +90,21 @@ function Panel() {
   const screenOffControl = createScreenOffControl(screenOffNative());
   screenOffControl.apply(settings().screenOffSeconds);
   let frame = 0;
-  let pendingHa: LightState | null = null;
-  let sendHaAt = 0;
+  const pendingHa: Record<LightId, { light: LightState; seq: number; sendAt: number }> = {};
+  const haSequences: Record<LightId, number> = {};
+  const serviceRuns: Record<string, number> = {};
   let selftestSent = false;
   let lastHaError = "";
 
-  const queueHa = (light: LightState) => {
+  const queueHa = (lightId: LightId, light: LightState) => {
     if (!configured) return;
-    pendingHa = light;
-    sendHaAt = frame + 6;
+    const seq = (haSequences[lightId] ?? 0) + 1;
+    haSequences[lightId] = seq;
+    pendingHa[lightId] = { light, seq, sendAt: frame + 6 };
   };
   const adapters: Record<LightId, LightAdapter> = {};
-  for (const light of SHOWROOM.lights) {
-    const sendHa = light.legacy ? queueHa : () => {
-      throw new Error(`multi-entity HA adapter is not installed for ${light.key}`);
-    };
-    adapters[light.key] = createLightAdapter(light.key, light.source, sendHa);
-  }
+  for (const light of SHOWROOM.lights)
+    adapters[light.key] = createLightAdapter(light.key, light.source, value => queueHa(light.key, value));
 
   const dispatch = (action: PanelAction, fromHa = false): boolean => {
     const previous = state();
@@ -269,7 +267,7 @@ function Panel() {
     return accepted;
   };
 
-  const configBytes = new Uint8Array(512);
+  const configBytes = new Uint8Array(4096);
   encodeMessage(config, configBytes);
   if (!configChannel.publish(configBytes)) throw new Error("HA config channel rejected the configuration");
   dispatch({ type: "ha", haConfigured: configured, haConnected: false, haLightConfigured: Boolean(config.lightEntityId) });

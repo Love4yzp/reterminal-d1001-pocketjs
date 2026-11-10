@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  createActivateEntityRequest,
   createApiProbeRequest,
+  createGetEntityStateRequest,
   createGetLightStateRequest,
   createGetWeatherRequest,
   createSetLightStateRequest,
   FIRST_WEATHER_TEMPLATE,
   parseLightEntity,
+  parseSensorEntity,
 } from "./ha-request";
 import type { HaConfig, HttpRequest } from "./ha-request";
 import type { LightState } from "./model";
@@ -115,5 +118,50 @@ describe("HA weather requests", () => {
     expect(jsonBody(request)).toEqual({ template: FIRST_WEATHER_TEMPLATE });
     expect(FIRST_WEATHER_TEMPLATE).toContain("states.weather | first");
     expect(FIRST_WEATHER_TEMPLATE).toContain("null");
+  });
+});
+
+describe("keyed entities and services", () => {
+  test("uses an explicit entity for state reads and light commands", () => {
+    expect(createGetEntityStateRequest(config, "light.second").url)
+      .toBe("http://home-assistant.test:8123/api/states/light.second");
+    const request = createSetLightStateRequest(
+      config,
+      { on: false, brightness: 0, hue: 0, saturation: 0 },
+      "light.second",
+    );
+    expect(jsonBody(request)).toEqual({ entity_id: "light.second" });
+  });
+
+  test("maps scene, script and input_button to their HA services", () => {
+    const cases = [
+      ["scene.welcome", "scene/turn_on"],
+      ["script.welcome", "script/turn_on"],
+      ["input_button.wake", "input_button/press"],
+    ] as const;
+    for (const [entityId, service] of cases) {
+      const request = createActivateEntityRequest(config, entityId);
+      expect(request.url).toBe(`http://home-assistant.test:8123/api/services/${service}`);
+      expect(jsonBody(request)).toEqual({ entity_id: entityId });
+    }
+  });
+
+  test("rejects arbitrary service domains", () => {
+    expect(() => createActivateEntityRequest(config, "light.not_a_scene")).toThrow("unsupported");
+    expect(() => createActivateEntityRequest(config, "input_button_missing_dot")).toThrow("entity");
+  });
+});
+
+describe("HA sensor entity parsing", () => {
+  test("converts numeric strings to finite numbers and preserves text states", () => {
+    expect(parseSensorEntity(JSON.stringify({ state: "21.50" }))).toEqual({ status: "live", value: 21.5 });
+    expect(parseSensorEntity(JSON.stringify({ state: "normal" }))).toEqual({ status: "live", value: "normal" });
+  });
+
+  test("distinguishes unavailable and malformed responses", () => {
+    expect(parseSensorEntity(JSON.stringify({ state: "unavailable" }))).toEqual({ status: "unavailable", value: null });
+    expect(parseSensorEntity(JSON.stringify({ state: "unknown" }))).toEqual({ status: "unavailable", value: null });
+    expect(parseSensorEntity("bad json")).toBeNull();
+    expect(parseSensorEntity(JSON.stringify({}))).toBeNull();
   });
 });

@@ -95,7 +95,7 @@ export function SensorCard(props: FocusProps & {
         {`${formatSensorValue(sensor(), reading())}${reading().value === null ? "" : ` ${sensor().unit}`}`}
       </Text>
       <Text class="absolute text-2xs" style={{ insetL: 12, insetT: props.box.height - 22, width: props.box.width - 24, textColor: reading().status === "live" ? theme.green : theme.disabledText }}>
-        {sensorStatusText(reading())}
+        {sensorStatusText(reading(), props.state.sensorErrors[props.sensorId])}
       </Text>
     </Pressable>
   );

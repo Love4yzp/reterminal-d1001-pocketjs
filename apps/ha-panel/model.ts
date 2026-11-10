@@ -9,7 +9,7 @@ import {
 
 export type LightKind = "virtual" | "onboard" | "ha";
 export type LightId = string;
-export type LightAvailability = "available" | "offline" | "pending" | "read-only";
+export type LightAvailability = "available" | "offline" | "pending" | "read-only" | "stale" | "unavailable";
 
 /** Default example order; each runtime state also carries its configured order. */
 export const LIGHT_IDS: readonly LightId[] = SHOWROOM_LIGHT_IDS;
@@ -45,10 +45,14 @@ export interface PanelState {
   lightOrder: LightId[];
   lightInfo: Record<LightId, LightPresentation>;
   lightAvailability: Record<LightId, LightAvailability>;
+  lightErrors: Record<LightId, string>;
+  lightUpdatedAt: Record<LightId, number | null>;
+  lightStaleAfter: Record<LightId, number>;
   legacyHaLightId: LightId | null;
   sensors: Record<string, SensorReading>;
   sensorOrder: string[];
   sensorStaleAfter: Record<string, number>;
+  sensorErrors: Record<string, string>;
   sceneRuns: Record<string, SceneRunStatus>;
   haConfigured: boolean;
   haConnected: boolean;
@@ -67,8 +71,9 @@ export type PanelAction =
   | { type: "set-color"; lightId: LightId; hue: number; saturation: number }
   | { type: "set-lights"; changes: LightChanges }
   | { type: "remote-light"; light: LightState }
-  | { type: "entity-light"; lightId: LightId; light: LightState }
+  | { type: "entity-light"; lightId: LightId; light: LightState; updatedAt?: number | null }
   | { type: "sensor"; sensorId: string; reading: SensorReading }
+  | { type: "entity-error"; domain: "light" | "sensor"; key: string; availability: "offline" | "unavailable"; error: string }
   | { type: "sensor-tick"; nowSeconds: number | null }
   | { type: "scene-result"; sceneId: string; status: SceneRunStatus }
   | { type: "clock"; clockEpochSeconds: number | null; clockSynced: boolean }
@@ -84,6 +89,8 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
   const lightKinds: Record<LightId, LightKind> = {};
   const lightInfo: Record<LightId, LightPresentation> = {};
   const lightAvailability: Record<LightId, LightAvailability> = {};
+  const lightUpdatedAt: Record<LightId, number | null> = {};
+  const lightStaleAfter: Record<LightId, number> = {};
   let legacyHaLightId: string | null = null;
   for (const light of config.lights) {
     lights[light.key] = normalizeLight(light.initial);
@@ -94,6 +101,8 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
       tag: light.source === "ha" ? "Home Assistant" : light.source === "onboard" ? "板载 RGB" : "虚拟设备",
     };
     lightAvailability[light.key] = light.source !== "ha" ? "available" : light.legacy ? "offline" : "pending";
+    lightUpdatedAt[light.key] = null;
+    lightStaleAfter[light.key] = light.staleAfterSeconds ?? 90;
     if (light.legacy) legacyHaLightId = light.key;
   }
   const sensors: Record<string, SensorReading> = {};
@@ -110,10 +119,14 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
     lightOrder: config.lights.map(light => light.key),
     lightInfo,
     lightAvailability,
+    lightErrors: {},
+    lightUpdatedAt,
+    lightStaleAfter,
     legacyHaLightId,
     sensors,
     sensorOrder: config.sensors.map(sensor => sensor.key),
     sensorStaleAfter,
+    sensorErrors: {},
     sceneRuns,
     haConfigured: false,
     haConnected: false,
@@ -125,7 +138,7 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
 }
 
 export function isLightAvailable(state: PanelState, lightId: LightId): boolean {
-  return state.lightAvailability[lightId] === "available";
+  return state.lightAvailability[lightId] === "available" || state.lightAvailability[lightId] === "stale";
 }
 
 export function availableLights(state: PanelState): LightId[] {
@@ -201,21 +214,51 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
     case "entity-light": {
       if (!state.lights[action.lightId] || state.lightKinds[action.lightId] !== "ha") return state;
       const next = withLights(state, { [action.lightId]: { ...action.light } }, false);
-      const availability: LightAvailability = !state.haConnected
-        ? "offline"
-        : action.lightId === state.legacyHaLightId && state.haLightConfigured
-          ? "available"
-          : "read-only";
-      if (state.lightAvailability[action.lightId] === availability) return next;
+      const availability: LightAvailability = state.haConnected ? "available" : "offline";
+      const lightErrors = { ...state.lightErrors };
+      delete lightErrors[action.lightId];
       return {
         ...next,
         lightAvailability: { ...next.lightAvailability, [action.lightId]: availability },
+        lightUpdatedAt: { ...next.lightUpdatedAt, [action.lightId]: action.updatedAt ?? null },
+        lightErrors,
       };
     }
     case "sensor": {
       const current = state.sensors[action.sensorId];
-      if (!current || sameSensor(current, action.reading)) return state;
-      return { ...state, sensors: { ...state.sensors, [action.sensorId]: { ...action.reading } } };
+      if (!current) return state;
+      const reading = { ...action.reading };
+      if (reading.status !== "live" && current.updatedAt !== null) {
+        reading.value = reading.value ?? current.value;
+        reading.updatedAt = current.updatedAt;
+      }
+      const sensorErrors = { ...state.sensorErrors };
+      delete sensorErrors[action.sensorId];
+      if (sameSensor(current, reading) && !(action.sensorId in state.sensorErrors)) return state;
+      return { ...state, sensors: { ...state.sensors, [action.sensorId]: reading }, sensorErrors };
+    }
+    case "entity-error": {
+      if (action.domain === "light") {
+        if (state.lightKinds[action.key] !== "ha") return state;
+        let availability = state.lightAvailability[action.key];
+        if (action.availability === "unavailable") availability = "unavailable";
+        else if (state.lightUpdatedAt[action.key] === null) availability = "offline";
+        return {
+          ...state,
+          lightAvailability: { ...state.lightAvailability, [action.key]: availability },
+          lightErrors: { ...state.lightErrors, [action.key]: action.error },
+        };
+      }
+      const current = state.sensors[action.key];
+      if (!current) return state;
+      const reading = { ...current };
+      if (action.availability === "unavailable") reading.status = "unavailable";
+      else if (current.status !== "live" && current.status !== "stale") reading.status = "offline";
+      return {
+        ...state,
+        sensors: { ...state.sensors, [action.key]: reading },
+        sensorErrors: { ...state.sensorErrors, [action.key]: action.error },
+      };
     }
     case "sensor-tick": {
       if (action.nowSeconds === null) return state;
@@ -229,7 +272,19 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
           sensors[sensorId] = { ...reading, status: "stale" };
         }
       }
-      return sensors === state.sensors ? state : { ...state, sensors };
+      let lightAvailability = state.lightAvailability;
+      for (const lightId of state.lightOrder) {
+        const updatedAt = state.lightUpdatedAt[lightId];
+        if (lightAvailability[lightId] !== "available" || updatedAt === null) continue;
+        if (action.nowSeconds >= updatedAt &&
+            action.nowSeconds - updatedAt > state.lightStaleAfter[lightId]!) {
+          if (lightAvailability === state.lightAvailability)
+            lightAvailability = { ...state.lightAvailability };
+          lightAvailability[lightId] = "stale";
+        }
+      }
+      const changed = sensors !== state.sensors || lightAvailability !== state.lightAvailability;
+      return changed ? { ...state, sensors, lightAvailability } : state;
     }
     case "scene-result":
       if (!(action.sceneId in state.sceneRuns) || state.sceneRuns[action.sceneId] === action.status) return state;
@@ -263,7 +318,9 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
       return {
         ...state,
         lightAvailability,
+        lightErrors: {},
         sensors,
+        sensorErrors: {},
         haConfigured: action.haConfigured,
         haConnected: action.haConnected,
         haLightConfigured: action.haLightConfigured,

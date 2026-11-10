@@ -60,4 +60,29 @@ describe("UI/worker message protocol", () => {
       sensorId: "temperature", reading: { status: "mock" },
     });
   });
+
+  test("round-trips production keyed commands and bounded entity results", () => {
+    const commandBytes = new Uint8Array(1024);
+    encodeMessage({
+      type: "entity-light",
+      lightId: "remote",
+      light: { on: true, brightness: 200, hue: 30, saturation: 50 },
+      seq: 7,
+    }, commandBytes);
+    expect(decodeMessage<{ lightId: string; seq: number }>(commandBytes)).toMatchObject({ lightId: "remote", seq: 7 });
+    encodeMessage({ type: "service", sceneId: "reachy-wake", runId: 4 }, commandBytes);
+    expect(decodeMessage<{ sceneId: string; runId: number }>(commandBytes)).toMatchObject({ sceneId: "reachy-wake", runId: 4 });
+
+    const eventBytes = new Uint8Array(512);
+    encodeMessage({
+      type: "entity-error",
+      domain: "sensor",
+      key: "temperature",
+      availability: "offline",
+      error: "x".repeat(160),
+    }, eventBytes);
+    expect(decodeMessage<{ key: string }>(eventBytes).key).toBe("temperature");
+    encodeMessage({ type: "service-result", sceneId: "reachy-wake", runId: 4, status: "applied", error: "" }, eventBytes);
+    expect(decodeMessage<{ runId: number; status: string }>(eventBytes)).toMatchObject({ runId: 4, status: "applied" });
+  });
 });

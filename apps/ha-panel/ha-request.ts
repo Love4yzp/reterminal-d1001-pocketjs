@@ -40,7 +40,8 @@ function postRequest(config: HaConfig, path: string, value: unknown): HttpReques
   };
 }
 
-function getStateRequest(config: HaConfig, entityId: string): HttpRequest {
+export function createGetEntityStateRequest(config: HaConfig, entityId: string): HttpRequest {
+  if (!/^[a-z_]+\..+$/i.test(entityId)) throw new Error("invalid HA entity_id");
   return {
     method: "GET",
     url: `${normalizedBaseUrl(config)}/api/states/${encodeURIComponent(entityId)}`,
@@ -58,11 +59,15 @@ export function createApiProbeRequest(config: HaConfig): HttpRequest {
 }
 
 export function createGetLightStateRequest(config: HaConfig): HttpRequest {
-  return getStateRequest(config, lightEntityId(config));
+  return createGetEntityStateRequest(config, lightEntityId(config));
 }
 
-export function createSetLightStateRequest(config: HaConfig, light: LightState): HttpRequest {
-  const entityId = lightEntityId(config);
+export function createSetLightStateRequest(
+  config: HaConfig,
+  light: LightState,
+  entityId = lightEntityId(config),
+): HttpRequest {
+  if (!/^[a-z_]+\..+$/i.test(entityId)) throw new Error("invalid HA entity_id");
   if (!light.on)
     return postRequest(config, "/api/services/light/turn_off", { entity_id: entityId });
   return postRequest(config, "/api/services/light/turn_on", {
@@ -70,6 +75,13 @@ export function createSetLightStateRequest(config: HaConfig, light: LightState):
     brightness: light.brightness,
     rgb_color: hsvToRgb(light.hue, light.saturation / 100),
   });
+}
+
+export function createActivateEntityRequest(config: HaConfig, entityId: string): HttpRequest {
+  const match = /^(scene|script|input_button)\.([a-z0-9_]+)$/i.exec(entityId);
+  if (!match) throw new Error("unsupported or invalid service entity_id");
+  const service = match[1] === "input_button" ? "press" : "turn_on";
+  return postRequest(config, `/api/services/${match[1]}/${service}`, { entity_id: entityId });
 }
 
 /**
@@ -83,7 +95,7 @@ export const FIRST_WEATHER_TEMPLATE =
   "{% else %}null{% endif %}";
 
 export function createGetWeatherRequest(config: HaConfig): HttpRequest {
-  if (config.weatherEntityId) return getStateRequest(config, config.weatherEntityId);
+  if (config.weatherEntityId) return createGetEntityStateRequest(config, config.weatherEntityId);
   return postRequest(config, "/api/template", { template: FIRST_WEATHER_TEMPLATE });
 }
 
@@ -107,4 +119,28 @@ export function parseLightEntity(body: string, fallback: LightState): LightState
     hue: Math.round(number(hs[0], fallback.hue)),
     saturation: Math.round(number(hs[1], fallback.saturation)),
   };
+}
+
+export type SensorEntityResult =
+  | { status: "live"; value: number | string }
+  | { status: "unavailable"; value: null }
+  | null;
+
+export function parseSensorEntity(body: string): SensorEntityResult {
+  let entity: { state?: unknown };
+  try {
+    entity = JSON.parse(body) as typeof entity;
+  } catch {
+    return null;
+  }
+  if (typeof entity !== "object" || entity === null) return null;
+  if (entity.state === "unavailable" || entity.state === "unknown")
+    return { status: "unavailable", value: null };
+  if (typeof entity.state === "number")
+    return Number.isFinite(entity.state) ? { status: "live", value: entity.state } : null;
+  if (typeof entity.state !== "string" || entity.state.length === 0) return null;
+  const numeric = Number(entity.state);
+  return Number.isFinite(numeric)
+    ? { status: "live", value: numeric }
+    : { status: "live", value: entity.state };
 }

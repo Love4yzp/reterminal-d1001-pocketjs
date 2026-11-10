@@ -68,7 +68,7 @@ export function SensorDetailScreen(props: FocusProps & {
           {`${formatSensorValue(sensor(), reading())}${reading().value === null ? "" : ` ${sensor().unit}`}`}
         </Text>
         <Text class="absolute text-sm" style={{ insetL: 20, insetT: 126, width: cardWidth() - 40, textColor: reading().status === "live" ? theme.green : theme.secondaryText }}>
-          {sensorStatusText(reading())}
+          {sensorStatusText(reading(), props.state.sensorErrors[props.sensorId])}
         </Text>
         <Text class="absolute text-xs" style={{ insetL: 20, insetT: 166, width: cardWidth() - 40, textColor: theme.disabledText }}>
           {reading().status === "pending" ? "等待接口数据" : `显示键 ${sensor().key}`}
