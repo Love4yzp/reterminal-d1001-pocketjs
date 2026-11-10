@@ -20,4 +20,4 @@ mise x uv -- uvx --from fonttools pyftsubset \
 
 `fonts.json` follows `third_party/pocketjs/docs/DYNAMIC_TEXT.md`, section “Packaged fonts and GPU pages”. The compiler packs these glyphs into the app's baked atlases; the original font is not loaded on the device.
 
-Every active font slot receives the declared character set, so keep Chinese labels in the shared 10px, 12px and 14px regular/bold styles. Large clock and weather digits use Inter only. Each additional style multiplies atlas size by the full character set. After adding a text style or characters, check the `headroom` value printed by `bun run preview`: the limit is the PKAP extent of the whole `.pocket` bundle (64-byte header plus pak plus JS, rounded up to 64 KiB pages) against the 7,340,032-byte `apps` partition, not the `.pak` size.
+Every active font slot receives the declared character set, so keep Chinese labels in the shared 10px, 12px and 14px regular/bold styles. Large clock and weather digits use Inter only. `bun run preview` and `app:push` fail if the package outgrows the `apps` partition.
