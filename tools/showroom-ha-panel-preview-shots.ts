@@ -1,5 +1,5 @@
 import { hsvToRgb } from "../apps/showroom-ha-panel/color";
-import { hueFromX, saturationFromX } from "../apps/showroom-ha-panel/dimmer";
+import { hueSaturationFromPoint } from "../apps/showroom-ha-panel/dimmer";
 import type { HaLightCommand } from "../apps/showroom-ha-panel/ha-request";
 import type { WorkerCommand } from "../apps/showroom-ha-panel/protocol";
 import { gestures, type NativeCalls, type Shot } from "./showroom-ha-panel-preview.ts";
@@ -63,11 +63,13 @@ export const SHOTS: ShotSet = {
     { name: "sensors", tape: tap(250, 610) },
     { name: "sensor-detail", tape: [...tap(250, 610), ...tap(100, 160)] },
     { name: "dimmer", tape: hold(100, 140) },
-    { name: "dimmer-drag", tape: [...hold(100, 140), ...drag(200, 390, 200, 270)] },
+    { name: "dimmer-drag", tape: [...hold(100, 140), ...tap(150, 520), ...drag(200, 400, 200, 220)] },
     {
       name: "dimmer-color",
-      tape: [...hold(100, 140), ...tap(328, 322), ...drag(100, 494, 230, 494), ...drag(300, 546, 157, 546)],
-      verify: verifyColor("remote", hueFromX(230, 84, 292), saturationFromX(157, 84, 292)),
+      tape: [...hold(100, 140), ...tap(150, 520), ...tap(250, 520), ...drag(200, 260, 165, 320)],
+      verify: verifyColor("remote",
+        hueSaturationFromPoint(165, 320, 200, 260, 116).hue,
+        hueSaturationFromPoint(165, 320, 200, 260, 116).saturation),
     },
     { name: "settings", tape: tap(350, 610) },
     { name: "settings-timeout", tape: [...tap(350, 610), ...tap(242, 199)] },
@@ -100,11 +102,13 @@ export const LANDSCAPE_SHOTS: ShotSet = {
     { name: "sensors", tape: tap(44, 230) },
     { name: "sensor-detail", tape: [...tap(44, 230), ...tap(150, 150)] },
     { name: "dimmer", tape: hold(160, 140) },
-    { name: "dimmer-drag", tape: [...hold(160, 140), ...drag(240, 340, 240, 200)] },
+    { name: "dimmer-drag", tape: [...hold(160, 140), ...tap(280, 338), ...drag(320, 280, 320, 130)] },
     {
       name: "dimmer-color",
-      tape: [...hold(160, 140), ...tap(480, 230), ...drag(400, 290, 504, 290), ...drag(600, 338, 445, 338)],
-      verify: verifyColor("remote", hueFromX(504, 386, 236), saturationFromX(445, 386, 236)),
+      tape: [...hold(160, 140), ...tap(280, 338), ...tap(360, 338), ...drag(320, 196, 291, 246)],
+      verify: verifyColor("remote",
+        hueSaturationFromPoint(291, 246, 320, 196, 96).hue,
+        hueSaturationFromPoint(291, 246, 320, 196, 96).saturation),
     },
     { name: "settings", tape: tap(44, 315) },
     { name: "settings-timeout", tape: [...tap(44, 315), ...tap(170, 240)] },

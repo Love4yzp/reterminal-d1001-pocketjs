@@ -4,11 +4,11 @@ import {
   brightnessFromPercent,
   dragPercent,
   fillHeight,
-  hueFromX,
+  hueSaturationFromPoint,
   percentFromBrightness,
   percentFromY,
-  saturationFromX,
   swipeDirection,
+  wheelPoint,
 } from "./dimmer";
 
 describe("brightness mapping", () => {
@@ -52,22 +52,38 @@ describe("vertical slider", () => {
   });
 });
 
-describe("swipes and color tracks", () => {
+describe("color wheel", () => {
+  const centerX = 200;
+  const centerY = 246;
+  const radius = 138;
+
+  test("maps the angle to hue, clockwise from the top", () => {
+    expect(hueSaturationFromPoint(centerX, centerY - radius, centerX, centerY, radius)).toEqual({ hue: 0, saturation: 100 });
+    expect(hueSaturationFromPoint(centerX + radius, centerY, centerX, centerY, radius)).toEqual({ hue: 90, saturation: 100 });
+    expect(hueSaturationFromPoint(centerX, centerY + radius, centerX, centerY, radius)).toEqual({ hue: 180, saturation: 100 });
+    expect(hueSaturationFromPoint(centerX - radius, centerY, centerX, centerY, radius)).toEqual({ hue: 270, saturation: 100 });
+    expect(hueSaturationFromPoint(centerX, centerY, centerX, centerY, radius)).toEqual({ hue: 0, saturation: 0 });
+  });
+
+  test("maps the radius to saturation and clamps outside the wheel", () => {
+    expect(hueSaturationFromPoint(centerX, centerY - radius / 2, centerX, centerY, radius).saturation).toBe(50);
+    expect(hueSaturationFromPoint(centerX, centerY - radius * 2, centerX, centerY, radius).saturation).toBe(100);
+  });
+
+  test("places a touch back at the same hue and saturation", () => {
+    expect(wheelPoint(90, 100, centerX, centerY, radius)).toEqual({ x: centerX + radius, y: centerY });
+    expect(wheelPoint(180, 50, centerX, centerY, radius)).toEqual({ x: centerX, y: centerY + radius / 2 });
+    expect(wheelPoint(0, 0, centerX, centerY, radius)).toEqual({ x: centerX, y: centerY });
+    const point = wheelPoint(210, 60, centerX, centerY, radius);
+    expect(hueSaturationFromPoint(point.x, point.y, centerX, centerY, radius)).toEqual({ hue: 210, saturation: 60 });
+  });
+});
+
+describe("swipes", () => {
   test("only a clear horizontal move counts as a swipe", () => {
     expect(swipeDirection(-80, 10)).toBe(1);
     expect(swipeDirection(80, 0)).toBe(-1);
     expect(swipeDirection(40, 0)).toBe(0);
     expect(swipeDirection(-80, -70)).toBe(0);
-  });
-
-  test("color tracks map touch x to continuous hue and saturation", () => {
-    expect(hueFromX(84, 84, 292)).toBe(0);
-    expect(hueFromX(230, 84, 292)).toBe(180);
-    expect(hueFromX(376, 84, 292)).toBe(359);
-    expect(hueFromX(20, 84, 292)).toBe(0);
-    expect(hueFromX(500, 84, 292)).toBe(359);
-    expect(saturationFromX(157, 84, 292)).toBe(25);
-    expect(saturationFromX(0, 84, 292)).toBe(0);
-    expect(saturationFromX(400, 84, 292)).toBe(100);
   });
 });

@@ -1,5 +1,8 @@
 // Pure mapping for the dimming page: HA brightness (0..255) <-> percent,
-// vertical slider geometry, swipe classification and hue/saturation tracks.
+// vertical slider geometry, the hue/saturation wheel and swipe classification.
+
+/** The dimmer's two control surfaces. Lifted into the panel so a state tick does not reset it. */
+export type DimmerMode = "brightness" | "color";
 
 export function percentFromBrightness(brightness: number): number {
   return Math.min(100, Math.max(0, Math.round(brightness / 255 * 100)));
@@ -38,12 +41,39 @@ export function swipeDirection(dx: number, dy: number): -1 | 0 | 1 {
   return dx < 0 ? 1 : -1;
 }
 
-/** Hue (0..359) at a touch x inside a horizontal track starting at `left`. */
-export function hueFromX(x: number, left: number, width: number): number {
-  return Math.round(Math.min(1, Math.max(0, (x - left) / width)) * 359);
+/**
+ * Hue and saturation at a touch inside a circular wheel: the angle is the hue
+ * (0 at the top, clockwise) and the distance from the center is saturation.
+ * Touches outside the radius clamp to full saturation.
+ */
+export function hueSaturationFromPoint(
+  x: number,
+  y: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+): { hue: number; saturation: number } {
+  const dx = x - centerX;
+  const dy = y - centerY;
+  if (dx === 0 && dy === 0) return { hue: 0, saturation: 0 };
+  const angle = Math.atan2(dx, -dy) * 180 / Math.PI;
+  const hue = ((Math.round(angle) % 360) + 360) % 360;
+  const distance = radius > 0 ? Math.hypot(dx, dy) : 0;
+  return { hue, saturation: clampPercent(distance / radius * 100) };
 }
 
-/** Saturation percent (0..100) at a touch x inside a horizontal track. */
-export function saturationFromX(x: number, left: number, width: number): number {
-  return clampPercent((x - left) / width * 100);
+/** The touch position for a hue/saturation value inside the same wheel. */
+export function wheelPoint(
+  hue: number,
+  saturation: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+): { x: number; y: number } {
+  const angle = hue * Math.PI / 180;
+  const distance = radius * clampPercent(saturation) / 100;
+  return {
+    x: Math.round(centerX + Math.sin(angle) * distance),
+    y: Math.round(centerY - Math.cos(angle) * distance),
+  };
 }

@@ -1,8 +1,8 @@
 import { createSignal, For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { formatChineseDate, formatClock, timezoneLabel } from "../clock";
-import { brightnessFromPercent, percentFromBrightness } from "../dimmer";
-import { lightInfo, lightStatusText } from "../lights";
+import { brightnessFromPercent, percentFromBrightness, type DimmerMode } from "../dimmer";
+import { lightColor, lightInfo, lightStatusText } from "../lights";
 import { isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
 import { canSwitchNetwork, formatRssi, requestNextPreset, type NetworkInfo } from "../native";
 import { activeTab, TABS, type NavEvent, type Route, type Tab } from "../navigation";
@@ -13,7 +13,7 @@ import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
 import { ArmScreen } from "./arm-screen";
 import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
-import { BacklightSlider, ColorSlider, VerticalSlider } from "./controls";
+import { BacklightSlider, ColorWheel, ModeButton, VerticalSlider } from "./controls";
 import { Divider, Icon, Numerals, Pressable } from "./primitives";
 import { SensorDetailScreen } from "./sensors-screen";
 import { Pager, SensorCard } from "./showroom-cards";
@@ -33,6 +33,8 @@ interface LandscapeProps {
   onHaAction(actionId: string, confirmed: boolean): void;
   actionConfigured(actionId: string): boolean;
   onRotate: (landscape: boolean) => void;
+  dimmerMode: DimmerMode;
+  onDimmerMode(mode: DimmerMode): void;
 }
 
 function LandscapeNav(props: { active: Tab; onNav(event: NavEvent): void }) {
@@ -212,38 +214,85 @@ function Dimmer(props: LandscapeProps & { lightId: LightId }) {
   const light = () => props.state.lights[props.lightId]!;
   const enabled = () => isLightAvailable(props.state, props.lightId);
   const percent = () => percentFromBrightness(light().brightness);
+  const back = () => {
+    if (props.dimmerMode === "color") props.onDimmerMode("brightness");
+    else props.onNav({ type: "back" });
+  };
+  const toggleColor = () => {
+    if (enabled()) props.onDimmerMode(props.dimmerMode === "brightness" ? "color" : "brightness");
+  };
+  const setBrightness = (value: number) => props.onAction({
+    type: "set-brightness",
+    lightId: props.lightId,
+    brightness: brightnessFromPercent(value),
+  });
+  const setColor = (hue: number, saturation: number) => props.onAction({
+    type: "set-color",
+    lightId: props.lightId,
+    hue,
+    saturation,
+  });
   return (
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: 640, height: 400, bgColor: theme.page }}>
       <Pressable
         box={{ left: 0, top: 0, width: 238, height: 44 }}
-        onTap={() => props.onNav({ type: "back" })}
+        onTap={back}
       >
         <Icon name="back-text" left={16} top={8} size={24} />
         <Text class="absolute text-lg font-bold" style={{ insetL: 48, insetT: 10, width: 180, textColor: theme.text }}>{lightInfo(props.state, props.lightId).name}</Text>
       </Pressable>
-      <Text class="absolute text-xs text-right" style={{ insetL: 480, insetT: 13, width: 144, textColor: theme.disabledText }}>
-        {enabled() ? lightInfo(props.state, props.lightId).tag : lightStatusText(props.state, props.lightId)}
+      <Text class="absolute text-xs text-right" style={{ insetL: 480, insetT: 13, width: 144, textColor: enabled() ? theme.secondaryText : theme.disabledText }}>
+        {lightStatusText(props.state, props.lightId)}
       </Text>
-      <VerticalSlider left={176} top={116} screenTop={116} value={percent()} enabled={enabled()} onChange={value => props.onAction({ type: "set-brightness", lightId: props.lightId, brightness: brightnessFromPercent(value) })} />
-      <Numerals text={`${percent()}%`} size={44} left={480} top={126} center />
-      <Pressable
-        box={{ left: 452, top: 202, width: 56, height: 56 }}
-        style={{ radius: 28, bgColor: light().on && enabled() ? theme.on : theme.secondaryBackground }}
-        onTap={() => props.onAction({ type: "toggle-light", lightId: props.lightId })}
-      >
-        <Icon name={light().on && enabled() ? "power-page" : "power-secondary"} left={14} top={14} size={28} />
-      </Pressable>
-      <ColorSlider
-        kind="hue" label="色相" left={336} top={272} labelWidth={50} width={236}
-        hue={light().hue} saturation={light().saturation} enabled={enabled()}
-        onChange={(hue, saturation) => props.onAction({ type: "set-color", lightId: props.lightId, hue, saturation })}
+
+      <Numerals text={`${percent()}%`} size={44} left={320} top={44} center />
+      {props.dimmerMode === "brightness" ? (
+        <VerticalSlider
+          left={272}
+          top={90}
+          screenTop={90}
+          width={96}
+          height={214}
+          value={percent()}
+          color={lightColor(light())}
+          on={light().on}
+          enabled={enabled()}
+          onChange={setBrightness}
+        />
+      ) : (
+        <ColorWheel
+          left={212}
+          top={88}
+          size={216}
+          hue={light().hue}
+          saturation={light().saturation}
+          enabled={enabled()}
+          onChange={setColor}
+        />
+      )}
+
+      <ModeButton
+        left={256}
+        top={314}
+        size={48}
+        icon={light().on ? "power-page" : "power-secondary"}
+        label={light().on ? "关灯" : "开灯"}
+        background={light().on ? theme.on : theme.secondaryBackground}
+        labelColor={light().on ? theme.on : theme.secondaryText}
+        enabled={enabled()}
+        onTap={() => { if (enabled()) props.onAction({ type: "toggle-light", lightId: props.lightId }); }}
       />
-      <ColorSlider
-        kind="saturation" label="饱和度" left={336} top={320} labelWidth={50} width={236}
-        hue={light().hue} saturation={light().saturation} enabled={enabled()}
-        onChange={(hue, saturation) => props.onAction({ type: "set-color", lightId: props.lightId, hue, saturation })}
+      <ModeButton
+        left={336}
+        top={314}
+        size={48}
+        icon={props.dimmerMode === "brightness" ? "color-primary" : "bulb-primary"}
+        label={props.dimmerMode === "brightness" ? "颜色" : "亮度"}
+        background={props.dimmerMode === "brightness" ? theme.secondaryBackground : theme.primaryChip}
+        labelColor={props.dimmerMode === "brightness" ? theme.secondaryText : theme.primary}
+        enabled={enabled()}
+        onTap={toggleColor}
       />
-      <Text class="absolute text-2xs text-center" style={{ insetL: 330, insetT: 376, width: 290, textColor: theme.disabledText }}>上下拖动调亮度</Text>
     </View>
   );
 }
