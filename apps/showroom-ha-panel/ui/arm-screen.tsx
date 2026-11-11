@@ -1,6 +1,5 @@
 import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
-import { sameFocus } from "../input";
 import type { PanelState } from "../model";
 import type { NavEvent } from "../navigation";
 import { sensorStatusText, SHOWROOM } from "../showroom";
@@ -8,9 +7,8 @@ import { agentText, armModeText, resultText, withFreshness } from "../telemetry"
 import { theme } from "../theme";
 import { ActionButton } from "./console-controls";
 import { Divider, Icon, Pressable } from "./primitives";
-import type { FocusProps } from "./showroom-cards";
 
-interface ArmProps extends FocusProps {
+interface ArmProps {
   state: PanelState;
   landscape?: boolean;
   actionConfigured(actionId: string): boolean;
@@ -33,7 +31,6 @@ export function ArmScreen(props: ArmProps) {
     <View class="absolute" style={{ insetL: 0, insetT: 0, width, height, bgColor: theme.page }}>
       <Pressable
         box={{ left: 0, top: 0, width: 250, height: 52 }}
-        focused={sameFocus(props.focus, { kind: "back", id: "back" })}
         onTap={() => props.onNav({ type: "back" })}
       >
         <Icon name="back-text" left={16} top={14} size={24} />
@@ -76,8 +73,6 @@ export function ArmScreen(props: ArmProps) {
                 actionId={action.key}
                 box={{ left: 14 + (index() % 2) * ((actionsBox.width - 20) / 2), top: 52, width: (actionsBox.width - 42) / 2, height: 52 }}
                 configured
-                focus={props.focus}
-                onFocus={props.onFocus}
                 onHaAction={props.onHaAction}
               />
             )}</For>
@@ -91,8 +86,6 @@ export function ArmScreen(props: ArmProps) {
         actionId="reachy-stop"
         box={stopBox}
         configured={props.actionConfigured("reachy-stop")}
-        focus={props.focus}
-        onFocus={props.onFocus}
         onHaAction={props.onHaAction}
       />
       <Text class="absolute text-xs text-center" style={{ insetL: stopBox.left, insetT: stopBox.top + 64, width: stopBox.width, textColor: theme.secondaryText }}>

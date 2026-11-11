@@ -9,10 +9,10 @@ import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
 import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
 import { Icon, Numerals } from "./primitives";
-import { SensorCard, type FocusProps } from "./showroom-cards";
+import { SensorCard } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
 
-interface HomeProps extends FocusProps {
+interface HomeProps {
   state: PanelState;
   network: NetworkInfo;
   utcOffsetMinutes: number;
@@ -57,8 +57,6 @@ export function HomeScreen(props: HomeProps) {
           sensorId={sensorId}
           box={{ left: 16 + index() * 190, top: 198, width: 178, height: 66 }}
           compact
-          focus={props.focus}
-          onFocus={props.onFocus}
           onNav={props.onNav}
         />
       )}</For>
@@ -70,16 +68,12 @@ export function HomeScreen(props: HomeProps) {
           actionId={actionId}
           box={{ left: 16 + (index() % 3) * 126, top: 300 + Math.floor(index() / 3) * 52, width: 118, height: 44 }}
           configured={props.actionConfigured(actionId)}
-          focus={props.focus}
-          onFocus={props.onFocus}
           onHaAction={props.onHaAction}
         />
       )}</For>
       <TelemetryPanel
         state={props.state}
         box={{ left: 16, top: 406, width: 368, height: 96 }}
-        focus={props.focus}
-        onFocus={props.onFocus}
         onNav={props.onNav}
       />
     </View>

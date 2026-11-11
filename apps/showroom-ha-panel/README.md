@@ -21,7 +21,7 @@ bun run pocket host export --config programs/reterminal-d1001/pocket.host.config
 
 ## Console behavior
 
-Tapping the main light card switches power; long-pressing it opens the existing dimmer for continuous brightness and hue/saturation color control. Touch, keyboard and logical buttons share those intents in both orientations. There is no home brightness, RGB or color-temperature preset grid. `light.turn_off` sends only `entity_id`. Explicit `light.turn_on` commands use `brightness_pct`, `rgb_color` or `color_temp_kelvin`; RGB and Kelvin are mutually exclusive. The current dimmer sends brightness percentage and RGB values, while the Kelvin payload remains available without adding an artificial preset entry. Rapid changes coalesce per light without mixing color modes. A keyed HA light is writable only after a valid live snapshot. `unavailable`, request failure and pending state stay per entity and do not disconnect other lights or sensors.
+Tapping the main light card switches power; long-pressing it opens the existing dimmer for continuous brightness and hue/saturation color control. The app UI is touch-only in both orientations. There is no home brightness, RGB or color-temperature preset grid. `light.turn_off` sends only `entity_id`. Explicit `light.turn_on` commands use `brightness_pct`, `rgb_color` or `color_temp_kelvin`; RGB and Kelvin are mutually exclusive. The current dimmer sends brightness percentage and RGB values, while the Kelvin payload remains available without adding an artificial preset entry. Rapid changes coalesce per light without mixing color modes. A keyed HA light is writable only after a valid live snapshot. `unavailable`, request failure and pending state stay per entity and do not disconnect other lights or sensors.
 
 The six Reachy slots are:
 
@@ -34,7 +34,7 @@ The six Reachy slots are:
 
 Each maps to a local `input_button` and calls `/api/services/input_button/press`. HTTP success means **已受理**, not that Reachy finished speaking or moving. The separate `reachy-result` sensor supplies the latest execution result. `reachy-agent` supplies online state and `arm-mode` supplies `idle`, `playback` or `gravity`. Dynamic result text is reduced to known labels or bounded ASCII so it cannot bypass the baked font coverage.
 
-The arm page exposes telemetry by default. `arm-gravity` and `arm-playback` have no public entity mapping and their buttons are hidden until local configuration supplies protected `input_button` entities. Configured actions require a touch long-press or the keyboard `D`/details intent; the worker rejects a missing mapping or missing confirmation again. No KeyMesh/MQTT writer exists in this app. The always-visible STOP calls only the existing Reachy stop button; it does not claim to stop or home the arm.
+The arm page exposes telemetry by default. `arm-gravity` and `arm-playback` have no public entity mapping and their buttons are hidden until local configuration supplies protected `input_button` entities. Configured actions require a touch long-press; the worker rejects a missing mapping or missing confirmation again. No KeyMesh/MQTT writer exists in this app. The always-visible STOP calls only the existing Reachy stop button; it does not claim to stop or home the arm.
 
 Virtual lamps and onboard RGB remain on the full light list. They are not local scenes and do not appear as fake HA actions on home.
 
@@ -55,7 +55,7 @@ CONFIG_D1001_HA_LIGHT_ENTITY="edidt.replace_with_local_main_light"
 
 The map contains `version`, `lights`, `sensors`, `actions` and optional `weather`. Legacy `scenes`, credentials in the map, unknown display keys and wrong domains are rejected. `light.*` and the showroom's `edidt.*` light-compatible entity are accepted; actions accept only `input_button.*`. Arm mappings are optional and empty in the public example.
 
-Secure provisioning, data.fs migration, partition erasure and readback/token scanning are follow-up tasks, not part of this app iteration.
+Current provisioning is limited to ignored local Kconfig values or the private build-time override; the in-app Wi-Fi/HA provisioning pages are placeholders and do not save credentials. Secure provisioning, data.fs migration, partition erasure and readback/token scanning are not implemented by this app.
 
 ## Queueing and freshness
 
@@ -65,15 +65,15 @@ The engine has independent poll and command lanes. Each lane is serial: a blocke
 
 Live sensors and telemetry expire after their configured `staleAfterSeconds`, using RTC time stamped on arrival. A disconnect retains the last value as `离线` and disables writes. Reconnection marks readings pending until fresh data arrives. Light snapshots have equivalent stale handling. Mock readings remain marked `示例` and do not expire. Weather is shown only from a live HA weather entity. Without `entityMap.weather`, the legacy template API discovers the first `weather.*` entity; template access depends on token permissions.
 
-## Input and native behavior
+## Touch and native behavior
 
-Arrow keys or logical next/previous buttons move the same focus targets used by touch. Enter/activate performs ordinary actions; `D`/details is the keyboard equivalent of a long-press for protected actions. Escape returns. GPIO3/CIRCLE is deliberately not mapped to panel activation: native code retains rotation, screen timeout/wake-swallow and restart arbitration.
+The app responds only to touch gestures: taps activate ordinary actions, long-press opens the main-light dimmer or confirms protected arm actions, and paging uses the on-screen touch controls. GPIO3/CIRCLE remains entirely native-owned for rotation, screen timeout/wake-swallow and restart arbitration; the app does not map it to panel activation.
 
 The portrait settings `横屏` and landscape `返回竖屏` controls use the existing runtime restart and synchronized touch mapping. Session state preserves lights, the current route and screen timeout. Backlight, auto screen-off, RTC/SNTP, timezone and firmware-version behavior are unchanged. In-app Wi-Fi/HA provisioning pages remain placeholders.
 
 ## Host preview and package checks
 
-The preview compiles the real app, boots it in the PocketJS WASM core, replays touch and logical input, verifies emitted worker commands, and writes 800x1280 portrait or 1280x800 landscape PNGs. It uses fixed native fixtures and does not access a device, serial port or network.
+The preview compiles the real app, boots it in the PocketJS WASM core, replays touch input, verifies emitted worker commands, and writes 800x1280 portrait or 1280x800 landscape PNGs. It uses fixed native fixtures and does not access a device, serial port or network.
 
 ```sh
 bun run showroom:preview --smoke                       # home screen, portrait and landscape
@@ -83,7 +83,7 @@ bun run showroom:preview                               # every portrait shot
 bun run showroom:preview --all                         # every shot in both orientations
 ```
 
-The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/showroom-ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/showroom-dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. The shot tape covers home, sensors, focus, continuous dimming, hue/saturation control, Reachy actions, unavailable and confirmed arm actions, navigation, offline state and settings; offline, no-weather and protected-arm variants carry filename prefixes.
+The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/showroom-ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/showroom-dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. The shot tape covers home, sensors, touch paging, continuous dimming, hue/saturation control, Reachy actions, unavailable and confirmed arm actions, navigation, offline state and settings; offline, no-weather and protected-arm variants carry filename prefixes.
 
 A direct compile and extent check uses:
 

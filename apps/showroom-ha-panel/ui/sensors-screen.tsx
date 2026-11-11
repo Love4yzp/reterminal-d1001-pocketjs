@@ -1,16 +1,15 @@
 import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
-import { sameFocus } from "../input";
 import type { NetworkInfo } from "../native";
 import type { NavEvent } from "../navigation";
 import type { PanelState } from "../model";
 import { formatSensorValue, pageWindow, sensorStatusText, showroomSensor } from "../showroom";
 import { theme } from "../theme";
 import { Icon, Pressable } from "./primitives";
-import { Pager, SensorCard, type FocusProps } from "./showroom-cards";
+import { Pager, SensorCard } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
 
-interface SensorsProps extends FocusProps {
+interface SensorsProps {
   state: PanelState;
   network: NetworkInfo;
   page: number;
@@ -29,8 +28,6 @@ export function SensorsScreen(props: SensorsProps) {
           state={props.state}
           sensorId={sensorId}
           box={{ left: 16 + (index() % 2) * 190, top: 118 + Math.floor(index() / 2) * 158, width: 178, height: 140 }}
-          focus={props.focus}
-          onFocus={props.onFocus}
           onNav={props.onNav}
         />
       )}</For>
@@ -39,7 +36,7 @@ export function SensorsScreen(props: SensorsProps) {
   );
 }
 
-export function SensorDetailScreen(props: FocusProps & {
+export function SensorDetailScreen(props: {
   state: PanelState;
   sensorId: string;
   landscape?: boolean;
@@ -50,12 +47,10 @@ export function SensorDetailScreen(props: FocusProps & {
   const width = () => props.landscape ? 640 : 400;
   const cardWidth = () => props.landscape ? 520 : 368;
   const cardLeft = () => props.landscape ? 88 : 16;
-  const focused = () => sameFocus(props.focus, { kind: "back", id: "back" });
   return (
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: width(), height: props.landscape ? 400 : 640, bgColor: theme.page }}>
       <Pressable
         box={{ left: 0, top: 0, width: 238, height: 52 }}
-        focused={focused()}
         onTap={() => props.onNav({ type: "back" })}
       >
         <Icon name="back-text" left={16} top={12} size={24} />

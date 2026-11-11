@@ -1,6 +1,5 @@
 import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
-import { sameFocus } from "../input";
 import { lightInfo, lightStatusText, lightTone } from "../lights";
 import { availableLights, isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
 import type { NetworkInfo } from "../native";
@@ -8,10 +7,10 @@ import { rowIntent, type NavEvent } from "../navigation";
 import { pageWindow } from "../showroom";
 import { theme } from "../theme";
 import { BulbChip, Divider, Icon, Pressable, Switch } from "./primitives";
-import { Pager, type FocusProps } from "./showroom-cards";
+import { Pager } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
 
-interface LightsProps extends FocusProps {
+interface LightsProps {
   state: PanelState;
   network: NetworkInfo;
   page: number;
@@ -22,9 +21,7 @@ interface LightsProps extends FocusProps {
 function LightRow(props: LightsProps & { lightId: LightId; index: number }) {
   const light = () => props.state.lights[props.lightId]!;
   const enabled = () => isLightAvailable(props.state, props.lightId);
-  const target = () => ({ kind: "light" as const, id: props.lightId });
   const intent = (target: "row" | "switch") => {
-    props.onFocus({ kind: "light", id: props.lightId });
     const next = rowIntent(target, props.lightId, availableLights(props.state));
     if (next.action) props.onAction(next.action);
     if (next.nav) props.onNav(next.nav);
@@ -32,7 +29,6 @@ function LightRow(props: LightsProps & { lightId: LightId; index: number }) {
   return (
     <Pressable
       box={{ left: 0, top: 4 + props.index * 76, width: 368, height: 76 }}
-      focused={sameFocus(props.focus, target())}
       onTap={() => intent("row")}
     >
       {props.index > 0 ? <Divider left={14} top={0} width={340} /> : null}

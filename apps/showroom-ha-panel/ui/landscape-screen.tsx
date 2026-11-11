@@ -5,7 +5,6 @@ import { Text, View } from "@pocketjs/framework/solid/components";
 import { formatChineseDate, formatClock, timezoneLabel } from "../clock";
 import { abgr, hsvToRgb } from "../color";
 import { brightnessFromPercent, COLOR_PRESETS, percentFromBrightness, swipeDirection } from "../dimmer";
-import { sameFocus, type InputDisplayState } from "../input";
 import { lightInfo, lightStatusText, lightTone } from "../lights";
 import { availableLights, isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
 import type { NetworkInfo } from "../native";
@@ -20,14 +19,13 @@ import { ActionButton, MainLightControl, TelemetryPanel } from "./console-contro
 import { BacklightSlider, VerticalSlider } from "./controls";
 import { BulbChip, bulbIcon, Divider, Icon, Numerals, Pressable, Switch } from "./primitives";
 import { SensorDetailScreen } from "./sensors-screen";
-import { Pager, SensorCard, type FocusProps } from "./showroom-cards";
+import { Pager, SensorCard } from "./showroom-cards";
 
-interface LandscapeProps extends FocusProps {
+interface LandscapeProps {
   state: PanelState;
   route: Route;
   settings: SettingsState;
   network: NetworkInfo;
-  input: InputDisplayState;
   lightPage: number;
   sensorPage: number;
   utcOffsetMinutes: number;
@@ -109,8 +107,6 @@ function Home(props: LandscapeProps) {
           sensorId={sensorId}
           box={{ left: 16 + index() * 148, top: 204, width: 140 + (index() === 1 ? 4 : 0), height: 84 }}
           compact
-          focus={props.focus}
-          onFocus={props.onFocus}
           onNav={props.onNav}
         />
       )}</For>
@@ -122,16 +118,12 @@ function Home(props: LandscapeProps) {
           actionId={actionId}
           box={{ left: 320 + (index() % 2) * 110, top: 84 + Math.floor(index() / 2) * 52, width: 102, height: 44 }}
           configured={props.actionConfigured(actionId)}
-          focus={props.focus}
-          onFocus={props.onFocus}
           onHaAction={props.onHaAction}
         />
       )}</For>
       <TelemetryPanel
         state={props.state}
         box={{ left: 320, top: 252, width: 216, height: 108 }}
-        focus={props.focus}
-        onFocus={props.onFocus}
         onNav={props.onNav}
       />
     </View>
@@ -153,7 +145,6 @@ function Lights(props: LandscapeProps) {
         const column = index() % 2;
         const row = Math.floor(index() / 2);
         const intent = (target: "row" | "switch") => {
-          props.onFocus({ kind: "light", id: lightId });
           const next = rowIntent(target, lightId, availableLights(props.state));
           if (next.action) props.onAction(next.action);
           if (next.nav) props.onNav(next.nav);
@@ -161,7 +152,6 @@ function Lights(props: LandscapeProps) {
         return (
           <Pressable
             box={{ left: 16 + column * 268, top: 100 + row * 108, width: 252, height: 96 }}
-            focused={sameFocus(props.focus, { kind: "light", id: lightId })}
             style={{ radius: 12, bgColor: theme.card }}
             onTap={() => intent("row")}
           >
@@ -195,8 +185,6 @@ function Sensors(props: LandscapeProps) {
           state={props.state}
           sensorId={sensorId}
           box={{ left: 16 + (index() % 2) * 268, top: 100 + Math.floor(index() / 2) * 108, width: 252, height: 96 }}
-          focus={props.focus}
-          onFocus={props.onFocus}
           onNav={props.onNav}
         />
       )}</For>
@@ -249,13 +237,10 @@ function Settings(props: LandscapeProps) {
         <Text class="absolute text-xs" style={{ insetL: 14, insetT: 17, width: 60, textColor: theme.text }}>时区</Text>
         <Text class="absolute text-2xs text-right" style={{ insetL: 80, insetT: 19, width: 154, textColor: theme.secondaryText }}>{timezoneLabel(props.utcOffsetMinutes)}</Text>
       </View>
-      <View class="absolute" style={{ insetL: 288, insetT: 240, width: 248, height: 64, radius: 12, bgColor: theme.card }}>
+      <View class="absolute" style={{ insetL: 288, insetT: 240, width: 248, height: 52, radius: 12, bgColor: theme.card }}>
         <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 10, width: 80, textColor: theme.text }}>设备地址</Text>
         <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 27, width: 220, textColor: theme.secondaryText }}>{props.network.address}</Text>
         <Text class="absolute text-2xs text-right" style={{ insetL: 94, insetT: 10, width: 140, textColor: theme.secondaryText }}>{`固件 ${props.firmwareVersion}`}</Text>
-        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 44, width: 220, textColor: props.input.available ? theme.primary : theme.disabledText }}>
-          {`输入 ${props.input.available ? props.input.lastAction : "待接入"}`}
-        </Text>
       </View>
       <Pressable
         box={{ left: 288, top: 316, width: 248, height: 56 }}
@@ -286,7 +271,6 @@ function Dimmer(props: LandscapeProps & { lightId: LightId }) {
     <View ref={node => { surface = node; }} class="absolute" style={{ insetL: 0, insetT: 0, width: 640, height: 400, bgColor: theme.page }}>
       <Pressable
         box={{ left: 0, top: 0, width: 238, height: 44 }}
-        focused={sameFocus(props.focus, { kind: "back", id: "back" })}
         onTap={() => props.onNav({ type: "back" })}
       >
         <Icon name="back-text" left={16} top={8} size={24} />
@@ -302,12 +286,8 @@ function Dimmer(props: LandscapeProps & { lightId: LightId }) {
           return (
             <Pressable
               box={{ left: index() * 104, top: 0, width: 96, height: 64 }}
-              focused={sameFocus(props.focus, { kind: "light", id: lightId })}
               style={{ radius: 12, bgColor: selected() ? theme.secondaryBackground : theme.card, borderWidth: selected() ? 2 : 0, borderColor: theme.primary }}
-              onTap={() => {
-                props.onFocus({ kind: "light", id: lightId });
-                props.onNav({ type: "select-light", lightId, available: availableLights(props.state) });
-              }}
+              onTap={() => props.onNav({ type: "select-light", lightId, available: availableLights(props.state) })}
             >
               <Icon name={bulbIcon(lightTone(props.state, lightId))} left={36} top={8} size={24} />
               <Text class="absolute text-2xs text-center" style={{ insetL: 0, insetT: 39, width: 96, textColor: selected() ? theme.text : available() ? theme.secondaryText : theme.disabledText }}>
@@ -366,8 +346,8 @@ export function LandscapeScreen(props: LandscapeProps) {
   const screen = () => {
     const route = props.route;
     if (route.kind === "dimmer") return <Dimmer {...props} lightId={route.lightId} />;
-    if (route.kind === "sensor") return <SensorDetailScreen state={props.state} sensorId={route.sensorId} landscape focus={props.focus} onFocus={props.onFocus} onNav={props.onNav} />;
-    if (route.kind === "arm") return <ArmScreen state={props.state} landscape actionConfigured={props.actionConfigured} focus={props.focus} onFocus={props.onFocus} onHaAction={props.onHaAction} onNav={props.onNav} />;
+    if (route.kind === "sensor") return <SensorDetailScreen state={props.state} sensorId={route.sensorId} landscape onNav={props.onNav} />;
+    if (route.kind === "arm") return <ArmScreen state={props.state} landscape actionConfigured={props.actionConfigured} onHaAction={props.onHaAction} onNav={props.onNav} />;
     if (route.kind === "provision") return <Provision {...props} topic={route.topic} />;
     if (route.tab === "lights") return <Lights {...props} />;
     if (route.tab === "sensors") return <Sensors {...props} />;

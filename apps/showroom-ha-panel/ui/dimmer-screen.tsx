@@ -4,7 +4,6 @@ import type { NodeMirror } from "@pocketjs/framework/renderer";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { abgr, hsvToRgb } from "../color";
 import { brightnessFromPercent, COLOR_PRESETS, percentFromBrightness, swipeDirection } from "../dimmer";
-import { sameFocus } from "../input";
 import { lightInfo, lightStatusText, lightTone } from "../lights";
 import {
   availableLights,
@@ -18,9 +17,8 @@ import { slidingWindow } from "../showroom";
 import { theme } from "../theme";
 import { VerticalSlider } from "./controls";
 import { bulbIcon, Icon, Numerals, Pressable } from "./primitives";
-import type { FocusProps } from "./showroom-cards";
 
-interface DimmerProps extends FocusProps {
+interface DimmerProps {
   state: PanelState;
   lightId: LightId;
   onAction(action: PanelAction): void;
@@ -54,7 +52,6 @@ export function DimmerScreen(props: DimmerProps) {
     >
       <Pressable
         box={{ left: 0, top: 0, width: 238, height: 44 }}
-        focused={sameFocus(props.focus, { kind: "back", id: "back" })}
         onTap={() => props.onNav({ type: "back" })}
       >
         <Icon name="back-text" left={16} top={8} size={24} />
@@ -72,17 +69,13 @@ export function DimmerScreen(props: DimmerProps) {
           return (
             <Pressable
               box={{ left: 16 + index() * 94, top: 0, width: 86, height: 64 }}
-              focused={sameFocus(props.focus, { kind: "light", id: lightId })}
               style={{
                 radius: 12,
                 bgColor: selected() ? theme.secondaryBackground : theme.card,
                 borderWidth: selected() ? 2 : 0,
                 borderColor: theme.primary,
               }}
-              onTap={() => {
-                props.onFocus({ kind: "light", id: lightId });
-                props.onNav({ type: "select-light", lightId, available: availableLights(props.state) });
-              }}
+              onTap={() => props.onNav({ type: "select-light", lightId, available: availableLights(props.state) })}
             >
               <Icon name={bulbIcon(lightTone(props.state, lightId))} left={31} top={8} size={24} />
               <Text

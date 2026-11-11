@@ -3,12 +3,6 @@ import type { WorkerCommand } from "../apps/showroom-ha-panel/protocol";
 import { gestures, type Shot } from "./showroom-ha-panel-preview.ts";
 
 const { tap, hold, drag } = gestures;
-const key = (value: string) => [
-  { frames: 2, touch: null, input: { source: "keyboard" as const, key: value } },
-];
-const button = (value: string) => [
-  { frames: 2, touch: null, input: { source: "button" as const, button: value } },
-];
 
 interface ShotSet {
   connected: Shot[];
@@ -45,8 +39,6 @@ export const SHOTS: ShotSet = {
     { name: "reachy-retail", tape: tap(75, 322), verify: verifyAction("reachy-intro-retail", false) },
     { name: "reachy-stop", tape: tap(327, 374), verify: verifyAction("reachy-stop", false) },
     { name: "arm-unconfigured", tape: [...tap(100, 450), ...tap(110, 330)], verify: verifyNoArm },
-    { name: "keyboard-focus", tape: [...key("ArrowRight"), ...key("Enter")], verify: verifyLight("remote", { on: true }) },
-    { name: "button-focus", tape: [...button("next"), ...button("activate")], verify: verifyLight("remote", { on: true }) },
     { name: "lights", tape: tap(150, 610) },
     { name: "lights-switch", tape: [...tap(150, 610), ...tap(290, 160)] },
     { name: "lights-row", tape: [...tap(150, 610), ...tap(100, 160)] },
@@ -57,7 +49,6 @@ export const SHOTS: ShotSet = {
     { name: "dimmer-swipe", tape: [...hold(100, 140), ...drag(330, 450, 90, 450)] },
     { name: "dimmer-preset", tape: [...hold(100, 140), ...tap(262, 500)] },
     { name: "settings", tape: tap(350, 610) },
-    { name: "settings-input", tape: [...key("ArrowRight"), ...tap(350, 610)] },
     { name: "settings-timeout", tape: [...tap(350, 610), ...tap(242, 199)] },
     { name: "settings-backlight", tape: [...tap(350, 610), ...drag(240, 100, 330, 100)] },
     { name: "provision", tape: [...tap(350, 610), ...tap(100, 296)] },
@@ -84,8 +75,6 @@ export const LANDSCAPE_SHOTS: ShotSet = {
     { name: "reachy-retail", tape: tap(459, 106), verify: verifyAction("reachy-intro-retail", false) },
     { name: "reachy-stop", tape: tap(559, 210), verify: verifyAction("reachy-stop", false) },
     { name: "arm-unconfigured", tape: [...tap(450, 300), ...tap(400, 150)], verify: verifyNoArm },
-    { name: "keyboard-focus", tape: [...key("ArrowRight"), ...key("Enter")], verify: verifyLight("remote", { on: true }) },
-    { name: "button-focus", tape: [...button("next"), ...button("activate")], verify: verifyLight("remote", { on: true }) },
     { name: "lights", tape: tap(44, 155) },
     { name: "lights-switch", tape: [...tap(44, 155), ...tap(300, 155)] },
     { name: "lights-row", tape: [...tap(44, 155), ...tap(150, 150)] },
@@ -96,7 +85,6 @@ export const LANDSCAPE_SHOTS: ShotSet = {
     { name: "dimmer-swipe", tape: [...hold(160, 140), ...drag(500, 250, 100, 250)] },
     { name: "dimmer-preset", tape: [...hold(160, 140), ...tap(494, 342)] },
     { name: "settings", tape: tap(44, 315) },
-    { name: "settings-input", tape: [...key("ArrowRight"), ...tap(44, 315)] },
     { name: "settings-timeout", tape: [...tap(44, 315), ...tap(170, 240)] },
     { name: "settings-backlight", tape: [...tap(44, 315), ...drag(240, 85, 330, 85)] },
     { name: "settings-rotate", tape: [...tap(44, 315), ...tap(500, 344)] },

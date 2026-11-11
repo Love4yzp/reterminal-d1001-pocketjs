@@ -22,15 +22,13 @@ describe("showroom console UI", () => {
   test("uses the existing dimmer intent without a home preset grid", () => {
     const controls = readFileSync(new URL("ui/console-controls.tsx", import.meta.url), "utf8");
     const main = readFileSync(new URL("main.tsx", import.meta.url), "utf8");
-    const input = readFileSync(new URL("input.ts", import.meta.url), "utf8");
     const shots = readFileSync(new URL("../../tools/showroom-ha-panel-preview-shots.ts", import.meta.url), "utf8");
     expect(controls).not.toContain("LightPresetControls");
     expect(controls).toContain("box={props.box}");
     expect(controls).toContain('onTap={() => powerIntent("tap")}');
     expect(controls).toContain('onLongPress={() => powerIntent("long-press")}');
-    expect(main).toContain('tileIntent(details ? "long-press" : "tap"');
+    expect(controls).toContain("tileIntent(gesture, props.lightId");
     expect(main).not.toContain("LIGHT_OPTION_IDS");
-    expect(input).not.toContain('"light-option"');
     expect(shots).not.toContain('name: "dimmer-detail"');
     expect(shots).toContain('name: "dimmer-drag"');
     expect(shots).toContain('name: "dimmer-preset"');

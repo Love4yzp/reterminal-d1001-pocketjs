@@ -1,17 +1,11 @@
 import { Text } from "@pocketjs/framework/solid/components";
-import { sameFocus, type FocusTarget } from "../input";
 import type { PanelState } from "../model";
 import type { NavEvent } from "../navigation";
 import { formatSensorValue, sensorStatusText, showroomSensor } from "../showroom";
 import { theme } from "../theme";
 import { Pressable, type Box } from "./primitives";
 
-export interface FocusProps {
-  focus: FocusTarget | null;
-  onFocus(target: FocusTarget): void;
-}
-
-export function SensorCard(props: FocusProps & {
+export function SensorCard(props: {
   state: PanelState;
   sensorId: string;
   box: Box;
@@ -20,17 +14,12 @@ export function SensorCard(props: FocusProps & {
 }) {
   const sensor = () => showroomSensor(props.sensorId)!;
   const reading = () => props.state.sensors[props.sensorId]!;
-  const target = () => ({ kind: "sensor" as const, id: props.sensorId });
   const valueTop = () => props.compact ? 26 : 45;
   return (
     <Pressable
       box={props.box}
-      focused={sameFocus(props.focus, target())}
       style={{ radius: 12, bgColor: theme.card }}
-      onTap={() => {
-        props.onFocus(target());
-        props.onNav({ type: "open-sensor", sensorId: props.sensorId });
-      }}
+      onTap={() => props.onNav({ type: "open-sensor", sensorId: props.sensorId })}
     >
       <Text class="absolute text-xs" style={{ insetL: 12, insetT: 10, width: props.box.width - 24, textColor: theme.secondaryText }}>
         {sensor().name}

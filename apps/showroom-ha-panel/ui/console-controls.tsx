@@ -1,5 +1,4 @@
 import { Text } from "@pocketjs/framework/solid/components";
-import { sameFocus } from "../input";
 import { lightInfo, lightStatusText, lightTone } from "../lights";
 import { availableLights, isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
 import { tileIntent, type NavEvent } from "../navigation";
@@ -13,9 +12,8 @@ import {
 import { agentText, armModeText, resultText, withFreshness } from "../telemetry";
 import { theme } from "../theme";
 import { BulbChip, Pressable, Switch, type Box } from "./primitives";
-import type { FocusProps } from "./showroom-cards";
 
-export interface ConsoleControlProps extends FocusProps {
+export interface ConsoleControlProps {
   state: PanelState;
   onAction(action: PanelAction): void;
   onNav(event: NavEvent): void;
@@ -24,9 +22,7 @@ export interface ConsoleControlProps extends FocusProps {
 export function MainLightControl(props: ConsoleControlProps & { lightId: LightId; box: Box }) {
   const light = () => props.state.lights[props.lightId]!;
   const enabled = () => isLightAvailable(props.state, props.lightId);
-  const powerTarget = () => ({ kind: "light" as const, id: props.lightId });
   const powerIntent = (gesture: "tap" | "long-press") => {
-    props.onFocus(powerTarget());
     const next = tileIntent(gesture, props.lightId, availableLights(props.state));
     if (next.action) props.onAction(next.action);
     if (next.nav) props.onNav(next.nav);
@@ -34,7 +30,6 @@ export function MainLightControl(props: ConsoleControlProps & { lightId: LightId
   return (
     <Pressable
       box={props.box}
-      focused={sameFocus(props.focus, powerTarget())}
       style={{ radius: 12, bgColor: theme.card }}
       onTap={() => powerIntent("tap")}
       onLongPress={() => powerIntent("long-press")}
@@ -54,7 +49,7 @@ export function MainLightControl(props: ConsoleControlProps & { lightId: LightId
   );
 }
 
-export function ActionButton(props: FocusProps & {
+export function ActionButton(props: {
   state: PanelState;
   actionId: string;
   box: Box;
@@ -72,19 +67,15 @@ export function ActionButton(props: FocusProps & {
         ? "长按确认"
         : actionStatusText(runStatus());
   const stop = () => props.actionId === "reachy-stop";
-  const target = () => ({ kind: "action" as const, id: props.actionId });
   const background = () => stop() ? theme.dangerChip : runStatus() === "pending" ? theme.primaryChip : theme.secondaryBackground;
   return (
     <Pressable
       box={props.box}
-      focused={sameFocus(props.focus, target())}
       style={{ radius: 10, bgColor: background() }}
       onTap={action().requiresHold ? undefined : () => {
-        props.onFocus(target());
         if (enabled()) props.onHaAction(props.actionId, false);
       }}
       onLongPress={action().requiresHold ? () => {
-        props.onFocus(target());
         if (enabled()) props.onHaAction(props.actionId, true);
       } : undefined}
     >
@@ -103,7 +94,7 @@ export function ActionButton(props: FocusProps & {
   );
 }
 
-export function TelemetryPanel(props: FocusProps & {
+export function TelemetryPanel(props: {
   state: PanelState;
   box: Box;
   onNav(event: NavEvent): void;
@@ -111,19 +102,14 @@ export function TelemetryPanel(props: FocusProps & {
   const agent = () => props.state.sensors["reachy-agent"]!;
   const result = () => props.state.sensors["reachy-result"]!;
   const arm = () => props.state.sensors["arm-mode"]!;
-  const target = () => ({ kind: "arm" as const, id: "status" });
   const compact = props.box.width < 300;
   const agentLabel = () => withFreshness(agentText(agent()), agent(), props.state.sensorErrors["reachy-agent"]);
   const armLabel = () => withFreshness(armModeText(arm()), arm(), props.state.sensorErrors["arm-mode"]);
   return (
     <Pressable
       box={props.box}
-      focused={sameFocus(props.focus, target())}
       style={{ radius: 12, bgColor: theme.card }}
-      onTap={() => {
-        props.onFocus(target());
-        props.onNav({ type: "open-arm" });
-      }}
+      onTap={() => props.onNav({ type: "open-arm" })}
     >
       {compact ? (
         <>

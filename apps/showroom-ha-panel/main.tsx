@@ -14,21 +14,12 @@ import type { HaLightCommand } from "./ha-request";
 import {
   changedLights,
   createInitialPanelState,
-  isLightAvailable,
   reducePanel,
   type LightId,
   type LightState,
   type PanelAction,
   type PanelState,
 } from "./model";
-import {
-  createInputDisplayState,
-  inputIntent,
-  moveFocus,
-  readInputSource,
-  type FocusTarget,
-  type InputEvent,
-} from "./input";
 import {
   readBacklight,
   readFirmwareVersion,
@@ -48,15 +39,13 @@ import {
   activeTab,
   INITIAL_ROUTE,
   navigate,
-  rowIntent,
-  tileIntent,
   type NavEvent,
   type Route,
 } from "./navigation";
 import { encodeMessage, decodeMessage } from "./protocol";
 import { createScreenOffControl, createSettings, reduceSettings, type SettingsAction } from "./settings";
 import { decodeSession, encodeSession, restorePanelState, restoreSettings } from "./session";
-import { pageWindow, SHOWROOM, showroomAction, slidingWindow } from "./showroom";
+import { pageWindow, SHOWROOM, showroomAction } from "./showroom";
 import { theme } from "./theme";
 import type { PanelHaConfig, WorkerCommand, WorkerEvent } from "./protocol";
 import { ArmScreen } from "./ui/arm-screen";
@@ -80,11 +69,8 @@ function Panel() {
   const [settings, setSettings] = createSignal(
     saved ? restoreSettings(createSettings(initialBacklight), saved) : createSettings(initialBacklight),
   );
-  const [focus, setFocus] = createSignal<FocusTarget | null>(null);
   const [lightPage, setLightPage] = createSignal(0);
   const [sensorPage, setSensorPage] = createSignal(0);
-  const inputSource = readInputSource();
-  const [input, setInput] = createSignal(createInputDisplayState(Boolean(inputSource)));
   const config: PanelHaConfig = readHaConfig();
   const utcOffsetMinutes = readUtcOffsetMinutes();
   const firmwareVersion = readFirmwareVersion();
@@ -151,7 +137,6 @@ function Panel() {
       const next = pageWindow(state().sensorOrder, sensorPage() + direction, 4).page;
       setSensorPage(next);
     }
-    setFocus(null);
   };
 
   const onNav = (event: NavEvent) => {
@@ -159,12 +144,7 @@ function Panel() {
       changePage(event.target, event.direction);
       return;
     }
-    const next = navigate(route(), event);
-    setRoute(next);
-    if (event.type === "open-dimmer" || event.type === "open-sensor" || event.type === "open-arm")
-      setFocus(input().source === "touch" ? null : { kind: "back", id: "back" });
-    else if (event.type !== "select-light" && event.type !== "cycle-light")
-      setFocus(null);
+    setRoute(navigate(route(), event));
   };
 
   const onHaAction = (actionId: string, confirmed: boolean) => {
@@ -177,103 +157,6 @@ function Panel() {
       dispatch({ type: "action-result", actionId, status: "pending" });
     else
       dispatch({ type: "action-result", actionId, status: "failed", error: "HA command queue is full" });
-  };
-
-  const onFocus = (target: FocusTarget) => {
-    setFocus(target);
-    setInput({ ...input(), source: "touch", lastAction: "触摸" });
-  };
-
-  const controllableLights = (): LightId[] =>
-    state().lightOrder.filter(lightId => isLightAvailable(state(), lightId));
-
-  const focusTargets = (): FocusTarget[] => {
-    const current = route();
-    if (current.kind === "arm") return [
-      { kind: "back", id: "back" },
-      ...SHOWROOM.actions
-        .filter(action => action.group === "arm" && isActionConfigured(action.key))
-        .map(action => ({ kind: "action" as const, id: action.key })),
-      { kind: "action", id: "reachy-stop" },
-    ];
-    if (current.kind === "dimmer" || current.kind === "sensor" || current.kind === "provision")
-      return [
-        { kind: "back", id: "back" },
-        ...(current.kind === "dimmer"
-          ? slidingWindow(state().lightOrder, current.lightId, 4)
-              .filter(lightId => isLightAvailable(state(), lightId))
-              .map(lightId => ({ kind: "light" as const, id: lightId }))
-          : []),
-      ];
-    if (current.tab === "home") return [
-      ...SHOWROOM.home.lights.map(id => ({ kind: "light" as const, id })),
-      ...SHOWROOM.home.sensors.map(id => ({ kind: "sensor" as const, id })),
-      ...SHOWROOM.home.actions.map(id => ({ kind: "action" as const, id })),
-      { kind: "arm", id: "status" },
-    ];
-    if (current.tab === "lights")
-      return pageWindow(state().lightOrder, lightPage(), 4).items.map(id => ({ kind: "light" as const, id }));
-    if (current.tab === "sensors")
-      return pageWindow(state().sensorOrder, sensorPage(), 4).items.map(id => ({ kind: "sensor" as const, id }));
-    return [];
-  };
-
-  const activateFocus = (details: boolean) => {
-    const target = focus() ?? focusTargets()[0];
-    if (!target) return;
-    setFocus(target);
-    if (target.kind === "back") {
-      onNav({ type: "back" });
-      return;
-    }
-    if (target.kind === "sensor") {
-      onNav({ type: "open-sensor", sensorId: target.id });
-      return;
-    }
-    if (target.kind === "arm") {
-      onNav({ type: "open-arm" });
-      return;
-    }
-    if (target.kind === "action") {
-      const definition = showroomAction(target.id);
-      if (definition && (definition.requiresHold ? details : !details)) onHaAction(target.id, details);
-      return;
-    }
-    const current = route();
-    if (current.kind === "dimmer") {
-      onNav({ type: "select-light", lightId: target.id, available: controllableLights() });
-      return;
-    }
-    if (current.kind === "tab" && current.tab === "lights") {
-      const next = rowIntent("row", target.id, controllableLights());
-      if (next.nav) onNav(next.nav);
-      return;
-    }
-    const next = tileIntent(details ? "long-press" : "tap", target.id, controllableLights());
-    if (next.action) dispatch(next.action);
-    if (next.nav) onNav(next.nav);
-  };
-
-  const onInput = (event: InputEvent) => {
-    const intent = inputIntent(event);
-    const label = event.source === "keyboard" ? event.key : event.button;
-    setInput({ available: true, source: event.source, lastAction: label });
-    if (!intent) return;
-    switch (intent.type) {
-      case "focus-next": setFocus(moveFocus(focusTargets(), focus(), 1)); break;
-      case "focus-previous": setFocus(moveFocus(focusTargets(), focus(), -1)); break;
-      case "activate": activateFocus(false); break;
-      case "details": activateFocus(true); break;
-      case "back": onNav({ type: "back" }); break;
-      case "page-next":
-      case "page-previous": {
-        const current = route();
-        const direction = intent.type === "page-next" ? 1 : -1;
-        if (current.kind === "tab" && (current.tab === "lights" || current.tab === "sensors"))
-          changePage(current.tab, direction);
-        break;
-      }
-    }
   };
 
   const rotate = (landscape: boolean) => {
@@ -410,12 +293,8 @@ function Panel() {
     }
     if (frame % 90 === 0) setNetwork(readNetwork());
   });
-  inputSource?.subscribe(onInput);
-
   const shared = () => ({
     state: state(),
-    focus: focus(),
-    onFocus,
     onNav,
   });
 
@@ -430,8 +309,6 @@ function Panel() {
         <ArmScreen
           state={state()}
           actionConfigured={isActionConfigured}
-          focus={focus()}
-          onFocus={onFocus}
           onHaAction={onHaAction}
           onNav={onNav}
         />
@@ -448,7 +325,6 @@ function Panel() {
           state={state()}
           settings={settings()}
           network={network()}
-          input={input()}
           utcOffsetMinutes={utcOffsetMinutes}
           firmwareVersion={firmwareVersion}
           onSettings={onSettings}
@@ -475,11 +351,8 @@ function Panel() {
         route={route()}
         settings={settings()}
         network={network()}
-        input={input()}
         lightPage={lightPage()}
         sensorPage={sensorPage()}
-        focus={focus()}
-        onFocus={onFocus}
         utcOffsetMinutes={utcOffsetMinutes}
         firmwareVersion={firmwareVersion}
         onAction={dispatch}

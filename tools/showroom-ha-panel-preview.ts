@@ -15,7 +15,6 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createWasmUi } from "../third_party/pocketjs/platforms/web/wasm-ops.js";
 import { encodePNG } from "../third_party/pocketjs/tests/png.ts";
-import type { InputEvent } from "../apps/showroom-ha-panel/input";
 import { decodeMessage, encodeMessage, type WorkerCommand, type WorkerEvent } from "../apps/showroom-ha-panel/protocol";
 import { SHOWROOM_ENTITY_MAP_EXAMPLE } from "../apps/showroom-ha-panel/showroom";
 import { readAppsPartition } from "./partitions";
@@ -58,7 +57,7 @@ function compile() {
 export type Touch = readonly [number, number] | null;
 export interface Shot {
   name: string;
-  tape: readonly { frames: number; touch: Touch; input?: InputEvent }[];
+  tape: readonly { frames: number; touch: Touch }[];
   verify?(commands: readonly WorkerCommand[]): void;
 }
 
@@ -146,20 +145,12 @@ function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armC
       }
     }
   };
-  let inputListener: ((event: InputEvent) => void) | undefined;
-  g.__haPanelInput = {
-    subscribe: (listener: (event: InputEvent) => void) => {
-      inputListener = listener;
-      return () => { if (inputListener === listener) inputListener = undefined; };
-    },
-  };
   return {
     rgb: () => rgb,
     brightness: () => brightness,
     sent,
     emit,
     pump,
-    input: (event: InputEvent) => inputListener?.(event),
   };
 }
 
@@ -195,8 +186,7 @@ async function run(shots: readonly Shot[], options: PreviewOptions) {
     }
     let touch: Touch = null;
     let hit = 0;
-    const step = (next: Touch, input?: InputEvent) => {
-      if (input) bridge.input(input);
+    const step = (next: Touch) => {
       if (next && !touch) hit = wasm.ops.hitTestBounds?.(next[0], next[1]) ?? 0;
       touch = next;
       bridge.pump();
@@ -206,7 +196,7 @@ async function run(shots: readonly Shot[], options: PreviewOptions) {
     };
     for (let i = 0; i < 4; i++) step(null);
     for (const segment of shot.tape)
-      for (let i = 0; i < segment.frames; i++) step(segment.touch, i === 0 ? segment.input : undefined);
+      for (let i = 0; i < segment.frames; i++) step(segment.touch);
     for (let i = 0; i < 10; i++) step(null);
     shot.verify?.(bridge.sent);
     const pixels = wasm.renderScaled(DENSITY);
