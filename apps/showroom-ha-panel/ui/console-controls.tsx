@@ -62,6 +62,7 @@ export function ActionButton(props: {
         : actionStatusText(runStatus());
   const stop = () => props.actionId === "reachy-stop";
   const background = () => stop() ? theme.dangerChip : runStatus() === "pending" ? theme.primaryChip : theme.secondaryBackground;
+  const contentOffset = () => Math.max(0, (props.box.height - 52) / 2);
   return (
     <Pressable
       box={props.box}
@@ -75,12 +76,12 @@ export function ActionButton(props: {
     >
       <Text
         class="absolute text-xs font-bold text-center"
-        style={{ insetL: 3, insetT: status() ? 5 : 14, width: props.box.width - 6, textColor: enabled() ? stop() ? theme.danger : theme.text : theme.disabledText }}
+        style={{ insetL: 3, insetT: (status() ? 5 : 14) + contentOffset(), width: props.box.width - 6, textColor: enabled() ? stop() ? theme.danger : theme.text : theme.disabledText }}
       >
         {stop() ? "停止 STOP" : action().name}
       </Text>
       {status() ? (
-        <Text class="absolute text-2xs text-center" style={{ insetL: 3, insetT: 25, width: props.box.width - 6, textColor: runStatus() === "accepted" ? theme.green : theme.secondaryText }}>
+        <Text class="absolute text-2xs text-center" style={{ insetL: 3, insetT: 25 + contentOffset(), width: props.box.width - 6, textColor: runStatus() === "accepted" ? theme.green : theme.secondaryText }}>
           {status()}
         </Text>
       ) : null}
