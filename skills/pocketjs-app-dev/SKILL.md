@@ -30,21 +30,21 @@ After each edit, run only the checks that apply:
 
 | Changed | Command |
 |---|---|
-| Any CJK text (ha-panel) | `bun run fonts` |
+| Any CJK text | `bun run fonts` for `ha-panel`; `bun run showroom:fonts` for `showroom-ha-panel` |
 | Any app source | `bun run pocket check --manifest apps/<app>/pocket.app.json --host-config programs/reterminal-d1001/pocket.host.config.ts` |
 | Pure logic in a `*.ts` with tests | `bun test apps/<app>` |
-| A screen (ha-panel) | `bun run preview --only=<shot>[,<shot>]` add `--landscape` for that orientation |
-| Startup or home screen (ha-panel) | `bun run preview --smoke` |
+| A screen | `bun run preview --only=<shot>[,<shot>]` for `ha-panel`; replace `preview` with `showroom:preview` for `showroom-ha-panel`; add `--landscape` for that orientation |
+| Startup or home screen | Use the app's preview command with `--smoke` |
 | Behaviour on hardware | `bun run app:push apps/<app> --wifi <device-ip>` |
 
-- `bun run fonts` collects the CJK characters in the app's string literals and
-  JSX text, rewrites `fonts/characters.txt` and rebuilds
+- Use the app-specific font command. It collects CJK characters from that
+  app, rewrites its `fonts/characters.txt` and rebuilds
   `D1001SansSC-Regular.otf` when the set changed. The output is
   byte-deterministic, so an unchanged run leaves Git clean. Never run
   pyftsubset by hand or loop on `--check`.
-- Shot names are the PNG names in `tools/ha-panel-preview-shots.ts`. Offline
-  and no-weather variants carry `offline-` and `no-weather-` prefixes, for
-  example `--only=offline-home`.
+- Shot names are the PNG names in the matching `tools/*-preview-shots.ts`.
+  Offline and no-weather variants carry `offline-` and `no-weather-`
+  prefixes, for example `--only=offline-home`.
 - `--no-build` reuses the last compiled package; drop it after a source edit.
 - The preview needs a PocketJS WASM core: `--wasm=<path>`, `POCKETJS_WASM`, or
   the vendored `third_party/pocketjs/platforms/web/pocketjs.wasm`. Build one
@@ -62,9 +62,9 @@ After each edit, run only the checks that apply:
 ## Before the commit
 
 1. `bun test apps/<app> tools/partitions.test.ts`
-2. `bun run fonts --check` (ha-panel)
-3. `bun run preview` for each orientation you changed, without `--all` unless
-   you changed both.
+2. Run the affected app's font command with `--check`.
+3. Run the affected app's preview command for each orientation you changed,
+   without `--all` unless you changed both.
 4. `git status --short`: stage source, art and the regenerated font subset.
    Leave `.pocket-build/` and screenshots out of Git.
 5. One Conventional Commit, for example `feat(ha-panel): …`.
@@ -77,6 +77,7 @@ reachable.
 Run these only for firmware, board, host-config, `partitions.csv` or preview
 harness changes, for a release, or when the user asks:
 
-- `bun run preview --all`: every shot in both orientations.
+- Run the affected app's preview command with `--all`: every shot in both
+  orientations.
 - The ESP-IDF firmware build, serial flashing and the 30-second serial
   capture described in `AGENTS.md`.
