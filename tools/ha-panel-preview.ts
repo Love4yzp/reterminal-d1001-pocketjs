@@ -15,7 +15,9 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createWasmUi } from "../third_party/pocketjs/platforms/web/wasm-ops.js";
 import { encodePNG } from "../third_party/pocketjs/tests/png.ts";
-import { encodeMessage, type WorkerEvent } from "../apps/ha-panel/protocol";
+import type { InputEvent } from "../apps/ha-panel/input";
+import { decodeMessage, encodeMessage, type WorkerCommand, type WorkerEvent } from "../apps/ha-panel/protocol";
+import { SHOWROOM_ENTITY_MAP_EXAMPLE } from "../apps/ha-panel/showroom";
 import { readAppsPartition } from "./partitions";
 import { assertFitsApps, pkapExtentBytes } from "./pkap";
 
@@ -25,6 +27,8 @@ const flag = (name: string) => args.find(arg => arg.startsWith(`--${name}=`))?.s
 const buildDirectory = resolve(root, ".pocket-build/preview/ha-panel");
 const outDirectory = resolve(flag("out") ?? join(root, ".pocket-build/validation/dashboard", new Date().toISOString().replace(/[:.]/g, "-")));
 const DENSITY = 2;
+const CHANNEL_NAMES = ["ha-config", "ha-entity-map", "ha-commands", "ha-events"];
+const channelId = (name: string) => CHANNEL_NAMES.indexOf(name) + 1;
 
 function wasmPath(): string {
   const explicit = flag("wasm") ?? process.env.POCKETJS_WASM;
@@ -52,20 +56,50 @@ function compile() {
 }
 
 export type Touch = readonly [number, number] | null;
-export interface Shot { name: string; tape: readonly { frames: number; touch: Touch }[] }
+export interface Shot {
+  name: string;
+  tape: readonly { frames: number; touch: Touch; input?: InputEvent }[];
+  verify?(commands: readonly WorkerCommand[]): void;
+}
+
+interface PreviewOptions {
+  haConfigured: boolean;
+  weather: boolean;
+  prefix: string;
+  landscape: boolean;
+  out: string;
+  armConfigured?: boolean;
+}
 
 /** Fixtures for the device namespaces the panel reads. */
-function installNativeStubs(options: { haConfigured: boolean; landscape: boolean }) {
+function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armConfigured" | "landscape">) {
   const g = globalThis as any;
   let rgb = [0, 0, 0];
   let session = "";
+  const entityMap = options.haConfigured ? {
+    ...SHOWROOM_ENTITY_MAP_EXAMPLE,
+    actions: {
+      ...SHOWROOM_ENTITY_MAP_EXAMPLE.actions,
+      ...(options.armConfigured ? {
+        "arm-gravity": "input_button.example_arm_gravity",
+        "arm-playback": "input_button.example_arm_playback",
+      } : {}),
+    },
+  } : undefined;
   g.d1001 = {
     readRtc: () => Date.UTC(2026, 10, 8, 6, 32, 0) / 1000,
     utcOffsetMinutes: () => 480,
     syncClock: () => "synchronized",
     setRgb: (r: number, gr: number, b: number) => { rgb = [r, gr, b]; return true; },
     haConfig: () => options.haConfigured
-      ? { baseUrl: "http://ha.local:8123", token: "preview", lightEntityId: "light.living_room", selftest: false }
+      ? {
+        baseUrl: "http://ha.local:8123",
+        token: "preview",
+        lightEntityId: "",
+        weatherEntityId: entityMap?.weather ?? "",
+        selftest: false,
+        entityMapJson: JSON.stringify(entityMap),
+      }
       : { baseUrl: "", token: "", lightEntityId: "", selftest: false },
     firmwareVersion: () => "host-preview",
     setScreenOffSeconds: () => true,
@@ -84,22 +118,52 @@ function installNativeStubs(options: { haConfigured: boolean; landscape: boolean
     setBrightness: (value: number) => { brightness = value; return true; },
     setSwitch: () => false,
   };
-  // Worker channel bridge: UI publishes are recorded, worker events come from
-  // the fixture queue and are delivered once on the next frame.
   const inbox = new Map<number, Uint8Array[]>();
   const outbox: { id: number; data: Uint8Array }[] = [];
+  const sent: WorkerCommand[] = [];
   g.__pocketWorkerChannels = {
     configure: () => 0,
     publish: (id: number, data: Uint8Array) => { outbox.push({ id, data: data.slice() }); return 0; },
     observe: (id: number) => { const records = inbox.get(id) ?? []; inbox.delete(id); return records; },
   };
   const deliver = (id: number, data: Uint8Array) => inbox.set(id, [...inbox.get(id) ?? [], data]);
-  return { rgb: () => rgb, brightness: () => brightness, outbox, deliver };
+  const emit = (event: WorkerEvent) => {
+    const bytes = new Uint8Array(512);
+    encodeMessage(event, bytes);
+    deliver(channelId("ha-events"), bytes);
+  };
+  const pump = () => {
+    for (const record of outbox.splice(0)) {
+      if (record.id !== channelId("ha-commands")) continue;
+      const command = decodeMessage<WorkerCommand>(record.data);
+      sent.push(command);
+      if (command.type === "action") {
+        emit({ type: "action-result", actionId: command.actionId, runId: command.runId, status: "accepted", error: "" });
+      } else if (command.type === "entity-light") {
+        emit({ type: "entity-light", lightId: command.lightId, light: command.light });
+      } else if (command.type === "light") {
+        emit({ type: "entity-light", lightId: "remote", light: command.light });
+      }
+    }
+  };
+  let inputListener: ((event: InputEvent) => void) | undefined;
+  g.__haPanelInput = {
+    subscribe: (listener: (event: InputEvent) => void) => {
+      inputListener = listener;
+      return () => { if (inputListener === listener) inputListener = undefined; };
+    },
+  };
+  return {
+    rgb: () => rgb,
+    brightness: () => brightness,
+    sent,
+    emit,
+    pump,
+    input: (event: InputEvent) => inputListener?.(event),
+  };
 }
 
-interface RunOptions { haConfigured: boolean; weather: boolean; prefix: string; landscape: boolean; out: string }
-
-async function run(shots: readonly Shot[], options: RunOptions) {
+async function run(shots: readonly Shot[], options: PreviewOptions) {
   const width = options.landscape ? 640 : 400;
   const height = options.landscape ? 400 : 640;
   const wasmBytes = await Bun.file(wasmPath()).arrayBuffer();
@@ -115,28 +179,36 @@ async function run(shots: readonly Shot[], options: RunOptions) {
     g.frame = undefined;
     (0, eval)(source);
     if (options.haConfigured) {
-      const deliver = (event: WorkerEvent) => {
-        const bytes = new Uint8Array(512);
-        encodeMessage(event, bytes);
-        bridge.deliver(3, bytes);
-      };
-      deliver({ type: "status", configured: true, connected: true, error: "" });
-      deliver({ type: "light", light: { on: false, brightness: 128, hue: 36, saturation: 70 } });
+      bridge.emit({ type: "status", configured: true, connected: true, error: "" });
+      bridge.emit({
+        type: "entity-light",
+        lightId: "remote",
+        light: { on: false, brightness: 128, hue: 36, saturation: 70 },
+      });
+      bridge.emit({ type: "sensor", sensorId: "temperature", reading: { value: 21.5, status: "mock", updatedAt: 100 } });
+      bridge.emit({ type: "sensor", sensorId: "humidity", reading: { value: 48, status: "mock", updatedAt: 100 } });
+      bridge.emit({ type: "sensor", sensorId: "reachy-agent", reading: { value: "online", status: "mock", updatedAt: 100 } });
+      bridge.emit({ type: "sensor", sensorId: "reachy-result", reading: { value: "retail_complete", status: "mock", updatedAt: 100 } });
+      bridge.emit({ type: "sensor", sensorId: "arm-mode", reading: { value: "idle", status: "mock", updatedAt: 100 } });
       if (options.weather)
-        deliver({ type: "weather", weather: { entityId: "weather.home", condition: "partlycloudy", temperature: 18, unit: "°C" } });
+        bridge.emit({ type: "weather", weather: { entityId: "weather.home", condition: "partlycloudy", temperature: 18, unit: "°C" } });
     }
     let touch: Touch = null;
     let hit = 0;
-    const step = (next: Touch) => {
+    const step = (next: Touch, input?: InputEvent) => {
+      if (input) bridge.input(input);
       if (next && !touch) hit = wasm.ops.hitTestBounds?.(next[0], next[1]) ?? 0;
       touch = next;
+      bridge.pump();
       g.__pocketWorkerChannelFrame?.();
       g.frame(0, 0x8080, touch ? [(touch[1] << 9) | touch[0]] : [], touch ? [hit] : [], touch ? [0] : [], 0x8080);
       wasm.tick();
     };
     for (let i = 0; i < 4; i++) step(null);
-    for (const segment of shot.tape) for (let i = 0; i < segment.frames; i++) step(segment.touch);
-    for (let i = 0; i < 4; i++) step(null);
+    for (const segment of shot.tape)
+      for (let i = 0; i < segment.frames; i++) step(segment.touch, i === 0 ? segment.input : undefined);
+    for (let i = 0; i < 10; i++) step(null);
+    shot.verify?.(bridge.sent);
     const pixels = wasm.renderScaled(DENSITY);
     const path = join(options.out, `${options.prefix}${shot.name}.png`);
     writeFileSync(path, encodePNG(new Uint8Array(pixels), width * DENSITY, height * DENSITY));
@@ -156,11 +228,12 @@ const drag = (x0: number, y0: number, x1: number, y1: number, frames = 10) => [
 ];
 export const gestures = { tap, hold, drag };
 
-type ShotSet = { connected: Shot[]; offline: Shot[]; noWeather: Shot[] };
+type ShotSet = { connected: Shot[]; offline: Shot[]; noWeather: Shot[]; arm: Shot[] };
 const VARIANTS = [
-  { key: "connected", haConfigured: true, weather: true, prefix: "" },
-  { key: "offline", haConfigured: false, weather: false, prefix: "offline-" },
-  { key: "noWeather", haConfigured: true, weather: false, prefix: "no-weather-" },
+  { key: "connected", haConfigured: true, weather: true, prefix: "", armConfigured: false },
+  { key: "offline", haConfigured: false, weather: false, prefix: "offline-", armConfigured: false },
+  { key: "noWeather", haConfigured: true, weather: false, prefix: "no-weather-", armConfigured: false },
+  { key: "arm", haConfigured: true, weather: true, prefix: "armed-", armConfigured: true },
 ] as const;
 
 async function renderSet(set: ShotSet, landscape: boolean, out: string, only?: ReadonlySet<string>) {

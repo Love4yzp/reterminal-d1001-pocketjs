@@ -1,5 +1,6 @@
 import { LIGHT_IDS, type LightId, type LightState, type PanelState } from "./model";
 import { INITIAL_ROUTE, type ProvisionTopic, type Route, type Tab } from "./navigation";
+import { SHOWROOM_SENSOR_IDS } from "./showroom";
 import {
   DEFAULT_SCREEN_OFF_SECONDS,
   SCREEN_OFF_OPTIONS,
@@ -14,7 +15,7 @@ export interface SavedSession {
   settings: Pick<SettingsState, "screenOffSeconds">;
 }
 
-const TABS: readonly Tab[] = ["home", "lights", "settings"];
+const TABS: readonly Tab[] = ["home", "lights", "sensors", "settings"];
 const TOPICS: readonly ProvisionTopic[] = ["wifi", "ha"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -29,6 +30,10 @@ function isLightId(value: unknown): value is LightId {
   return typeof value === "string" && (LIGHT_IDS as readonly string[]).includes(value);
 }
 
+function isSensorId(value: unknown): value is string {
+  return typeof value === "string" && (SHOWROOM_SENSOR_IDS as readonly string[]).includes(value);
+}
+
 function numberIn(value: unknown, min: number, max: number): number | null {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.min(max, Math.max(min, Math.round(value)))
@@ -40,8 +45,15 @@ function readLight(value: unknown): LightState | null {
   const brightness = numberIn(value.brightness, 0, 255);
   const hue = numberIn(value.hue, 0, 359);
   const saturation = numberIn(value.saturation, 0, 100);
-  if (brightness === null || hue === null || saturation === null) return null;
-  return { on: value.on, brightness, hue, saturation };
+  const colorTempKelvin = value.colorTempKelvin === undefined ? undefined : numberIn(value.colorTempKelvin, 1_000, 10_000);
+  if (brightness === null || hue === null || saturation === null || colorTempKelvin === null) return null;
+  return {
+    on: value.on,
+    brightness,
+    hue,
+    saturation,
+    ...(colorTempKelvin === undefined ? {} : { colorTempKelvin }),
+  };
 }
 
 function readRoute(value: unknown): Route {
@@ -50,6 +62,9 @@ function readRoute(value: unknown): Route {
   if (!isTab(value.from)) return INITIAL_ROUTE;
   if (value.kind === "dimmer" && isLightId(value.lightId))
     return { kind: "dimmer", lightId: value.lightId, from: value.from };
+  if (value.kind === "sensor" && isSensorId(value.sensorId))
+    return { kind: "sensor", sensorId: value.sensorId, from: value.from };
+  if (value.kind === "arm") return { kind: "arm", from: value.from };
   if (value.kind === "provision" && typeof value.topic === "string" &&
       (TOPICS as readonly string[]).includes(value.topic))
     return { kind: "provision", topic: value.topic as ProvisionTopic, from: value.from };
@@ -98,10 +113,12 @@ export function decodeSession(text: string): SavedSession | null {
 }
 
 export function restorePanelState(base: PanelState, session: SavedSession): PanelState {
-  return {
-    ...base,
-    lights: { ...base.lights, ...session.lights },
-  };
+  const lights = { ...base.lights };
+  for (const lightId of base.lightOrder) {
+    const light = session.lights[lightId];
+    if (light) lights[lightId] = light;
+  }
+  return { ...base, lights };
 }
 
 export function restoreSettings(base: SettingsState, session: SavedSession): SettingsState {

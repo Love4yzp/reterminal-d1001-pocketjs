@@ -142,7 +142,10 @@ static void start_worker_http(d1001_host *host) {
       .memory_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
       .task_stack_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
       .task_core = 1,
-      .task_priority = 2,
+      /* The request task emits facts consumed by the worker. Keep it above
+       * the worker (priority 3) so an early error cannot make close(BUSY)
+       * starve the task before it publishes SLOT_DONE. */
+      .task_priority = 4,
   };
   host->http = pocket_http_esp_create(&config);
   assert(host->http != NULL);
