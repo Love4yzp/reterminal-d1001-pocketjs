@@ -483,13 +483,16 @@ static void request_task(void *opaque) {
     if (quit)
       break;
     const int32_t status = perform(s);
+    /* Publish SLOT_DONE before finish wakes the higher-priority worker. If
+     * close observes SLOT_RUNNING and retries POCKET_WORKER_BUSY, it can
+     * otherwise starve this task before it gets a chance to release the slot. */
+    lock(d);
+    s->phase = SLOT_DONE;
+    unlock(d);
     /* After a cancel or close the request is terminal already; finish still
      * ends the stream and releases the native request. */
     pocket_worker_finish(s->worker, s->handle, s->request, status,
                          s->delivered);
-    lock(d);
-    s->phase = SLOT_DONE;
-    unlock(d);
   }
   xSemaphoreGive(d->stopped);
   if (d->config.task_stack_caps)
