@@ -100,6 +100,19 @@ bun run app:push apps/ha-panel --wifi <device-ip>
 
 The panel provides home, light-list, dimmer and settings screens with virtual, onboard and HA light adapters. Live HA weather appears when an entity is available; there are no IMU or demonstration-weather cards. HA is disabled without local configuration. See `apps/ha-panel/README.md` for Kconfig settings, RTC/SNTP, host previews and the authenticated local mock server.
 
+## Showroom HA panel
+
+`apps/showroom-ha-panel` is a separate product with app id `dev.pocket-nexus.d1001.showroom-ha-panel`. It retains the generic panel's light, dimmer and settings foundations while adding the showroom main light, environment readings, weather, Reachy actions, execution telemetry and protected arm controls. Its source, tests, fonts, mock server and preview harness are independent of `apps/ha-panel`.
+
+```sh
+bun test apps/showroom-ha-panel tools/partitions.test.ts
+bun run showroom:fonts --check
+bun run showroom:preview --smoke
+bun run app:push apps/showroom-ha-panel
+```
+
+The committed app has no live HA credentials. See `apps/showroom-ha-panel/README.md` for its public entity-map format, local configuration seam, safety behavior and full validation commands.
+
 ## Development Wi-Fi hot push
 
 The authenticated HTTP endpoint is compiled out by default. To enable it locally, put this in the ignored `programs/reterminal-d1001/sdkconfig.local`:

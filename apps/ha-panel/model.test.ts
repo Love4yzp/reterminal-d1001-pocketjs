@@ -10,19 +10,13 @@ import {
 } from "./model";
 
 function connected(): PanelState {
-  const pending = reducePanel(createInitialPanelState(), {
+  return reducePanel(createInitialPanelState(), {
     type: "ha", haConfigured: true, haConnected: true, haLightConfigured: true,
-  });
-  return reducePanel(pending, {
-    type: "entity-light",
-    lightId: "remote",
-    light: { on: false, brightness: 128, hue: 36, saturation: 70 },
-    updatedAt: 100,
   });
 }
 
 describe("createInitialPanelState", () => {
-  test("starts with HA offline, pending sensors, no weather and no clock", () => {
+  test("starts with HA offline, no weather and no clock", () => {
     const state = createInitialPanelState();
     expect(state.lightKinds).toEqual({ desk: "virtual", shelf: "virtual", onboard: "onboard", remote: "ha" });
     expect(state.haConfigured).toBe(false);
@@ -30,8 +24,7 @@ describe("createInitialPanelState", () => {
     expect(state.haLightConfigured).toBe(false);
     expect(state.weather).toBeNull();
     expect(state.clockEpochSeconds).toBeNull();
-    expect(state.sensorOrder).toEqual(["temperature", "humidity"]);
-    expect(state.sensors.temperature).toEqual({ value: null, status: "pending", updatedAt: null });
+    expect(state).not.toHaveProperty("sensors");
   });
 
   test("keeps the onboard RGB as a light", () => {

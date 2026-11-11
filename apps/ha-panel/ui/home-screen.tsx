@@ -1,25 +1,80 @@
 import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { formatChineseDate, formatClock } from "../clock";
-import type { PanelAction, PanelState } from "../model";
+import { percentFromBrightness } from "../dimmer";
+import { LIGHT_INFO, lightStatusText, lightTone } from "../lights";
+import {
+  availableLights,
+  isLightAvailable,
+  LIGHT_IDS,
+  type LightId,
+  type PanelAction,
+  type PanelState,
+} from "../model";
 import type { NetworkInfo } from "../native";
-import type { NavEvent } from "../navigation";
-import { SHOWROOM } from "../showroom";
+import { tileIntent, type NavEvent } from "../navigation";
+import { SCENES, sceneAction } from "../scenes";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
-import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
-import { Icon, Numerals } from "./primitives";
-import { SensorCard, type FocusProps } from "./showroom-cards";
+import { BulbChip, Icon, Numerals, Pressable } from "./primitives";
 import { StatusBar } from "./status-bar";
 
-interface HomeProps extends FocusProps {
+interface HomeProps {
   state: PanelState;
   network: NetworkInfo;
   utcOffsetMinutes: number;
   onAction(action: PanelAction): void;
   onNav(event: NavEvent): void;
-  onHaAction(actionId: string, confirmed: boolean): void;
-  actionConfigured(actionId: string): boolean;
+}
+
+function LightTile(props: HomeProps & { lightId: LightId; index: number }) {
+  const light = () => props.state.lights[props.lightId];
+  const enabled = () => isLightAvailable(props.state, props.lightId);
+  const tone = () => lightTone(props.state, props.lightId);
+  const left = 16 + (props.index % 2) * 190;
+  const top = 130 + Math.floor(props.index / 2) * 128;
+  const intent = (gesture: "tap" | "long-press") => {
+    const next = tileIntent(gesture, props.lightId, availableLights(props.state));
+    if (next.action) props.onAction(next.action);
+    if (next.nav) props.onNav(next.nav);
+  };
+  return (
+    <Pressable
+      box={{ left, top, width: 178, height: 116 }}
+      style={{ radius: 12, bgColor: enabled() && light().on ? theme.tileOn : theme.card }}
+      onTap={() => intent("tap")}
+      onLongPress={() => intent("long-press")}
+    >
+      <BulbChip tone={tone()} left={14} top={14} size={40} />
+      <Text
+        class="absolute text-sm font-bold"
+        style={{ insetL: 14, insetT: 54, width: 150, textColor: enabled() ? theme.text : theme.secondaryText }}
+      >
+        {LIGHT_INFO[props.lightId].name}
+      </Text>
+      <Text
+        class="absolute text-xs"
+        style={{ insetL: 14, insetT: 75, width: 150, textColor: enabled() ? theme.secondaryText : theme.disabledText }}
+      >
+        {lightStatusText(props.state, props.lightId)}
+      </Text>
+      {enabled() && light().on ? (
+        <View class="absolute" style={{ insetL: 14, insetT: 99, width: 150, height: 4, radius: 2, bgColor: theme.secondaryBackground }}>
+          <View
+            class="absolute"
+            style={{
+              insetL: 0,
+              insetT: 0,
+              width: Math.round(150 * percentFromBrightness(light().brightness) / 100),
+              height: 4,
+              radius: 2,
+              bgColor: tone() === "cool" ? theme.primary : theme.on,
+            }}
+          />
+        </View>
+      ) : null}
+    </Pressable>
+  );
 }
 
 export function HomeScreen(props: HomeProps) {
@@ -36,52 +91,35 @@ export function HomeScreen(props: HomeProps) {
         {formatChineseDate(props.state.clockEpochSeconds, props.utcOffsetMinutes)}
       </Text>
       {weather() ? (
-        <View class="absolute" style={{ insetL: 310, insetT: 36, width: 70, height: 66 }}>
-          <Icon name={weatherIcon(weather()!)} left={0} top={0} size={28} />
-          <Text class="absolute text-2xs text-right" style={{ insetL: 32, insetT: 8, width: 38, textColor: theme.secondaryText }}>
-            {weatherLabel(weather()!)}
-          </Text>
-          <Text class="absolute text-2xl font-bold text-right" style={{ insetL: 0, insetT: 34, width: 70, textColor: theme.text }}>
+        <View class="absolute" style={{ insetL: 310, insetT: 36, width: 70, height: 86 }}>
+          <Icon name={weatherIcon(weather()!)} left={15} top={0} size={40} />
+          <Text class="absolute text-2xl font-bold text-right" style={{ insetL: 0, insetT: 46, width: 70, textColor: theme.text }}>
             {weatherTemperature(weather()!)}
+          </Text>
+          <Text class="absolute text-xs text-right" style={{ insetL: 0, insetT: 76, width: 70, textColor: theme.secondaryText }}>
+            {weatherLabel(weather()!)}
           </Text>
         </View>
       ) : null}
-      <MainLightControl
-        {...props}
-        lightId={SHOWROOM.home.lights[0]!}
-        box={{ left: 16, top: 110, width: 368, height: 78 }}
-      />
-      <For each={SHOWROOM.home.sensors}>{(sensorId, index) => (
-        <SensorCard
-          state={props.state}
-          sensorId={sensorId}
-          box={{ left: 16 + index() * 190, top: 198, width: 178, height: 66 }}
-          compact
-          focus={props.focus}
-          onFocus={props.onFocus}
-          onNav={props.onNav}
-        />
+      <For each={LIGHT_IDS}>{(lightId, index) => (
+        <LightTile {...props} lightId={lightId} index={index()} />
       )}</For>
-      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 274, width: 190, textColor: theme.text }}>Reachy 快捷操作</Text>
-      <Text class="absolute text-2xs text-right" style={{ insetL: 224, insetT: 278, width: 160, textColor: theme.secondaryText }}>由 HA 执行</Text>
-      <For each={SHOWROOM.home.actions}>{(actionId, index) => (
-        <ActionButton
-          state={props.state}
-          actionId={actionId}
-          box={{ left: 16 + (index() % 3) * 126, top: 300 + Math.floor(index() / 3) * 52, width: 118, height: 44 }}
-          configured={props.actionConfigured(actionId)}
-          focus={props.focus}
-          onFocus={props.onFocus}
-          onHaAction={props.onHaAction}
-        />
-      )}</For>
-      <TelemetryPanel
-        state={props.state}
-        box={{ left: 16, top: 406, width: 368, height: 96 }}
-        focus={props.focus}
-        onFocus={props.onFocus}
-        onNav={props.onNav}
-      />
+      <Text class="absolute text-xs" style={{ insetL: 16, insetT: 390, width: 100, textColor: theme.secondaryText }}>场景</Text>
+      <For each={SCENES}>{(scene, index) => {
+        const left = 16 + Math.round(index() * 376 / 3);
+        const nextLeft = 16 + Math.round((index() + 1) * 376 / 3);
+        return (
+          <Pressable
+            box={{ left, top: 413, width: nextLeft - left - 8, height: 48 }}
+            style={{ radius: 12, bgColor: theme.card }}
+            onTap={() => props.onAction(sceneAction(props.state, scene.id))}
+          >
+            <Text class="absolute text-sm text-center" style={{ insetL: 0, insetT: 15, width: nextLeft - left - 8, textColor: theme.text }}>
+              {scene.label}
+            </Text>
+          </Pressable>
+        );
+      }}</For>
     </View>
   );
 }

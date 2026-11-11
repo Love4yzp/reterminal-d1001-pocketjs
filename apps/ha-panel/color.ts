@@ -39,20 +39,6 @@ export function hsvToRgb(hue: number, saturation = 1, value = 1): Rgb {
   ];
 }
 
-export function rgbToHsv(color: Rgb): readonly [number, number] {
-  const [red, green, blue] = color.map(channel => clamp01(channel / 255));
-  const maximum = Math.max(red, green, blue);
-  const minimum = Math.min(red, green, blue);
-  const delta = maximum - minimum;
-  if (delta === 0) return [0, 0];
-  const sector = maximum === red
-    ? ((green - blue) / delta) % 6
-    : maximum === green
-      ? (blue - red) / delta + 2
-      : (red - green) / delta + 4;
-  return [Math.round(((sector * 60) % 360 + 360) % 360), Math.round(delta / maximum * 100)];
-}
-
 export function applyBrightness(color: Rgb, brightness: number): Rgb {
   const scale = Math.min(255, Math.max(0, brightness)) / 255;
   return [
