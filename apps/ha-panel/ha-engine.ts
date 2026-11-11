@@ -1,11 +1,13 @@
 import {
-  createActivateEntityRequest,
   createApiProbeRequest,
   createGetEntityStateRequest,
   createGetWeatherRequest,
+  createLightCommandRequest,
+  createPressButtonRequest,
   createSetLightStateRequest,
   parseLightEntity,
   parseSensorEntity,
+  type HaLightCommand,
   type HttpRequest,
 } from "./ha-request";
 import type { LightState } from "./model";
@@ -15,7 +17,7 @@ import {
   type WorkerCommand,
   type WorkerEvent,
 } from "./protocol";
-import { SHOWROOM } from "./showroom";
+import { SHOWROOM, showroomAction } from "./showroom";
 import { parseWeatherEntity } from "./weather";
 
 export interface HaResponse {
@@ -66,7 +68,8 @@ export class HaEngine {
   private readonly inFlight = new Set<string>();
   private readonly due: Record<string, number> = {};
   private readonly revisions: Record<string, number> = {};
-  private readonly serviceRuns: Record<string, number> = {};
+  private readonly commandPending: Record<string, number> = {};
+  private readonly actionRuns: Record<string, number> = {};
   private readonly fallback: Record<string, LightState> = {};
 
   constructor(
@@ -83,7 +86,8 @@ export class HaEngine {
     this.heartbeatInFlight = false;
     for (const key of Object.keys(this.due)) delete this.due[key];
     for (const key of Object.keys(this.revisions)) delete this.revisions[key];
-    for (const key of Object.keys(this.serviceRuns)) delete this.serviceRuns[key];
+    for (const key of Object.keys(this.commandPending)) delete this.commandPending[key];
+    for (const key of Object.keys(this.actionRuns)) delete this.actionRuns[key];
     this.publishStatus(config.configError ?? "", true);
   }
 
@@ -102,14 +106,14 @@ export class HaEngine {
   }
 
   command(command: WorkerCommand): Promise<void> {
-    if (command.type === "service") return this.service(command.sceneId, command.runId);
+    if (command.type === "action") return this.action(command.actionId, command.runId, command.confirmed === true);
     if (command.type === "light") {
       const lightId = "remote";
       const seq = (this.revisions[lightId] ?? 0) + 1;
       this.revisions[lightId] = seq;
       return this.setLight(lightId, command.light, seq, true);
     }
-    return this.setLight(command.lightId, command.light, command.seq, false);
+    return this.setLight(command.lightId, command.light, command.seq, false, command.command);
   }
 
   async idle(): Promise<void> {
@@ -155,19 +159,27 @@ export class HaEngine {
   private lightIds(): string[] {
     const config = this.config;
     if (!config) return [];
-    if (config.entityMap) return Object.keys(config.entityMap.lights);
-    return config.lightEntityId ? ["remote"] : [];
+    const ids = new Set(Object.keys(config.entityMap?.lights ?? {}));
+    if (config.lightEntityId) ids.add("remote");
+    return [...ids];
   }
 
   private lightEntityId(lightId: string, legacy: boolean): string | undefined {
     const config = this.config;
     if (!config) return undefined;
     if (legacy) return config.lightEntityId;
-    if (config.entityMap) return config.entityMap.lights[lightId];
+    const mapped = config.entityMap?.lights[lightId];
+    if (mapped) return mapped;
     return lightId === "remote" ? config.lightEntityId : undefined;
   }
 
-  private setLight(lightId: string, light: LightState, seq: number, legacy: boolean): Promise<void> {
+  private setLight(
+    lightId: string,
+    light: LightState,
+    seq: number,
+    legacy: boolean,
+    command?: HaLightCommand,
+  ): Promise<void> {
     const config = this.config;
     if (!config || !this.configured) return Promise.resolve();
     if ((this.revisions[lightId] ?? 0) > seq) return Promise.resolve();
@@ -179,14 +191,25 @@ export class HaEngine {
       this.publishEntityError("light", lightId, "unavailable", "light entity is not configured");
       return Promise.resolve();
     }
+    this.commandPending[lightId] = (this.commandPending[lightId] ?? 0) + 1;
     return this.lanes.run("command", async () => {
       try {
-        await this.execute(createSetLightStateRequest(config, light, entityId));
+        const request = command
+          ? createLightCommandRequest(config, entityId, command)
+          : createSetLightStateRequest(config, light, entityId);
+        await this.execute(request);
       } catch (error) {
         if (epoch === this.epoch && this.revisions[lightId] === seq)
           this.publishEntityError("light", lightId, "offline", this.errorMessage(error));
       } finally {
-        if (epoch === this.epoch) this.due[`light:${lightId}`] = 0;
+        if (epoch === this.epoch) {
+          const pending = (this.commandPending[lightId] ?? 1) - 1;
+          if (pending > 0) this.commandPending[lightId] = pending;
+          else {
+            delete this.commandPending[lightId];
+            this.due[`light:${lightId}`] = 0;
+          }
+        }
       }
     });
   }
@@ -196,7 +219,8 @@ export class HaEngine {
     const entityId = this.lightEntityId(lightId, false);
     if (!config || !entityId) return;
     const key = `light:${lightId}`;
-    if (this.inFlight.has(key) || this.tickCount < (this.due[key] ?? 0)) return;
+    if ((this.commandPending[lightId] ?? 0) > 0 ||
+        this.inFlight.has(key) || this.tickCount < (this.due[key] ?? 0)) return;
     this.inFlight.add(key);
     const epoch = this.epoch;
     const revision = this.revisions[lightId] ?? 0;
@@ -216,12 +240,14 @@ export class HaEngine {
         this.publish({ type: "entity-light", lightId, light });
         this.due[key] = this.tickCount + LIGHT_RETRY_TICKS;
       } catch (error) {
-        if (epoch === this.epoch && revision === (this.revisions[lightId] ?? 0) && this.connected)
-          this.publishEntityError("light", lightId, "offline", this.errorMessage(error));
-        this.due[key] = this.tickCount + ERROR_RETRY_TICKS;
+        if (epoch === this.epoch && revision === (this.revisions[lightId] ?? 0)) {
+          if (this.connected) this.publishEntityError("light", lightId, "offline", this.errorMessage(error));
+          this.due[key] = this.tickCount + ERROR_RETRY_TICKS;
+        }
       } finally {
         this.inFlight.delete(key);
-        if ((this.due[key] ?? 0) === 0) this.due[key] = this.tickCount + LIGHT_RETRY_TICKS;
+        const stale = epoch !== this.epoch || revision !== (this.revisions[lightId] ?? 0) || !this.connected;
+        if (!stale && (this.due[key] ?? 0) === 0) this.due[key] = this.tickCount + LIGHT_RETRY_TICKS;
       }
     });
   }
@@ -286,33 +312,41 @@ export class HaEngine {
     });
   }
 
-  private service(sceneId: string, runId: number): Promise<void> {
+  private action(actionId: string, runId: number, confirmed: boolean): Promise<void> {
     const config = this.config;
     if (!config || !this.configured) return Promise.resolve();
-    if ((this.serviceRuns[sceneId] ?? 0) > runId) return Promise.resolve();
-    this.serviceRuns[sceneId] = runId;
-    const entityId = config.entityMap?.scenes[sceneId];
-    const epoch = this.epoch;
-    if (!entityId) {
-      this.publish({ type: "service-result", sceneId, runId, status: "failed", error: "service entity is not configured" });
+    if ((this.actionRuns[actionId] ?? 0) > runId) return Promise.resolve();
+    this.actionRuns[actionId] = runId;
+    const definition = showroomAction(actionId);
+    const entityId = config.entityMap?.actions[actionId];
+    if (!definition || !entityId) {
+      this.publishActionResult(actionId, runId, "failed", "action entity is not configured");
       return Promise.resolve();
     }
+    if (definition.requiresHold && !confirmed) {
+      this.publishActionResult(actionId, runId, "failed", "hold confirmation is required");
+      return Promise.resolve();
+    }
+    const epoch = this.epoch;
     return this.lanes.run("command", async () => {
       try {
-        await this.execute(createActivateEntityRequest(config, entityId));
-        if (epoch === this.epoch && this.serviceRuns[sceneId] === runId)
-          this.publish({ type: "service-result", sceneId, runId, status: "applied", error: "" });
+        await this.execute(createPressButtonRequest(config, entityId));
+        if (epoch === this.epoch && this.actionRuns[actionId] === runId)
+          this.publishActionResult(actionId, runId, "accepted", "");
       } catch (error) {
-        if (epoch === this.epoch && this.serviceRuns[sceneId] === runId)
-          this.publish({
-            type: "service-result",
-            sceneId,
-            runId,
-            status: "failed",
-            error: this.errorMessage(error),
-          });
+        if (epoch === this.epoch && this.actionRuns[actionId] === runId)
+          this.publishActionResult(actionId, runId, "failed", this.errorMessage(error));
       }
     });
+  }
+
+  private publishActionResult(
+    actionId: string,
+    runId: number,
+    status: "accepted" | "failed",
+    error: string,
+  ): void {
+    this.publish({ type: "action-result", actionId, runId, status, error: statusErrorText(error) });
   }
 
   private publishEntityError(

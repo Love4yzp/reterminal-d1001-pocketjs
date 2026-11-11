@@ -45,8 +45,15 @@ function readLight(value: unknown): LightState | null {
   const brightness = numberIn(value.brightness, 0, 255);
   const hue = numberIn(value.hue, 0, 359);
   const saturation = numberIn(value.saturation, 0, 100);
-  if (brightness === null || hue === null || saturation === null) return null;
-  return { on: value.on, brightness, hue, saturation };
+  const colorTempKelvin = value.colorTempKelvin === undefined ? undefined : numberIn(value.colorTempKelvin, 1_000, 10_000);
+  if (brightness === null || hue === null || saturation === null || colorTempKelvin === null) return null;
+  return {
+    on: value.on,
+    brightness,
+    hue,
+    saturation,
+    ...(colorTempKelvin === undefined ? {} : { colorTempKelvin }),
+  };
 }
 
 function readRoute(value: unknown): Route {
@@ -57,6 +64,7 @@ function readRoute(value: unknown): Route {
     return { kind: "dimmer", lightId: value.lightId, from: value.from };
   if (value.kind === "sensor" && isSensorId(value.sensorId))
     return { kind: "sensor", sensorId: value.sensorId, from: value.from };
+  if (value.kind === "arm") return { kind: "arm", from: value.from };
   if (value.kind === "provision" && typeof value.topic === "string" &&
       (TOPICS as readonly string[]).includes(value.topic))
     return { kind: "provision", topic: value.topic as ProvisionTopic, from: value.from };

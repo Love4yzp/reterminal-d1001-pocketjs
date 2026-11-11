@@ -7,8 +7,9 @@ import type { NavEvent } from "../navigation";
 import { SHOWROOM } from "../showroom";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
+import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
 import { Icon, Numerals } from "./primitives";
-import { LightTile, SceneButton, SensorCard, type FocusProps } from "./showroom-cards";
+import { SensorCard, type FocusProps } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
 
 interface HomeProps extends FocusProps {
@@ -17,7 +18,8 @@ interface HomeProps extends FocusProps {
   utcOffsetMinutes: number;
   onAction(action: PanelAction): void;
   onNav(event: NavEvent): void;
-  onScene(sceneId: string): void;
+  onHaAction(actionId: string, confirmed: boolean): void;
+  actionConfigured(actionId: string): boolean;
 }
 
 export function HomeScreen(props: HomeProps) {
@@ -34,53 +36,52 @@ export function HomeScreen(props: HomeProps) {
         {formatChineseDate(props.state.clockEpochSeconds, props.utcOffsetMinutes)}
       </Text>
       {weather() ? (
-        <View class="absolute" style={{ insetL: 310, insetT: 36, width: 70, height: 86 }}>
-          <Icon name={weatherIcon(weather()!)} left={15} top={0} size={40} />
-          <Text class="absolute text-2xl font-bold text-right" style={{ insetL: 0, insetT: 46, width: 70, textColor: theme.text }}>
-            {weatherTemperature(weather()!)}
-          </Text>
-          <Text class="absolute text-xs text-right" style={{ insetL: 0, insetT: 76, width: 70, textColor: theme.secondaryText }}>
+        <View class="absolute" style={{ insetL: 310, insetT: 36, width: 70, height: 66 }}>
+          <Icon name={weatherIcon(weather()!)} left={0} top={0} size={28} />
+          <Text class="absolute text-2xs text-right" style={{ insetL: 32, insetT: 8, width: 38, textColor: theme.secondaryText }}>
             {weatherLabel(weather()!)}
+          </Text>
+          <Text class="absolute text-2xl font-bold text-right" style={{ insetL: 0, insetT: 34, width: 70, textColor: theme.text }}>
+            {weatherTemperature(weather()!)}
           </Text>
         </View>
       ) : null}
-      <For each={SHOWROOM.home.lights}>{(lightId, index) => (
-        <LightTile
-          state={props.state}
-          lightId={lightId}
-          box={{ left: 16 + (index() % 2) * 190, top: 130 + Math.floor(index() / 2) * 128, width: 178, height: 116 }}
-          focus={props.focus}
-          onFocus={props.onFocus}
-          onAction={props.onAction}
-          onNav={props.onNav}
-        />
-      )}</For>
-      <Text class="absolute text-xs" style={{ insetL: 16, insetT: 390, width: 100, textColor: theme.secondaryText }}>场景</Text>
-      <For each={SHOWROOM.home.scenes}>{(sceneId, index) => {
-        const left = 16 + Math.round(index() * 376 / 3);
-        const nextLeft = 16 + Math.round((index() + 1) * 376 / 3);
-        return (
-          <SceneButton
-            state={props.state}
-            sceneId={sceneId}
-            box={{ left, top: 413, width: nextLeft - left - 8, height: 48 }}
-            focus={props.focus}
-            onFocus={props.onFocus}
-            onScene={props.onScene}
-          />
-        );
-      }}</For>
+      <MainLightControl
+        {...props}
+        lightId={SHOWROOM.home.lights[0]!}
+        box={{ left: 16, top: 110, width: 368, height: 78 }}
+      />
       <For each={SHOWROOM.home.sensors}>{(sensorId, index) => (
         <SensorCard
           state={props.state}
           sensorId={sensorId}
-          box={{ left: 16 + index() * 190, top: 480, width: 178, height: 82 }}
+          box={{ left: 16 + index() * 190, top: 198, width: 178, height: 66 }}
           compact
           focus={props.focus}
           onFocus={props.onFocus}
           onNav={props.onNav}
         />
       )}</For>
+      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 274, width: 190, textColor: theme.text }}>Reachy 快捷操作</Text>
+      <Text class="absolute text-2xs text-right" style={{ insetL: 224, insetT: 278, width: 160, textColor: theme.secondaryText }}>由 HA 执行</Text>
+      <For each={SHOWROOM.home.actions}>{(actionId, index) => (
+        <ActionButton
+          state={props.state}
+          actionId={actionId}
+          box={{ left: 16 + (index() % 3) * 126, top: 300 + Math.floor(index() / 3) * 52, width: 118, height: 44 }}
+          configured={props.actionConfigured(actionId)}
+          focus={props.focus}
+          onFocus={props.onFocus}
+          onHaAction={props.onHaAction}
+        />
+      )}</For>
+      <TelemetryPanel
+        state={props.state}
+        box={{ left: 16, top: 406, width: 368, height: 96 }}
+        focus={props.focus}
+        onFocus={props.onFocus}
+        onNav={props.onNav}
+      />
     </View>
   );
 }

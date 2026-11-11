@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  createActivateEntityRequest,
   createApiProbeRequest,
   createGetEntityStateRequest,
   createGetLightStateRequest,
   createGetWeatherRequest,
+  createLightCommandRequest,
+  createPressButtonRequest,
   createSetLightStateRequest,
   FIRST_WEATHER_TEMPLATE,
   parseLightEntity,
@@ -36,7 +37,7 @@ describe("HA light requests", () => {
     });
   });
 
-  test("builds turn_on with brightness and RGB derived from hue and saturation", () => {
+  test("builds turn_on with brightness_pct and RGB derived from hue and saturation", () => {
     const request = createSetLightStateRequest(config, { on: true, brightness: 180, hue: 120, saturation: 100 });
 
     expect(request.method).toBe("POST");
@@ -48,9 +49,15 @@ describe("HA light requests", () => {
     });
     expect(jsonBody(request)).toEqual({
       entity_id: "light.mock lamp/1",
-      brightness: 180,
+      brightness_pct: 71,
       rgb_color: [0, 255, 0],
     });
+  });
+
+  test("uses the HA brightness_pct service field", () => {
+    const request = createSetLightStateRequest(config, { on: true, brightness: 64, hue: 0, saturation: 0 });
+    expect(jsonBody(request)).toMatchObject({ brightness_pct: 25 });
+    expect(jsonBody(request)).not.toHaveProperty("brightness");
   });
 
   test("a low saturation sends a pale color", () => {
@@ -75,12 +82,50 @@ describe("HA light requests", () => {
   });
 });
 
+describe("explicit HA light commands", () => {
+  test("sends a brightness_pct preset without an unrelated color mode", () => {
+    const request = createLightCommandRequest(config, "light.second", { on: true, brightnessPct: 25 });
+    expect(jsonBody(request)).toEqual({ entity_id: "light.second", brightness_pct: 25 });
+  });
+
+  test("sends RGB and color_temp_kelvin presets independently", () => {
+    expect(jsonBody(createLightCommandRequest(config, "edidt.main", {
+      on: true, rgbColor: [12, 34, 56],
+    }))).toEqual({ entity_id: "edidt.main", rgb_color: [12, 34, 56] });
+    expect(jsonBody(createLightCommandRequest(config, "edidt.main", {
+      on: true, colorTempKelvin: 2700,
+    }))).toEqual({ entity_id: "edidt.main", color_temp_kelvin: 2700 });
+  });
+
+  test("rejects conflicting or out-of-range command fields before any network call", () => {
+    expect(() => createLightCommandRequest(config, "light.second", {
+      on: true, rgbColor: [0, 0, 0], colorTempKelvin: 2700,
+    })).toThrow("mutually exclusive");
+    expect(() => createLightCommandRequest(config, "light.second", { on: true, brightnessPct: 101 }))
+      .toThrow("brightnessPct");
+    expect(() => createLightCommandRequest(config, "light.second", { on: true, rgbColor: [0, 0, 256] }))
+      .toThrow("rgbColor");
+    expect(() => createLightCommandRequest(config, "light.second", { on: true, colorTempKelvin: 500 }))
+      .toThrow("colorTempKelvin");
+  });
+});
+
 describe("HA light entity parsing", () => {
   const fallback: LightState = { on: false, brightness: 128, hue: 36, saturation: 70 };
 
   test("reads power, brightness and hs_color", () => {
     const body = JSON.stringify({ state: "on", attributes: { brightness: 200.4, hs_color: [210.6, 40.2] } });
     expect(parseLightEntity(body, fallback)).toEqual({ on: true, brightness: 200, hue: 211, saturation: 40 });
+  });
+
+  test("reads RGB and Kelvin color modes", () => {
+    const body = JSON.stringify({
+      state: "on",
+      attributes: { brightness: 64, rgb_color: [255, 0, 0], color_temp_kelvin: 2700 },
+    });
+    expect(parseLightEntity(body, fallback)).toEqual({
+      on: true, brightness: 64, hue: 0, saturation: 100, colorTempKelvin: 2700,
+    });
   });
 
   test("keeps the last color when HA reports an off light without attributes", () => {
@@ -122,7 +167,7 @@ describe("HA weather requests", () => {
   });
 });
 
-describe("keyed entities and services", () => {
+describe("keyed entities and input_button services", () => {
   test("uses an explicit entity for state reads and light commands", () => {
     expect(createGetEntityStateRequest(config, "light.second").url)
       .toBe("http://home-assistant.test:8123/api/states/light.second");
@@ -134,22 +179,15 @@ describe("keyed entities and services", () => {
     expect(jsonBody(request)).toEqual({ entity_id: "light.second" });
   });
 
-  test("maps scene, script and input_button to their HA services", () => {
-    const cases = [
-      ["scene.welcome", "scene/turn_on"],
-      ["script.welcome", "script/turn_on"],
-      ["input_button.wake", "input_button/press"],
-    ] as const;
-    for (const [entityId, service] of cases) {
-      const request = createActivateEntityRequest(config, entityId);
-      expect(request.url).toBe(`http://home-assistant.test:8123/api/services/${service}`);
-      expect(jsonBody(request)).toEqual({ entity_id: entityId });
-    }
+  test("maps input_button to its HA press service", () => {
+    const request = createPressButtonRequest(config, "input_button.wake");
+    expect(request.url).toBe("http://home-assistant.test:8123/api/services/input_button/press");
+    expect(jsonBody(request)).toEqual({ entity_id: "input_button.wake" });
   });
 
-  test("rejects arbitrary service domains", () => {
-    expect(() => createActivateEntityRequest(config, "light.not_a_scene")).toThrow("unsupported");
-    expect(() => createActivateEntityRequest(config, "input_button_missing_dot")).toThrow("entity");
+  test("rejects arbitrary service domains and malformed button ids", () => {
+    expect(() => createPressButtonRequest(config, "scene.welcome")).toThrow("unsupported");
+    expect(() => createPressButtonRequest(config, "input_button_missing_dot")).toThrow("entity");
   });
 });
 

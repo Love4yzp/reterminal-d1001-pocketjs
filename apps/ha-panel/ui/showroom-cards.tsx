@@ -1,70 +1,14 @@
 import { Text } from "@pocketjs/framework/solid/components";
-import { percentFromBrightness } from "../dimmer";
 import { sameFocus, type FocusTarget } from "../input";
-import { lightInfo, lightStatusText, lightTone } from "../lights";
-import { availableLights, isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
-import { tileIntent, type NavEvent } from "../navigation";
-import {
-  formatSensorValue,
-  sceneStatusText,
-  sensorStatusText,
-  SHOWROOM,
-  showroomScene,
-  showroomSensor,
-} from "../showroom";
+import type { PanelState } from "../model";
+import type { NavEvent } from "../navigation";
+import { formatSensorValue, sensorStatusText, showroomSensor } from "../showroom";
 import { theme } from "../theme";
-import { BulbChip, Pressable, type Box } from "./primitives";
+import { Pressable, type Box } from "./primitives";
 
 export interface FocusProps {
   focus: FocusTarget | null;
   onFocus(target: FocusTarget): void;
-}
-
-export function LightTile(props: FocusProps & {
-  state: PanelState;
-  lightId: LightId;
-  box: Box;
-  onAction(action: PanelAction): void;
-  onNav(event: NavEvent): void;
-}) {
-  const light = () => props.state.lights[props.lightId]!;
-  const enabled = () => isLightAvailable(props.state, props.lightId);
-  const tone = () => lightTone(props.state, props.lightId);
-  const target = () => ({ kind: "light" as const, id: props.lightId });
-  const intent = (gesture: "tap" | "long-press") => {
-    props.onFocus(target());
-    const next = tileIntent(gesture, props.lightId, availableLights(props.state));
-    if (next.action) props.onAction(next.action);
-    if (next.nav) props.onNav(next.nav);
-  };
-  return (
-    <Pressable
-      box={props.box}
-      focused={sameFocus(props.focus, target())}
-      style={{ radius: 12, bgColor: enabled() && light().on ? theme.tileOn : theme.card }}
-      onTap={() => intent("tap")}
-      onLongPress={() => intent("long-press")}
-    >
-      <BulbChip tone={tone()} left={14} top={14} size={40} />
-      <Text
-        class="absolute text-sm font-bold"
-        style={{ insetL: 14, insetT: 54, width: props.box.width - 28, textColor: enabled() ? theme.text : theme.secondaryText }}
-      >
-        {lightInfo(props.state, props.lightId).name}
-      </Text>
-      <Text
-        class="absolute text-xs"
-        style={{ insetL: 14, insetT: 75, width: props.box.width - 28, textColor: enabled() ? theme.secondaryText : theme.disabledText }}
-      >
-        {lightStatusText(props.state, props.lightId)}
-      </Text>
-      {enabled() && light().on ? (
-        <Text class="absolute text-2xs text-right" style={{ insetL: 14, insetT: 96, width: props.box.width - 28, textColor: tone() === "cool" ? theme.primary : theme.on }}>
-          {`${percentFromBrightness(light().brightness)}%`}
-        </Text>
-      ) : null}
-    </Pressable>
-  );
 }
 
 export function SensorCard(props: FocusProps & {
@@ -77,7 +21,7 @@ export function SensorCard(props: FocusProps & {
   const sensor = () => showroomSensor(props.sensorId)!;
   const reading = () => props.state.sensors[props.sensorId]!;
   const target = () => ({ kind: "sensor" as const, id: props.sensorId });
-  const valueTop = () => props.compact ? 29 : 45;
+  const valueTop = () => props.compact ? 26 : 45;
   return (
     <Pressable
       box={props.box}
@@ -97,40 +41,6 @@ export function SensorCard(props: FocusProps & {
       <Text class="absolute text-2xs" style={{ insetL: 12, insetT: props.box.height - 22, width: props.box.width - 24, textColor: reading().status === "live" ? theme.green : theme.disabledText }}>
         {sensorStatusText(reading(), props.state.sensorErrors[props.sensorId])}
       </Text>
-    </Pressable>
-  );
-}
-
-export function SceneButton(props: FocusProps & {
-  state: PanelState;
-  sceneId: string;
-  box: Box;
-  onScene(sceneId: string): void;
-}) {
-  const scene = () => showroomScene(props.sceneId)!;
-  const target = () => ({ kind: "scene" as const, id: props.sceneId });
-  const status = () => sceneStatusText(props.state.sceneRuns[props.sceneId] ?? "idle");
-  return (
-    <Pressable
-      box={props.box}
-      focused={sameFocus(props.focus, target())}
-      style={{ radius: 12, bgColor: theme.card }}
-      onTap={() => {
-        props.onFocus(target());
-        props.onScene(props.sceneId);
-      }}
-    >
-      <Text
-        class={status() ? "absolute text-xs text-center" : "absolute text-sm text-center"}
-        style={{ insetL: 0, insetT: status() ? 7 : 15, width: props.box.width, textColor: theme.text }}
-      >
-        {scene().name}
-      </Text>
-      {status() ? (
-        <Text class="absolute text-2xs text-center" style={{ insetL: 0, insetT: 27, width: props.box.width, textColor: status() === "完成" ? theme.green : theme.secondaryText }}>
-          {status()}
-        </Text>
-      ) : null}
     </Pressable>
   );
 }

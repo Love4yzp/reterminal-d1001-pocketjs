@@ -2,7 +2,7 @@ import {
   assertShowroomConfig,
   SHOWROOM,
   SHOWROOM_LIGHT_IDS,
-  type SceneRunStatus,
+  type ActionRunStatus,
   type SensorReading,
   type ShowroomConfig,
 } from "./showroom";
@@ -22,6 +22,7 @@ export interface LightState {
   hue: number;
   /** 0..100 percent, the Home Assistant hs_color saturation scale. */
   saturation: number;
+  colorTempKelvin?: number;
 }
 
 export interface LightPresentation {
@@ -45,18 +46,21 @@ export interface PanelState {
   lightOrder: LightId[];
   lightInfo: Record<LightId, LightPresentation>;
   lightAvailability: Record<LightId, LightAvailability>;
+  lightPending: Record<LightId, boolean>;
   lightErrors: Record<LightId, string>;
   lightUpdatedAt: Record<LightId, number | null>;
   lightStaleAfter: Record<LightId, number>;
   legacyHaLightId: LightId | null;
   sensors: Record<string, SensorReading>;
   sensorOrder: string[];
+  telemetryOrder: string[];
   sensorStaleAfter: Record<string, number>;
   sensorErrors: Record<string, string>;
-  sceneRuns: Record<string, SceneRunStatus>;
+  actionRuns: Record<string, ActionRunStatus>;
+  actionErrors: Record<string, string>;
   haConfigured: boolean;
   haConnected: boolean;
-  /** HA config names a light entity for the legacy remote tile. */
+  /** HA config names at least one light entity. */
   haLightConfigured: boolean;
   weather: Weather | null;
   clockEpochSeconds: number | null;
@@ -68,14 +72,15 @@ export type LightChanges = Partial<Record<LightId, Partial<LightState>>>;
 export type PanelAction =
   | { type: "toggle-light"; lightId: LightId }
   | { type: "set-brightness"; lightId: LightId; brightness: number }
-  | { type: "set-color"; lightId: LightId; hue: number; saturation: number }
+  | { type: "set-color"; lightId: LightId; hue: number; saturation: number; on?: boolean }
+  | { type: "set-color-temp"; lightId: LightId; colorTempKelvin: number; on?: boolean }
   | { type: "set-lights"; changes: LightChanges }
   | { type: "remote-light"; light: LightState }
   | { type: "entity-light"; lightId: LightId; light: LightState; updatedAt?: number | null }
   | { type: "sensor"; sensorId: string; reading: SensorReading }
   | { type: "entity-error"; domain: "light" | "sensor"; key: string; availability: "offline" | "unavailable"; error: string }
   | { type: "sensor-tick"; nowSeconds: number | null }
-  | { type: "scene-result"; sceneId: string; status: SceneRunStatus }
+  | { type: "action-result"; actionId: string; status: ActionRunStatus; error?: string }
   | { type: "clock"; clockEpochSeconds: number | null; clockSynced: boolean }
   | { type: "ha"; haConfigured: boolean; haConnected: boolean; haLightConfigured: boolean }
   | { type: "weather"; weather: Weather | null };
@@ -89,6 +94,7 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
   const lightKinds: Record<LightId, LightKind> = {};
   const lightInfo: Record<LightId, LightPresentation> = {};
   const lightAvailability: Record<LightId, LightAvailability> = {};
+  const lightPending: Record<LightId, boolean> = {};
   const lightUpdatedAt: Record<LightId, number | null> = {};
   const lightStaleAfter: Record<LightId, number> = {};
   let legacyHaLightId: string | null = null;
@@ -100,7 +106,8 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
       chip: light.chip,
       tag: light.source === "ha" ? "Home Assistant" : light.source === "onboard" ? "板载 RGB" : "虚拟设备",
     };
-    lightAvailability[light.key] = light.source !== "ha" ? "available" : light.legacy ? "offline" : "pending";
+    lightAvailability[light.key] = light.source !== "ha" ? "available" : "offline";
+    lightPending[light.key] = false;
     lightUpdatedAt[light.key] = null;
     lightStaleAfter[light.key] = light.staleAfterSeconds ?? 90;
     if (light.legacy) legacyHaLightId = light.key;
@@ -111,23 +118,26 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
     sensors[sensor.key] = { value: null, status: "pending", updatedAt: null };
     sensorStaleAfter[sensor.key] = sensor.staleAfterSeconds;
   }
-  const sceneRuns: Record<string, SceneRunStatus> = {};
-  for (const scene of config.scenes) sceneRuns[scene.key] = "idle";
+  const actionRuns: Record<string, ActionRunStatus> = {};
+  for (const action of config.actions) actionRuns[action.key] = "idle";
   return {
     lights,
     lightKinds,
     lightOrder: config.lights.map(light => light.key),
     lightInfo,
     lightAvailability,
+    lightPending,
     lightErrors: {},
     lightUpdatedAt,
     lightStaleAfter,
     legacyHaLightId,
     sensors,
-    sensorOrder: config.sensors.map(sensor => sensor.key),
+    sensorOrder: config.sensors.filter(sensor => sensor.kind !== "telemetry").map(sensor => sensor.key),
+    telemetryOrder: config.sensors.filter(sensor => sensor.kind === "telemetry").map(sensor => sensor.key),
     sensorStaleAfter,
     sensorErrors: {},
-    sceneRuns,
+    actionRuns,
+    actionErrors: {},
     haConfigured: false,
     haConnected: false,
     haLightConfigured: false,
@@ -150,22 +160,28 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function normalizeLight(light: LightState): LightState {
-  return {
+  const normalized: LightState = {
     on: light.on,
     brightness: clamp(light.brightness, 0, 255),
     hue: ((Math.round(light.hue) % 360) + 360) % 360,
     saturation: clamp(light.saturation, 0, 100),
   };
+  if (typeof light.colorTempKelvin === "number" && Number.isFinite(light.colorTempKelvin))
+    normalized.colorTempKelvin = clamp(light.colorTempKelvin, 1_000, 10_000);
+  return normalized;
 }
 
 function sameLight(left: LightState, right: LightState): boolean {
   return left.on === right.on && left.brightness === right.brightness &&
-    left.hue === right.hue && left.saturation === right.saturation;
+    left.hue === right.hue && left.saturation === right.saturation &&
+    left.colorTempKelvin === right.colorTempKelvin;
 }
 
 /** Merge a partial update; a light switched on at brightness 0 comes back at the default. */
 function mergeLight(current: LightState, change: Partial<LightState>): LightState {
-  const next = normalizeLight({ ...current, ...change });
+  const merged = { ...current, ...change };
+  if (change.hue !== undefined || change.saturation !== undefined) delete merged.colorTempKelvin;
+  const next = normalizeLight(merged);
   if (change.brightness !== undefined && change.on === undefined) next.on = next.brightness > 0;
   if (next.on && next.brightness === 0) next.brightness = DEFAULT_ON_BRIGHTNESS;
   return next;
@@ -173,6 +189,8 @@ function mergeLight(current: LightState, change: Partial<LightState>): LightStat
 
 function withLights(state: PanelState, changes: LightChanges, userAction: boolean): PanelState {
   let lights = state.lights;
+  let lightPending = state.lightPending;
+  let lightErrors = state.lightErrors;
   for (const lightId of state.lightOrder) {
     const change = changes[lightId];
     if (!change || !lights[lightId]) continue;
@@ -181,8 +199,14 @@ function withLights(state: PanelState, changes: LightChanges, userAction: boolea
     if (sameLight(next, lights[lightId])) continue;
     if (lights === state.lights) lights = { ...lights };
     lights[lightId] = next;
+    if (userAction && state.lightKinds[lightId] === "ha") {
+      if (lightPending === state.lightPending) lightPending = { ...lightPending };
+      if (lightErrors === state.lightErrors) lightErrors = { ...lightErrors };
+      lightPending[lightId] = true;
+      delete lightErrors[lightId];
+    }
   }
-  return lights === state.lights ? state : { ...state, lights };
+  return lights === state.lights ? state : { ...state, lights, lightPending, lightErrors };
 }
 
 function sameWeather(left: Weather | null, right: Weather | null): boolean {
@@ -205,7 +229,18 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
       return withLights(state, { [action.lightId]: { brightness: action.brightness } }, true);
     case "set-color":
       return withLights(state, {
-        [action.lightId]: { hue: action.hue, saturation: action.saturation },
+        [action.lightId]: {
+          hue: action.hue,
+          saturation: action.saturation,
+          ...(action.on === undefined ? {} : { on: action.on }),
+        },
+      }, true);
+    case "set-color-temp":
+      return withLights(state, {
+        [action.lightId]: {
+          colorTempKelvin: action.colorTempKelvin,
+          ...(action.on === undefined ? {} : { on: action.on }),
+        },
       }, true);
     case "set-lights":
       return withLights(state, action.changes, true);
@@ -220,6 +255,7 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
       return {
         ...next,
         lightAvailability: { ...next.lightAvailability, [action.lightId]: availability },
+        lightPending: { ...next.lightPending, [action.lightId]: false },
         lightUpdatedAt: { ...next.lightUpdatedAt, [action.lightId]: action.updatedAt ?? null },
         lightErrors,
       };
@@ -246,6 +282,7 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
         return {
           ...state,
           lightAvailability: { ...state.lightAvailability, [action.key]: availability },
+          lightPending: { ...state.lightPending, [action.key]: false },
           lightErrors: { ...state.lightErrors, [action.key]: action.error },
         };
       }
@@ -263,12 +300,12 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
     case "sensor-tick": {
       if (action.nowSeconds === null) return state;
       let sensors = state.sensors;
-      for (const sensorId of state.sensorOrder) {
+      for (const sensorId of [...state.sensorOrder, ...state.telemetryOrder]) {
         const reading = sensors[sensorId]!;
         if (reading.status !== "live" || reading.updatedAt === null) continue;
         if (action.nowSeconds >= reading.updatedAt &&
             action.nowSeconds - reading.updatedAt > state.sensorStaleAfter[sensorId]!) {
-          if (sensors === state.sensors) sensors = { ...state.sensors };
+          if (sensors === state.sensors) sensors = { ...sensors };
           sensors[sensorId] = { ...reading, status: "stale" };
         }
       }
@@ -286,9 +323,18 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
       const changed = sensors !== state.sensors || lightAvailability !== state.lightAvailability;
       return changed ? { ...state, sensors, lightAvailability } : state;
     }
-    case "scene-result":
-      if (!(action.sceneId in state.sceneRuns) || state.sceneRuns[action.sceneId] === action.status) return state;
-      return { ...state, sceneRuns: { ...state.sceneRuns, [action.sceneId]: action.status } };
+    case "action-result": {
+      if (!(action.actionId in state.actionRuns)) return state;
+      const actionErrors = { ...state.actionErrors };
+      if (action.status === "failed" && action.error) actionErrors[action.actionId] = action.error;
+      else delete actionErrors[action.actionId];
+      if (state.actionRuns[action.actionId] === action.status) return state;
+      return {
+        ...state,
+        actionRuns: { ...state.actionRuns, [action.actionId]: action.status },
+        actionErrors,
+      };
+    }
     case "clock":
       if (state.clockEpochSeconds === action.clockEpochSeconds && state.clockSynced === action.clockSynced)
         return state;
@@ -298,17 +344,15 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
           state.haLightConfigured === action.haLightConfigured)
         return state;
       const lightAvailability = { ...state.lightAvailability };
+      const lightPending = { ...state.lightPending };
       for (const lightId of state.lightOrder) {
         if (state.lightKinds[lightId] !== "ha") continue;
-        if (lightId === state.legacyHaLightId)
-          lightAvailability[lightId] = action.haConnected && action.haLightConfigured ? "available" : "offline";
-        else if (!action.haConnected && lightAvailability[lightId] !== "pending")
-          lightAvailability[lightId] = "offline";
-        else if (action.haConnected && lightAvailability[lightId] === "offline")
-          lightAvailability[lightId] = "pending";
+        lightPending[lightId] = false;
+        if (!action.haConnected || !action.haLightConfigured) lightAvailability[lightId] = "offline";
+        else if (lightAvailability[lightId] === "offline") lightAvailability[lightId] = "pending";
       }
       const sensors = { ...state.sensors };
-      for (const sensorId of state.sensorOrder) {
+      for (const sensorId of [...state.sensorOrder, ...state.telemetryOrder]) {
         const reading = sensors[sensorId]!;
         if (!action.haConnected && (reading.status === "live" || reading.status === "stale"))
           sensors[sensorId] = { ...reading, status: "offline" };
@@ -318,13 +362,13 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
       return {
         ...state,
         lightAvailability,
+        lightPending,
         lightErrors: {},
         sensors,
         sensorErrors: {},
         haConfigured: action.haConfigured,
         haConnected: action.haConnected,
         haLightConfigured: action.haLightConfigured,
-        // Weather is only shown while it is live.
         weather: action.haConnected ? state.weather : null,
       };
     }

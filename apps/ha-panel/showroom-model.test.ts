@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { createInitialPanelState, isLightAvailable, reducePanel } from "./model";
+import { createInitialPanelState, isLightAvailable, reducePanel, type PanelState } from "./model";
 import { navigate, nextLight } from "./navigation";
-import { sceneEffect, sceneRunStatus } from "./scenes";
 import { decodeSession, encodeSession } from "./session";
 import { createSettings } from "./settings";
 import { SHOWROOM, type ShowroomConfig } from "./showroom";
@@ -17,19 +16,23 @@ const extraLight = {
 };
 const config: ShowroomConfig = { ...SHOWROOM, lights: [...SHOWROOM.lights, extraLight] };
 
-describe("multi-entity front-end seam", () => {
-  test("an additional HA light becomes controllable after its first live snapshot", () => {
-    const initial = createInitialPanelState(config);
-    const connected = reducePanel(initial, {
-      type: "ha", haConfigured: true, haConnected: true, haLightConfigured: true,
-    });
-    expect(isLightAvailable(connected, "accent")).toBe(false);
-    expect(reducePanel(connected, { type: "toggle-light", lightId: "accent" })).toBe(connected);
+function connected(config: ShowroomConfig = SHOWROOM): PanelState {
+  return reducePanel(createInitialPanelState(config), {
+    type: "ha", haConfigured: true, haConnected: true, haLightConfigured: true,
+  });
+}
 
-    const live = reducePanel(connected, {
+describe("multi-entity front-end seam", () => {
+  test("a keyed HA light becomes writable after its live snapshot", () => {
+    const initial = connected(config);
+    expect(isLightAvailable(initial, "accent")).toBe(false);
+    expect(reducePanel(initial, { type: "toggle-light", lightId: "accent" })).toBe(initial);
+
+    const live = reducePanel(initial, {
       type: "entity-light",
       lightId: "accent",
       light: { on: true, brightness: 80, hue: 200, saturation: 40 },
+      updatedAt: 100,
     });
     expect(live.lights.accent).toEqual({ on: true, brightness: 80, hue: 200, saturation: 40 });
     expect(live.lightAvailability.accent).toBe("available");
@@ -37,6 +40,29 @@ describe("multi-entity front-end seam", () => {
     expect(reducePanel(live, { type: "toggle-light", lightId: "accent" }).lights.accent?.on).toBe(false);
     expect(reducePanel(live, { type: "entity-light", lightId: "missing", light: live.lights.accent! })).toBe(live);
     expect(reducePanel(live, { type: "entity-light", lightId: "desk", light: live.lights.accent! })).toBe(live);
+  });
+
+  test("pending and errors stay isolated by light", () => {
+    let state = connected(config);
+    for (const lightId of ["remote", "accent"]) {
+      state = reducePanel(state, {
+        type: "entity-light",
+        lightId,
+        light: { on: false, brightness: 128, hue: 30, saturation: 50 },
+        updatedAt: 100,
+      });
+    }
+    const pending = reducePanel(state, { type: "set-brightness", lightId: "remote", brightness: 64 });
+    expect(pending.lightPending).toMatchObject({ remote: true, accent: false });
+    expect(pending.lights.accent).toBe(state.lights.accent);
+
+    const failed = reducePanel(pending, {
+      type: "entity-error", domain: "light", key: "remote", availability: "unavailable", error: "unavailable",
+    });
+    expect(failed.lightPending).toMatchObject({ remote: false, accent: false });
+    expect(failed.lightErrors).toEqual({ remote: "unavailable" });
+    expect(failed.lightAvailability.accent).toBe("available");
+    expect(isLightAvailable(failed, "accent")).toBe(true);
   });
 
   test("keyed sensor readings do not invent production values and degrade on disconnect", () => {
@@ -58,6 +84,23 @@ describe("multi-entity front-end seam", () => {
     expect(offline.sensors.temperature?.value).toBe(23.4);
   });
 
+  test("telemetry freshness is independent and survives disconnect as offline", () => {
+    const live = reducePanel(createInitialPanelState(), {
+      type: "sensor",
+      sensorId: "reachy-agent",
+      reading: { value: "online", status: "live", updatedAt: 100 },
+    });
+    expect(live.sensorOrder).toEqual(["temperature", "humidity"]);
+    expect(live.telemetryOrder).toEqual(["reachy-agent", "reachy-result", "arm-mode"]);
+    expect(reducePanel(live, { type: "sensor-tick", nowSeconds: 190 })).toBe(live);
+    const stale = reducePanel(live, { type: "sensor-tick", nowSeconds: 191 });
+    expect(stale.sensors["reachy-agent"]?.status).toBe("stale");
+    const offline = reducePanel(stale, {
+      type: "ha", haConfigured: true, haConnected: false, haLightConfigured: true,
+    });
+    expect(offline.sensors["reachy-agent"]).toMatchObject({ value: "online", status: "offline", updatedAt: 100 });
+  });
+
   test("mock readings remain explicitly marked as examples", () => {
     const next = reducePanel(createInitialPanelState(), {
       type: "sensor",
@@ -68,41 +111,21 @@ describe("multi-entity front-end seam", () => {
     expect(reducePanel(next, { type: "sensor-tick", nowSeconds: 1000 })).toBe(next);
   });
 
-  test("live readings expire at their configured threshold", () => {
-    const live = reducePanel(createInitialPanelState(), {
-      type: "sensor",
-      sensorId: "temperature",
-      reading: { value: 23.4, status: "live", updatedAt: 100 },
+  test("action acceptance and errors stay keyed and never become scene state", () => {
+    const pending = reducePanel(createInitialPanelState(), {
+      type: "action-result", actionId: "reachy-wake", status: "pending",
     });
-    expect(reducePanel(live, { type: "sensor-tick", nowSeconds: 190 })).toBe(live);
-    const stale = reducePanel(live, { type: "sensor-tick", nowSeconds: 191 });
-    expect(stale.sensors.temperature).toMatchObject({ value: 23.4, status: "stale" });
-    expect(reducePanel(stale, { type: "sensor-tick", nowSeconds: null })).toBe(stale);
-  });
-
-  test("HA scenes have a separate effect and local scenes report skipped members", () => {
-    const withHaScene: ShowroomConfig = {
-      ...SHOWROOM,
-      scenes: [...SHOWROOM.scenes, { key: "welcome", name: "HA scene", kind: "ha", entityId: "scene.example_welcome" }],
-    };
-    const haEffect = sceneEffect(createInitialPanelState(), "welcome", withHaScene);
-    expect(haEffect).toEqual({
-      type: "ha", sceneId: "welcome", entityId: "scene.example_welcome",
+    expect(pending.actionRuns["reachy-wake"]).toBe("pending");
+    expect(pending.actionRuns["reachy-stop"]).toBe("idle");
+    const accepted = reducePanel(pending, {
+      type: "action-result", actionId: "reachy-wake", status: "accepted",
     });
-    expect(sceneRunStatus(haEffect, false)).toBe("unsupported");
-    const localEffect = sceneEffect(createInitialPanelState(), "reading");
-    expect(localEffect).toMatchObject({
-      type: "local", skipped: ["remote"],
+    expect(accepted.actionRuns["reachy-wake"]).toBe("accepted");
+    const failed = reducePanel(accepted, {
+      type: "action-result", actionId: "reachy-stop", status: "failed", error: "HTTP status 503",
     });
-    expect(sceneRunStatus(localEffect, true)).toBe("partial");
-    expect(sceneRunStatus(localEffect, false)).toBe("failed");
-    const emptyConfig: ShowroomConfig = {
-      ...SHOWROOM,
-      scenes: [{ key: "empty", name: "Empty", kind: "local", changes: { remote: { on: true } } }],
-    };
-    const emptyEffect = sceneEffect(createInitialPanelState(), "empty", emptyConfig);
-    expect(emptyEffect).toMatchObject({ type: "local", appliedCount: 0, skipped: ["remote"] });
-    expect(sceneRunStatus(emptyEffect, true)).toBe("failed");
+    expect(failed.actionRuns["reachy-wake"]).toBe("accepted");
+    expect(failed.actionErrors).toEqual({ "reachy-stop": "HTTP status 503" });
   });
 });
 

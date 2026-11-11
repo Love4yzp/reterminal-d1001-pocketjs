@@ -10,10 +10,14 @@ import {
   type WorkerCommand,
   type WorkerEvent,
 } from "./protocol";
+import { parseShowroomEntityMap, type ShowroomEntityMap } from "./showroom";
 
 const TICK_MICROS = 100_000;
-let config: PanelHaConfig | undefined;
+let config: Omit<PanelHaConfig, "entityMap"> | undefined;
+let entityMap: ShowroomEntityMap | undefined;
 let lastConfig: Uint8Array | undefined;
+let lastEntityMap: Uint8Array | undefined;
+let entityMapLoaded = false;
 
 function errorMessage(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
@@ -91,18 +95,32 @@ function sameBytes(left: Uint8Array, right: Uint8Array | undefined): boolean {
 async function run(): Promise<void> {
   void commandLoop();
   for (;;) {
-    const bytes = io.channel("ha-config").snapshot();
-    if (bytes && !sameBytes(bytes, lastConfig)) {
-      lastConfig = bytes;
+    let changed = false;
+    const configBytes = io.channel("ha-config").snapshot();
+    if (configBytes && !sameBytes(configBytes, lastConfig)) {
+      lastConfig = configBytes;
       try {
-        config = decodeMessage<PanelHaConfig>(bytes);
-        engine.setConfig(config);
+        config = decodeMessage<Omit<PanelHaConfig, "entityMap">>(configBytes);
       } catch (error) {
         config = { baseUrl: "", token: "", selftest: false, configError: errorMessage(error) };
-        engine.setConfig(config);
         console.error(`[ha-panel] HA configuration failed: ${errorMessage(error)}`);
       }
+      changed = true;
     }
+    const mapBytes = io.channel("ha-entity-map").snapshot();
+    if (mapBytes && !sameBytes(mapBytes, lastEntityMap)) {
+      lastEntityMap = mapBytes;
+      entityMapLoaded = true;
+      try {
+        const value = decodeMessage<ShowroomEntityMap | null>(mapBytes);
+        entityMap = value ? parseShowroomEntityMap(JSON.stringify(value)) : undefined;
+      } catch (error) {
+        config = { baseUrl: "", token: "", selftest: false, configError: errorMessage(error) };
+        console.error(`[ha-panel] HA entity map failed: ${errorMessage(error)}`);
+      }
+      changed = true;
+    }
+    if (changed && config && entityMapLoaded) engine.setConfig({ ...config, entityMap });
     engine.tick();
     await sleep(TICK_MICROS);
   }

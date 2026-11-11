@@ -4,6 +4,7 @@ import { HaEngine } from "./ha-engine";
 import type { HttpRequest } from "./ha-request";
 import type { LightState } from "./model";
 import type { PanelHaConfig, WorkerEvent } from "./protocol";
+import { SHOWROOM, SHOWROOM_ENTITY_MAP_EXAMPLE } from "./showroom";
 
 interface Deferred {
   request: HttpRequest;
@@ -13,7 +14,11 @@ interface Deferred {
 
 const light = (on: boolean, brightness = 128): LightState => ({ on, brightness, hue: 30, saturation: 50 });
 
-function config(map = true): PanelHaConfig {
+function config(map = true, arm = true): PanelHaConfig {
+  const actions = {
+    ...SHOWROOM_ENTITY_MAP_EXAMPLE.actions,
+    ...(arm ? { "arm-gravity": "input_button.example_arm_gravity" } : {}),
+  };
   return {
     baseUrl: "http://example.test:8123",
     token: "test-token",
@@ -27,7 +32,7 @@ function config(map = true): PanelHaConfig {
         temperature: "sensor.example_temperature",
         humidity: "sensor.example_humidity",
       },
-      scenes: { "reachy-wake": "input_button.example_wake" },
+      actions,
       weather: "weather.example",
     } : undefined,
   };
@@ -116,10 +121,74 @@ describe("production HA engine", () => {
     expect(events.filter(event => event.type === "entity-light" && event.lightId === "remote")).toEqual([]);
   });
 
-  test("isolates sensor failure from other entities and the global connection", async () => {
+  test("does not start a replacement poll while the light command is still running", async () => {
+    const network = deferredExecutor(url => url.includes("light.main") || url.includes("/api/services/light/"));
+    const engine = new HaEngine(network.execute, () => {});
+    engine.setConfig(config());
+    engine.tick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    network.pending.get("GET http://example.test:8123/api/")!.resolve(JSON.stringify({ message: "API running." }));
+    await engine.idle();
+    engine.tick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const getUrl = "GET http://example.test:8123/api/states/light.main";
+    const postUrl = "POST http://example.test:8123/api/services/light/turn_on";
+    const oldGet = network.pending.get(getUrl)!;
+    const command = engine.command({ type: "entity-light", lightId: "remote", light: light(true, 220), seq: 1 });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(network.pending.has(postUrl)).toBe(true);
+
+    oldGet.resolve(JSON.stringify({ state: "off", attributes: {} }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    engine.tick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(network.calls.filter(request => request.method === "GET" && request.url.endsWith("light.main"))).toHaveLength(1);
+
+    network.pending.get(postUrl)!.resolve("[]");
+    await command;
+    engine.tick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    network.pending.get(getUrl)!.resolve(JSON.stringify({ state: "on", attributes: { brightness: 220 } }));
+    await engine.idle();
+  });
+
+  test("immediately replaces a stale poll after the command completes", async () => {
+    const network = deferredExecutor(url => url.includes("light.main") || url.includes("/api/services/light/"));
+    const events: WorkerEvent[] = [];
+    const engine = new HaEngine(network.execute, event => events.push(event));
+    engine.setConfig(config());
+    engine.tick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    network.pending.get("GET http://example.test:8123/api/")!.resolve(JSON.stringify({ message: "API running." }));
+    await engine.idle();
+    engine.tick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const getUrl = "GET http://example.test:8123/api/states/light.main";
+    const postUrl = "POST http://example.test:8123/api/services/light/turn_on";
+    const oldGet = network.pending.get(getUrl)!;
+    const command = engine.command({ type: "entity-light", lightId: "remote", light: light(true, 220), seq: 1 });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    network.pending.get(postUrl)!.resolve("[]");
+    await command;
+    oldGet.resolve(JSON.stringify({ state: "off", attributes: {} }));
+    await engine.idle();
+
+    engine.tick();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(network.calls.filter(request => request.method === "GET" && request.url.endsWith("light.main"))).toHaveLength(2);
+    network.pending.get(getUrl)!.resolve(JSON.stringify({ state: "on", attributes: { brightness: 220 } }));
+    await engine.idle();
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "entity-light", lightId: "remote", light: expect.objectContaining({ on: true, brightness: 220 }),
+    }));
+  });
+
+  test("isolates an unavailable light and failed sensor from healthy entities and the connection", async () => {
     const services: { request: HttpRequest }[] = [];
     const events: WorkerEvent[] = [];
     const engine = new HaEngine(immediateExecutor({
+      "light.main": JSON.stringify({ state: "unavailable", attributes: {} }),
+      "light.accent": JSON.stringify({ state: "on", attributes: { brightness: 80, rgb_color: [255, 0, 0] } }),
       "sensor.example_humidity": JSON.stringify({ state: "48" }),
       "weather.example": "null",
     }, services), event => events.push(event));
@@ -128,27 +197,90 @@ describe("production HA engine", () => {
     engine.tick();
     await engine.idle();
 
+    expect(events).toContainEqual(expect.objectContaining({ type: "entity-error", key: "remote", availability: "unavailable" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "entity-light", lightId: "accent" }));
     expect(events.some(event => event.type === "entity-error" && event.key === "temperature")).toBe(true);
     expect(events.some(event => event.type === "sensor" && event.sensorId === "humidity" && event.reading.value === 48)).toBe(true);
-    expect(events.some(event => event.type === "entity-error" && event.key === "remote")).toBe(true);
     expect(events.some(event => event.type === "status" && event.connected)).toBe(true);
   });
 
-  test("invokes input_button with a keyed result and preserves legacy commands", async () => {
+  test("sends exact brightness, RGB and Kelvin bodies with per-light error isolation", async () => {
     const services: { request: HttpRequest }[] = [];
     const events: WorkerEvent[] = [];
     const executor = immediateExecutor({}, services);
-    const engine = new HaEngine(executor, event => events.push(event));
+    const engine = new HaEngine(async request => {
+      if (request.method === "POST" && request.body?.includes("light.main")) throw new Error("HTTP status 503");
+      return executor(request);
+    }, event => events.push(event));
     engine.setConfig(config());
     await connected(engine);
-    await engine.command({ type: "service", sceneId: "reachy-wake", runId: 4 });
 
-    expect(services[0]?.request.url).toBe("http://example.test:8123/api/services/input_button/press");
-    expect(JSON.parse(services[0]!.request.body!)).toEqual({ entity_id: "input_button.example_wake" });
-    expect(events).toContainEqual({ type: "service-result", sceneId: "reachy-wake", runId: 4, status: "applied", error: "" });
+    await engine.command({
+      type: "entity-light", lightId: "remote", light: light(true, 64), seq: 1,
+      command: { on: true, brightnessPct: 25 },
+    });
+    await engine.command({
+      type: "entity-light", lightId: "accent", light: light(true), seq: 1,
+      command: { on: true, rgbColor: [12, 34, 56] },
+    });
+    await engine.command({
+      type: "entity-light", lightId: "remote", light: { ...light(true), colorTempKelvin: 2700 }, seq: 2,
+      command: { on: true, colorTempKelvin: 2700 },
+    });
+
+    expect(services).toHaveLength(1);
+    expect(JSON.parse(services[0]!.request.body!)).toEqual({ entity_id: "light.accent", rgb_color: [12, 34, 56] });
+    expect(events.filter(event => event.type === "entity-error" && event.key === "remote")).toHaveLength(2);
+    expect(events.some(event => event.type === "entity-error" && event.key === "accent")).toBe(false);
+  });
+
+  test("routes all six Reachy actions to their keyed input_button and reports acceptance", async () => {
+    const services: { request: HttpRequest }[] = [];
+    const events: WorkerEvent[] = [];
+    const engine = new HaEngine(immediateExecutor({}, services), event => events.push(event));
+    const panelConfig = config();
+    engine.setConfig(panelConfig);
+    await connected(engine);
+
+    for (const [index, actionId] of SHOWROOM.home.actions.entries())
+      await engine.command({ type: "action", actionId, runId: index + 1 });
+
+    expect(services).toHaveLength(6);
+    for (const [index, actionId] of SHOWROOM.home.actions.entries()) {
+      expect(services[index]?.request.url).toBe("http://example.test:8123/api/services/input_button/press");
+      expect(JSON.parse(services[index]!.request.body!)).toEqual({
+        entity_id: panelConfig.entityMap!.actions[actionId],
+      });
+      expect(events).toContainEqual({ type: "action-result", actionId, runId: index + 1, status: "accepted", error: "" });
+    }
 
     await engine.command({ type: "light", light: light(true) });
     expect(services.at(-1)?.request.url).toBe("http://example.test:8123/api/services/light/turn_on");
     expect(JSON.parse(services.at(-1)!.request.body!)).toMatchObject({ entity_id: "light.legacy" });
+  });
+
+  test("never executes unconfigured or unconfirmed arm actions", async () => {
+    const services: { request: HttpRequest }[] = [];
+    const events: WorkerEvent[] = [];
+    const engine = new HaEngine(immediateExecutor({}, services), event => events.push(event));
+    engine.setConfig(config(true, false));
+    await connected(engine);
+    await engine.command({ type: "action", actionId: "arm-gravity", runId: 1, confirmed: true });
+    expect(services).toHaveLength(0);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "action-result", actionId: "arm-gravity", status: "failed", error: "action entity is not configured",
+    }));
+
+    engine.setConfig(config());
+    await connected(engine);
+    await engine.command({ type: "action", actionId: "arm-gravity", runId: 2 });
+    expect(services).toHaveLength(0);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "action-result", actionId: "arm-gravity", status: "failed", error: "hold confirmation is required",
+    }));
+
+    await engine.command({ type: "action", actionId: "arm-gravity", runId: 3, confirmed: true });
+    expect(services).toHaveLength(1);
+    expect(JSON.parse(services[0]!.request.body!)).toEqual({ entity_id: "input_button.example_arm_gravity" });
   });
 });

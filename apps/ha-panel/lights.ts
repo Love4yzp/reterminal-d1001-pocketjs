@@ -17,7 +17,7 @@ export const LIGHT_INFO: Record<LightId, LightInfo> = {
   desk: { name: "书桌灯", chip: "书桌灯", tag: "虚拟设备" },
   shelf: { name: "书架灯", chip: "书架灯", tag: "虚拟设备" },
   onboard: { name: "板载 RGB", chip: "板载", tag: "板载 RGB" },
-  remote: { name: "客厅灯", chip: "客厅", tag: "Home Assistant" },
+  remote: { name: "展厅主灯", chip: "主灯", tag: "Home Assistant" },
 };
 
 export const UNAVAILABLE_TEXT = "未连接 HA";
@@ -29,6 +29,7 @@ export function lightInfo(state: PanelState, lightId: LightId): LightInfo {
 
 export function lightStatusText(state: PanelState, lightId: LightId): string {
   const availability = state.lightAvailability[lightId];
+  if (state.lightPending[lightId]) return "更新中";
   if (availability === "pending") return PENDING_TEXT;
   if (availability === "stale") return "过期";
   if (availability === "unavailable") return "不可用";

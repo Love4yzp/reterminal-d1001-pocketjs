@@ -7,10 +7,10 @@ export interface ShowroomLight {
   chip: string;
   source: LightSource;
   entityId?: string;
-  /** The existing worker can control only this legacy single-HA-light slot. */
+  /** Compatibility slot for CONFIG_D1001_HA_LIGHT_ENTITY. */
   legacy?: boolean;
   staleAfterSeconds?: number;
-  initial: { on: boolean; brightness: number; hue: number; saturation: number };
+  initial: { on: boolean; brightness: number; hue: number; saturation: number; colorTempKelvin?: number };
 }
 
 export interface ShowroomSensor {
@@ -20,18 +20,18 @@ export interface ShowroomSensor {
   unit: string;
   decimals: number;
   staleAfterSeconds: number;
+  /** Telemetry stays on the console instead of the environment list. */
+  kind?: "telemetry";
 }
 
-export interface ShowroomLightChange {
-  on?: boolean;
-  brightness?: number;
-  hue?: number;
-  saturation?: number;
+export interface ShowroomAction {
+  key: string;
+  name: string;
+  group: "reachy" | "arm";
+  /** Public example only; production commands require the local entityMap override. */
+  entityId?: string;
+  requiresHold?: boolean;
 }
-
-export type ShowroomScene =
-  | { key: string; name: string; kind: "local"; changes: Record<string, ShowroomLightChange> }
-  | { key: string; name: string; kind: "ha"; entityId: string };
 
 export interface ShowroomConfig {
   version: 1;
@@ -39,11 +39,11 @@ export interface ShowroomConfig {
   home: {
     lights: readonly string[];
     sensors: readonly string[];
-    scenes: readonly string[];
+    actions: readonly string[];
   };
   lights: readonly ShowroomLight[];
   sensors: readonly ShowroomSensor[];
-  scenes: readonly ShowroomScene[];
+  actions: readonly ShowroomAction[];
 }
 
 export interface SensorReading {
@@ -52,13 +52,13 @@ export interface SensorReading {
   updatedAt: number | null;
 }
 
-export type SceneRunStatus = "idle" | "pending" | "applied" | "partial" | "failed" | "unsupported";
+export type ActionRunStatus = "idle" | "pending" | "accepted" | "failed";
 
 export interface ShowroomEntityMap {
   version: 1;
   lights: Record<string, string>;
   sensors: Record<string, string>;
-  scenes: Record<string, string>;
+  actions: Record<string, string>;
   weather?: string;
 }
 
@@ -66,9 +66,16 @@ export const SHOWROOM: ShowroomConfig = {
   version: 1,
   id: "example-showroom",
   home: {
-    lights: ["desk", "shelf", "onboard", "remote"],
+    lights: ["remote"],
     sensors: ["temperature", "humidity"],
-    scenes: ["reachy-intro-retail", "reachy-intro-space", "reachy-intro-emergency"],
+    actions: [
+      "reachy-intro-retail",
+      "reachy-intro-space",
+      "reachy-intro-emergency",
+      "reachy-wake",
+      "reachy-lang-toggle",
+      "reachy-stop",
+    ],
   },
   lights: [
     {
@@ -84,7 +91,7 @@ export const SHOWROOM: ShowroomConfig = {
       initial: { on: false, brightness: 128, hue: 199, saturation: 68 },
     },
     {
-      key: "remote", name: "客厅灯", chip: "客厅", source: "ha", legacy: true,
+      key: "remote", name: "展厅主灯", chip: "主灯", source: "ha", legacy: true,
       initial: { on: false, brightness: 128, hue: 36, saturation: 70 },
     },
   ],
@@ -97,39 +104,57 @@ export const SHOWROOM: ShowroomConfig = {
       key: "humidity", name: "湿度", entityId: "sensor.example_humidity",
       unit: "%", decimals: 0, staleAfterSeconds: 90,
     },
+    {
+      key: "reachy-agent", name: "Reachy agent", entityId: "sensor.example_reachy_agent",
+      unit: "", decimals: 0, staleAfterSeconds: 90, kind: "telemetry",
+    },
+    {
+      key: "reachy-result", name: "最近回执", entityId: "sensor.example_reachy_result",
+      unit: "", decimals: 0, staleAfterSeconds: 300, kind: "telemetry",
+    },
+    {
+      key: "arm-mode", name: "机械臂模式", entityId: "sensor.example_arm_mode",
+      unit: "", decimals: 0, staleAfterSeconds: 90, kind: "telemetry",
+    },
   ],
-  scenes: [
+  actions: [
     {
-      key: "all-off", name: "全部关闭", kind: "local",
-      changes: {
-        desk: { on: false }, shelf: { on: false }, onboard: { on: false }, remote: { on: false },
-      },
+      key: "reachy-intro-retail", name: "零售讲解", group: "reachy",
+      entityId: "input_button.example_reachy_intro_retail",
     },
     {
-      key: "night", name: "夜间模式", kind: "local",
-      changes: {
-        desk: { on: false },
-        shelf: { on: true, brightness: 26, hue: 30, saturation: 85 },
-        onboard: { on: true, brightness: 26, hue: 30, saturation: 85 },
-        remote: { on: true, brightness: 26, hue: 30, saturation: 85 },
-      },
+      key: "reachy-intro-space", name: "空间讲解", group: "reachy",
+      entityId: "input_button.example_reachy_intro_space",
     },
     {
-      key: "reading", name: "阅读", kind: "local",
-      changes: {
-        desk: { on: true, brightness: 255, hue: 37, saturation: 12 },
-        shelf: { on: true, brightness: 153, hue: 37, saturation: 12 },
-        onboard: { on: false },
-        remote: { on: true, brightness: 204, hue: 37, saturation: 12 },
-      },
+      key: "reachy-intro-emergency", name: "救灾讲解", group: "reachy",
+      entityId: "input_button.example_reachy_intro_emergency",
     },
-    { key: "reachy-intro-retail", name: "智慧空间", kind: "ha", entityId: "input_button.example_reachy_intro_retail" },
-    { key: "reachy-intro-space", name: "智慧社区", kind: "ha", entityId: "input_button.example_reachy_intro_space" },
-    { key: "reachy-intro-emergency", name: "智慧乡野", kind: "ha", entityId: "input_button.example_reachy_intro_emergency" },
-    { key: "reachy-stop", name: "停止", kind: "ha", entityId: "input_button.example_reachy_stop" },
-    { key: "reachy-wake", name: "唤醒", kind: "ha", entityId: "input_button.example_reachy_wake" },
-    { key: "reachy-lang-toggle", name: "语言", kind: "ha", entityId: "input_button.example_reachy_lang_toggle" },
+    { key: "reachy-stop", name: "停止", group: "reachy", entityId: "input_button.example_reachy_stop" },
+    { key: "reachy-wake", name: "唤醒", group: "reachy", entityId: "input_button.example_reachy_wake" },
+    {
+      key: "reachy-lang-toggle", name: "中英切换", group: "reachy",
+      entityId: "input_button.example_reachy_lang_toggle",
+    },
+    { key: "arm-gravity", name: "重力补偿", group: "arm", requiresHold: true },
+    { key: "arm-playback", name: "联动表演", group: "arm", requiresHold: true },
   ],
+};
+
+/** Non-secret example bindings used by host preview and the local mock. */
+export const SHOWROOM_ENTITY_MAP_EXAMPLE: ShowroomEntityMap = {
+  version: 1,
+  lights: { remote: "light.yeelink_cn_975205352_bslamp2_s_2_light" },
+  sensors: {
+    temperature: "sensor.example_temperature",
+    humidity: "sensor.example_humidity",
+    "reachy-agent": "sensor.example_reachy_agent",
+    "reachy-result": "sensor.example_reachy_result",
+    "arm-mode": "sensor.example_arm_mode",
+  },
+  actions: Object.fromEntries(SHOWROOM.actions.flatMap(action =>
+    action.group === "reachy" && action.entityId ? [[action.key, action.entityId]] : [])),
+  weather: "weather.example_home",
 };
 
 export const SHOWROOM_LIGHT_IDS: readonly string[] = SHOWROOM.lights.map(light => light.key);
@@ -147,7 +172,7 @@ export function validateShowroomConfig(config: ShowroomConfig): string[] {
   const entries = [
     ...config.lights.map(light => ({ key: light.key, path: `lights.${light.key}` })),
     ...config.sensors.map(sensor => ({ key: sensor.key, path: `sensors.${sensor.key}` })),
-    ...config.scenes.map(scene => ({ key: scene.key, path: `scenes.${scene.key}` })),
+    ...config.actions.map(action => ({ key: action.key, path: `actions.${action.key}` })),
   ];
   const seen = new Set<string>();
   for (const entry of entries) {
@@ -158,15 +183,15 @@ export function validateShowroomConfig(config: ShowroomConfig): string[] {
 
   const lights = new Set(config.lights.map(light => light.key));
   const sensors = new Set(config.sensors.map(sensor => sensor.key));
-  const scenes = new Set(config.scenes.map(scene => scene.key));
-  const checkReferences = (kind: "lights" | "sensors" | "scenes", keys: readonly string[], known: Set<string>, max: number) => {
+  const actions = new Set(config.actions.map(action => action.key));
+  const checkReferences = (kind: "lights" | "sensors" | "actions", keys: readonly string[], known: Set<string>, max: number) => {
     if (keys.length > max) errors.push(`home.${kind} exceeds ${max} entries`);
     if (new Set(keys).size !== keys.length) errors.push(`home.${kind} duplicate key`);
     for (const key of keys) if (!known.has(key)) errors.push(`home.${kind} unknown key ${key}`);
   };
-  checkReferences("lights", config.home.lights, lights, 4);
+  checkReferences("lights", config.home.lights, lights, 1);
   checkReferences("sensors", config.home.sensors, sensors, 2);
-  checkReferences("scenes", config.home.scenes, scenes, 3);
+  checkReferences("actions", config.home.actions, actions, 6);
 
   if (config.lights.filter(light => light.legacy).length > 1) errors.push("multiple legacy HA lights");
   if (config.lights.filter(light => light.source === "onboard").length > 1)
@@ -182,7 +207,9 @@ export function validateShowroomConfig(config: ShowroomConfig): string[] {
     if (typeof initial.on !== "boolean" ||
         !Number.isFinite(initial.brightness) || initial.brightness < 0 || initial.brightness > 255 ||
         !Number.isFinite(initial.hue) || initial.hue < 0 || initial.hue > 359 ||
-        !Number.isFinite(initial.saturation) || initial.saturation < 0 || initial.saturation > 100)
+        !Number.isFinite(initial.saturation) || initial.saturation < 0 || initial.saturation > 100 ||
+        (initial.colorTempKelvin !== undefined &&
+          (!Number.isFinite(initial.colorTempKelvin) || initial.colorTempKelvin <= 0)))
       errors.push(`lights.${light.key} invalid initial state`);
   }
   for (const sensor of config.sensors) {
@@ -191,14 +218,11 @@ export function validateShowroomConfig(config: ShowroomConfig): string[] {
     if (!Number.isFinite(sensor.staleAfterSeconds) || sensor.staleAfterSeconds < 10)
       errors.push(`sensors.${sensor.key} invalid staleAfterSeconds`);
   }
-  for (const scene of config.scenes) {
-    if (scene.kind === "ha") {
-      if (!/^(scene|script|input_button)\.[a-z0-9_]+$/.test(scene.entityId))
-        errors.push(`scenes.${scene.key} invalid service entityId`);
-      continue;
-    }
-    for (const key of Object.keys(scene.changes))
-      if (!lights.has(key)) errors.push(`scenes.${scene.key} unknown key ${key}`);
+  for (const action of config.actions) {
+    if (action.entityId !== undefined && !/^input_button\.[a-z0-9_]+$/.test(action.entityId))
+      errors.push(`actions.${action.key} invalid input_button entityId`);
+    if (action.requiresHold && action.group !== "arm")
+      errors.push(`actions.${action.key} hold confirmation is only for arm actions`);
   }
   return errors;
 }
@@ -225,38 +249,35 @@ export function parseShowroomEntityMap(text: string, config: ShowroomConfig = SH
   const value = bindingObject(raw, "entityMap");
   if (value.version !== 1) throw new Error("entityMap unsupported version");
   for (const key of Object.keys(value))
-    if (!["version", "lights", "sensors", "scenes", "weather"].includes(key))
+    if (!["version", "lights", "sensors", "actions", "weather"].includes(key))
       throw new Error(`entityMap unknown field ${key}`);
 
-  const result: ShowroomEntityMap = { version: 1, lights: {}, sensors: {}, scenes: {} };
+  const result: ShowroomEntityMap = { version: 1, lights: {}, sensors: {}, actions: {} };
   const readEntries = (
-    field: "lights" | "sensors" | "scenes",
-    allowed: ReadonlyMap<string, string>,
+    field: "lights" | "sensors" | "actions",
+    allowed: ReadonlyMap<string, RegExp>,
   ) => {
     const group = bindingObject(value[field] ?? {}, `entityMap.${field}`);
     for (const [key, entity] of Object.entries(group)) {
       const domain = allowed.get(key);
       if (!domain) throw new Error(`entityMap.${field} unknown key ${key}`);
-      if (typeof entity !== "string" || (domain !== "service" && !entity.startsWith(`${domain}.`)) ||
-          !/^[a-z_]+\.[a-z0-9_]+$/i.test(entity))
+      if (typeof entity !== "string" || !domain.test(entity))
         throw new Error(`entityMap.${field}.${key} invalid entityId`);
       result[field][key] = entity;
     }
   };
-  readEntries("lights", new Map(config.lights.filter(light => light.source === "ha").map(light => [light.key, "light"])));
-  readEntries("sensors", new Map(config.sensors.map(sensor => [sensor.key, "sensor"])));
-  readEntries("scenes", new Map(config.scenes.filter(scene => scene.kind === "ha").map(scene => [scene.key, "service"])));
-  for (const [key, entity] of Object.entries(result.scenes)) {
-    if (!/^(scene|script|input_button)\.[a-z0-9_]+$/.test(entity))
-      throw new Error(`entityMap.scenes.${key} invalid service entityId`);
-  }
+  readEntries("lights", new Map(config.lights.filter(light => light.source === "ha").map(light => [
+    light.key, /^(light|edidt)\.[a-z0-9_]+$/,
+  ])));
+  readEntries("sensors", new Map(config.sensors.map(sensor => [sensor.key, /^sensor\.[a-z0-9_]+$/])));
+  readEntries("actions", new Map(config.actions.map(action => [action.key, /^input_button\.[a-z0-9_]+$/])));
   if (value.weather !== undefined) {
     if (typeof value.weather !== "string" || !/^weather\.[a-z0-9_]+$/.test(value.weather))
       throw new Error("entityMap.weather invalid entityId");
     result.weather = value.weather;
   }
   if (Object.keys(result.lights).length + Object.keys(result.sensors).length +
-      Object.keys(result.scenes).length + (result.weather ? 1 : 0) === 0)
+      Object.keys(result.actions).length + (result.weather ? 1 : 0) === 0)
     throw new Error("entityMap must contain at least one entity");
   return result;
 }
@@ -265,8 +286,18 @@ export function showroomSensor(key: string, config: ShowroomConfig = SHOWROOM): 
   return config.sensors.find(sensor => sensor.key === key);
 }
 
-export function showroomScene(key: string, config: ShowroomConfig = SHOWROOM): ShowroomScene | undefined {
-  return config.scenes.find(scene => scene.key === key);
+export function showroomAction(key: string, config: ShowroomConfig = SHOWROOM): ShowroomAction | undefined {
+  return config.actions.find(action => action.key === key);
+}
+
+export function showroomTelemetry(key: string): ShowroomSensor {
+  const sensor = configSensor(key);
+  if (!sensor || sensor.kind !== "telemetry") throw new Error(`unknown telemetry sensor ${key}`);
+  return sensor;
+}
+
+function configSensor(key: string): ShowroomSensor | undefined {
+  return SHOWROOM.sensors.find(sensor => sensor.key === key);
 }
 
 export function pageWindow<T>(items: readonly T[], requestedPage: number, pageSize: number) {
@@ -305,13 +336,11 @@ export function sensorStatusText(reading: SensorReading, error = ""): string {
   }
 }
 
-export function sceneStatusText(status: SceneRunStatus): string {
+export function actionStatusText(status: ActionRunStatus): string {
   switch (status) {
-    case "pending": return "执行中";
-    case "applied": return "完成";
-    case "partial": return "部分完成";
+    case "pending": return "发送中";
+    case "accepted": return "已受理";
     case "failed": return "未完成";
-    case "unsupported": return "待接入";
     case "idle": return "";
   }
 }

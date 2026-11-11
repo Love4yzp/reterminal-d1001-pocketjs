@@ -6,7 +6,7 @@ export type InputIntent =
   | { type: "focus-next" | "focus-previous" | "activate" | "details" | "back" | "page-next" | "page-previous" };
 
 export type FocusTarget =
-  | { kind: "light" | "sensor" | "scene"; id: string }
+  | { kind: "light" | "sensor" | "action" | "arm"; id: string }
   | { kind: "back"; id: "back" };
 
 /** Front-end seam for a future keyboard/button driver or a host preview mock. */

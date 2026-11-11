@@ -9,9 +9,9 @@ import {
 
 const targets: FocusTarget[] = [
   { kind: "light", id: "desk" },
-  { kind: "light", id: "shelf" },
+  { kind: "arm", id: "status" },
   { kind: "sensor", id: "temperature" },
-  { kind: "scene", id: "night" },
+  { kind: "action", id: "reachy-stop" },
 ];
 
 describe("logical keyboard and button input", () => {

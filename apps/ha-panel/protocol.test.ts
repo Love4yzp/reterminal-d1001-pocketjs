@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { decodeMessage, encodeMessage, statusErrorText } from "./protocol";
+import { SHOWROOM_ENTITY_MAP_EXAMPLE } from "./showroom";
 
 describe("UI/worker message protocol", () => {
   test("round-trips non-ASCII code units through a fixed byte buffer", () => {
@@ -67,11 +68,12 @@ describe("UI/worker message protocol", () => {
       type: "entity-light",
       lightId: "remote",
       light: { on: true, brightness: 200, hue: 30, saturation: 50 },
+      command: { on: true, brightnessPct: 75 },
       seq: 7,
     }, commandBytes);
     expect(decodeMessage<{ lightId: string; seq: number }>(commandBytes)).toMatchObject({ lightId: "remote", seq: 7 });
-    encodeMessage({ type: "service", sceneId: "reachy-wake", runId: 4 }, commandBytes);
-    expect(decodeMessage<{ sceneId: string; runId: number }>(commandBytes)).toMatchObject({ sceneId: "reachy-wake", runId: 4 });
+    encodeMessage({ type: "action", actionId: "reachy-wake", runId: 4 }, commandBytes);
+    expect(decodeMessage<{ actionId: string; runId: number }>(commandBytes)).toMatchObject({ actionId: "reachy-wake", runId: 4 });
 
     const eventBytes = new Uint8Array(512);
     encodeMessage({
@@ -82,7 +84,23 @@ describe("UI/worker message protocol", () => {
       error: "x".repeat(160),
     }, eventBytes);
     expect(decodeMessage<{ key: string }>(eventBytes).key).toBe("temperature");
-    encodeMessage({ type: "service-result", sceneId: "reachy-wake", runId: 4, status: "applied", error: "" }, eventBytes);
-    expect(decodeMessage<{ runId: number; status: string }>(eventBytes)).toMatchObject({ runId: 4, status: "applied" });
+    encodeMessage({ type: "action-result", actionId: "reachy-wake", runId: 4, status: "accepted", error: "" }, eventBytes);
+    expect(decodeMessage<{ runId: number; status: string }>(eventBytes)).toMatchObject({ runId: 4, status: "accepted" });
+  });
+
+  test("fits credentials and the public entity map in separate host-sized snapshots", () => {
+    const { entityMap, ...wireConfig } = {
+      baseUrl: "http://ha.local:8123",
+      token: "x".repeat(182),
+      lightEntityId: "",
+      weatherEntityId: SHOWROOM_ENTITY_MAP_EXAMPLE.weather,
+      selftest: false,
+      entityMap: SHOWROOM_ENTITY_MAP_EXAMPLE,
+    };
+    const configBytes = new Uint8Array(1024);
+    const mapBytes = new Uint8Array(1024);
+    expect(encodeMessage(wireConfig, configBytes)).toBeLessThanOrEqual(configBytes.length);
+    expect(encodeMessage(entityMap, mapBytes)).toBeLessThanOrEqual(mapBytes.length);
+    expect(decodeMessage<typeof entityMap>(mapBytes)).toEqual(SHOWROOM_ENTITY_MAP_EXAMPLE);
   });
 });

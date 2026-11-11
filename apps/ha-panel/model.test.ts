@@ -10,8 +10,14 @@ import {
 } from "./model";
 
 function connected(): PanelState {
-  return reducePanel(createInitialPanelState(), {
+  const pending = reducePanel(createInitialPanelState(), {
     type: "ha", haConfigured: true, haConnected: true, haLightConfigured: true,
+  });
+  return reducePanel(pending, {
+    type: "entity-light",
+    lightId: "remote",
+    light: { on: false, brightness: 128, hue: 36, saturation: 70 },
+    updatedAt: 100,
   });
 }
 

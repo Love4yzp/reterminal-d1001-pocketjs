@@ -86,7 +86,7 @@ describe("HA entity-map binding", () => {
       firmwareVersion: () => "test",
       haConfig: () => ({
         baseUrl: "http://example.test",
-        token: "local-token",
+        token: "local-test-token",
         lightEntityId: "light.legacy",
         entityMapJson: JSON.stringify({
           version: 1,
@@ -104,7 +104,7 @@ describe("HA entity-map binding", () => {
   test("fails closed when the map is invalid", () => {
     globalWithNative.d1001 = {
       firmwareVersion: () => "test",
-      haConfig: () => ({ baseUrl: "http://example.test", token: "local-token", entityMapJson: "not json" }),
+      haConfig: () => ({ baseUrl: "http://example.test", token: "local-test-token", entityMapJson: "not json" }),
     };
     const config = readHaConfig();
     expect(config.entityMap).toBeUndefined();

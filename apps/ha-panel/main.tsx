@@ -3,7 +3,14 @@ import { mount } from "@pocketjs/framework/solid";
 import { View } from "@pocketjs/framework/solid/components";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { worker } from "@pocketjs/framework/worker/channels";
+import {
+  actionConfigured,
+  lightCommandForAction,
+  lightStateCommand,
+  mergeLightCommands,
+} from "./console";
 import { createLightAdapter, type LightAdapter } from "./devices";
+import type { HaLightCommand } from "./ha-request";
 import {
   changedLights,
   createInitialPanelState,
@@ -47,12 +54,12 @@ import {
   type Route,
 } from "./navigation";
 import { encodeMessage, decodeMessage } from "./protocol";
-import { sceneEffect, sceneRunStatus } from "./scenes";
 import { createScreenOffControl, createSettings, reduceSettings, type SettingsAction } from "./settings";
 import { decodeSession, encodeSession, restorePanelState, restoreSettings } from "./session";
-import { pageWindow, SHOWROOM, slidingWindow } from "./showroom";
+import { pageWindow, SHOWROOM, showroomAction, slidingWindow } from "./showroom";
 import { theme } from "./theme";
 import type { PanelHaConfig, WorkerCommand, WorkerEvent } from "./protocol";
+import { ArmScreen } from "./ui/arm-screen";
 import { DimmerScreen } from "./ui/dimmer-screen";
 import { HomeScreen } from "./ui/home-screen";
 import { LandscapeScreen } from "./ui/landscape-screen";
@@ -85,26 +92,36 @@ function Panel() {
   const configured = config.baseUrl.length > 0 && config.token.length > 0 && !config.configError;
   const onboardLightId = SHOWROOM.lights.find(light => light.source === "onboard")?.key;
   const configChannel = worker.channel("ha-config");
+  const entityMapChannel = worker.channel("ha-entity-map");
   const commands = worker.channel("ha-commands");
   const events = worker.channel("ha-events");
   const screenOffControl = createScreenOffControl(screenOffNative());
   screenOffControl.apply(settings().screenOffSeconds);
   let frame = 0;
-  const pendingHa: Record<LightId, { light: LightState; seq: number; sendAt: number }> = {};
+  const pendingHa: Record<LightId, { light: LightState; command: HaLightCommand; seq: number; sendAt: number }> = {};
   const haSequences: Record<LightId, number> = {};
-  const serviceRuns: Record<string, number> = {};
+  const actionRuns: Record<string, number> = {};
   let selftestSent = false;
   let lastHaError = "";
 
-  const queueHa = (lightId: LightId, light: LightState) => {
+  const isActionConfigured = (actionId: string) => actionConfigured(config, actionId);
+  const queueHa = (lightId: LightId, light: LightState, command?: HaLightCommand) => {
     if (!configured) return;
     const seq = (haSequences[lightId] ?? 0) + 1;
     haSequences[lightId] = seq;
-    pendingHa[lightId] = { light, seq, sendAt: frame + 6 };
+    const previous = pendingHa[lightId];
+    const previousCommand = previous ? previous.command : undefined;
+    const nextCommand = command ?? lightStateCommand(light);
+    pendingHa[lightId] = {
+      light,
+      command: mergeLightCommands(previousCommand, nextCommand) ?? nextCommand,
+      seq,
+      sendAt: frame + 6,
+    };
   };
   const adapters: Record<LightId, LightAdapter> = {};
   for (const light of SHOWROOM.lights)
-    adapters[light.key] = createLightAdapter(light.key, light.source, value => queueHa(light.key, value));
+    adapters[light.key] = createLightAdapter(light.key, light.source, (value, command) => queueHa(light.key, value, command));
 
   const dispatch = (action: PanelAction, fromHa = false): boolean => {
     const previous = state();
@@ -113,7 +130,11 @@ function Panel() {
     setState(next);
     if (fromHa) return true;
     try {
-      for (const lightId of changedLights(previous, next)) adapters[lightId].apply(next.lights[lightId]);
+      for (const lightId of changedLights(previous, next)) {
+        const light = next.lights[lightId];
+        const command = lightCommandForAction(action, light) ?? lightStateCommand(light);
+        adapters[lightId].apply(light, command);
+      }
       return true;
     } catch (error) {
       setState(previous);
@@ -140,25 +161,22 @@ function Panel() {
     }
     const next = navigate(route(), event);
     setRoute(next);
-    if (event.type === "open-dimmer" || event.type === "open-sensor")
+    if (event.type === "open-dimmer" || event.type === "open-sensor" || event.type === "open-arm")
       setFocus(input().source === "touch" ? null : { kind: "back", id: "back" });
     else if (event.type !== "select-light" && event.type !== "cycle-light")
       setFocus(null);
   };
 
-  const onScene = (sceneId: string) => {
-    const effect = sceneEffect(state(), sceneId);
-    if (effect.type === "ha") {
-      const runId = (serviceRuns[sceneId] ?? 0) + 1;
-      serviceRuns[sceneId] = runId;
-      if (publishCommand({ type: "service", sceneId, runId }))
-        dispatch({ type: "scene-result", sceneId, status: "pending" });
-      else
-        dispatch({ type: "scene-result", sceneId, status: "failed" });
-      return;
-    }
-    const applied = effect.type === "local" ? dispatch(effect.action) : false;
-    dispatch({ type: "scene-result", sceneId, status: sceneRunStatus(effect, applied) });
+  const onHaAction = (actionId: string, confirmed: boolean) => {
+    const definition = showroomAction(actionId);
+    if (!definition || (definition.requiresHold && !confirmed) || !configured ||
+        !state().haConnected || !isActionConfigured(actionId)) return;
+    const runId = (actionRuns[actionId] ?? 0) + 1;
+    actionRuns[actionId] = runId;
+    if (publishCommand({ type: "action", actionId, runId, confirmed }))
+      dispatch({ type: "action-result", actionId, status: "pending" });
+    else
+      dispatch({ type: "action-result", actionId, status: "failed", error: "HA command queue is full" });
   };
 
   const onFocus = (target: FocusTarget) => {
@@ -171,6 +189,13 @@ function Panel() {
 
   const focusTargets = (): FocusTarget[] => {
     const current = route();
+    if (current.kind === "arm") return [
+      { kind: "back", id: "back" },
+      ...SHOWROOM.actions
+        .filter(action => action.group === "arm" && isActionConfigured(action.key))
+        .map(action => ({ kind: "action" as const, id: action.key })),
+      { kind: "action", id: "reachy-stop" },
+    ];
     if (current.kind === "dimmer" || current.kind === "sensor" || current.kind === "provision")
       return [
         { kind: "back", id: "back" },
@@ -183,7 +208,8 @@ function Panel() {
     if (current.tab === "home") return [
       ...SHOWROOM.home.lights.map(id => ({ kind: "light" as const, id })),
       ...SHOWROOM.home.sensors.map(id => ({ kind: "sensor" as const, id })),
-      ...SHOWROOM.home.scenes.map(id => ({ kind: "scene" as const, id })),
+      ...SHOWROOM.home.actions.map(id => ({ kind: "action" as const, id })),
+      { kind: "arm", id: "status" },
     ];
     if (current.tab === "lights")
       return pageWindow(state().lightOrder, lightPage(), 4).items.map(id => ({ kind: "light" as const, id }));
@@ -204,8 +230,13 @@ function Panel() {
       onNav({ type: "open-sensor", sensorId: target.id });
       return;
     }
-    if (target.kind === "scene") {
-      if (!details) onScene(target.id);
+    if (target.kind === "arm") {
+      onNav({ type: "open-arm" });
+      return;
+    }
+    if (target.kind === "action") {
+      const definition = showroomAction(target.id);
+      if (definition && (definition.requiresHold ? details : !details)) onHaAction(target.id, details);
       return;
     }
     const current = route();
@@ -274,17 +305,23 @@ function Panel() {
     return accepted;
   };
 
+  const { entityMap, ...wireConfig } = config;
   const configBytes = new Uint8Array(1024);
-  encodeMessage(config, configBytes);
+  encodeMessage(wireConfig, configBytes);
   if (!configChannel.publish(configBytes)) throw new Error("HA config channel rejected the configuration");
+  const entityMapBytes = new Uint8Array(1024);
+  encodeMessage(entityMap ?? null, entityMapBytes);
+  if (!entityMapChannel.publish(entityMapBytes)) throw new Error("HA entity-map channel rejected the configuration");
+  const haLightConfigured = () => Boolean(config.lightEntityId || Object.keys(config.entityMap?.lights ?? {}).length);
   dispatch({
     type: "ha",
     haConfigured: configured,
     haConnected: false,
-    haLightConfigured: Boolean(config.lightEntityId || Object.keys(config.entityMap?.lights ?? {}).length),
+    haLightConfigured: haLightConfigured(),
   });
   dispatch({ type: "clock", clockEpochSeconds: readRtcSeconds(), clockSynced: false });
-  console.log("[ha-panel] dashboard: home, lights, sensors, dimmer, settings");
+  if (config.configError) console.error(`[ha-panel] HA config: ${config.configError}`);
+  console.log("[ha-panel] dashboard: console, lights, sensors, arm, dimmer, settings");
   if (config.selftest && onboardLightId) {
     dispatch({ type: "set-brightness", lightId: onboardLightId, brightness: 160 });
     dispatch({ type: "set-color", lightId: onboardLightId, hue: 210, saturation: 68 });
@@ -296,14 +333,17 @@ function Panel() {
     if (config.selftest && onboardLightId && frame === 60)
       dispatch({ type: "set-color", lightId: onboardLightId, hue: 0, saturation: 70 });
     for (const record of events.observe()) {
-      const event = decodeMessage<WorkerEvent>(record.copy());
+      const event: WorkerEvent = decodeMessage<WorkerEvent>(record.copy());
       if (event.type === "status") {
         dispatch({
           type: "ha",
           haConfigured: event.configured,
           haConnected: event.connected,
-          haLightConfigured: Boolean(config.lightEntityId || Object.keys(config.entityMap?.lights ?? {}).length),
+          haLightConfigured: haLightConfigured(),
         });
+        if (!event.connected) {
+          for (const lightId of Object.keys(pendingHa)) delete pendingHa[lightId];
+        }
         if (event.error !== lastHaError) {
           if (event.error) console.error(`[ha-panel] HA: ${event.error}`);
           lastHaError = event.error;
@@ -317,11 +357,15 @@ function Panel() {
         }
       } else if (event.type === "light") {
         const legacyId = state().legacyHaLightId;
-        if (legacyId) dispatch({ type: "entity-light", lightId: legacyId, light: event.light }, true);
+        if (legacyId) dispatch({ type: "entity-light", lightId: legacyId, light: event.light, updatedAt: readRtcSeconds() }, true);
       } else if (event.type === "entity-light") {
-        dispatch({ type: "entity-light", lightId: event.lightId, light: event.light }, true);
+        dispatch({ type: "entity-light", lightId: event.lightId, light: event.light, updatedAt: readRtcSeconds() }, true);
       } else if (event.type === "sensor") {
-        dispatch({ type: "sensor", sensorId: event.sensorId, reading: event.reading }, true);
+        dispatch({
+          type: "sensor",
+          sensorId: event.sensorId,
+          reading: { ...event.reading, updatedAt: event.reading.updatedAt ?? readRtcSeconds() },
+        }, true);
       } else if (event.type === "entity-error") {
         dispatch({
           type: "entity-error",
@@ -330,17 +374,27 @@ function Panel() {
           availability: event.availability,
           error: event.error,
         }, true);
-      } else if (event.type === "service-result") {
-        if (serviceRuns[event.sceneId] === event.runId)
-          dispatch({ type: "scene-result", sceneId: event.sceneId, status: event.status }, true);
+      } else if (event.type === "action-result") {
+        if (actionRuns[event.actionId] === event.runId)
+          dispatch({ type: "action-result", actionId: event.actionId, status: event.status, error: event.error }, true);
       } else if (event.type === "weather") {
         dispatch({ type: "weather", weather: event.weather }, true);
       }
     }
 
     for (const [lightId, pending] of Object.entries(pendingHa)) {
+      if (!state().haConnected) {
+        delete pendingHa[lightId];
+        continue;
+      }
       if (frame < pending.sendAt) continue;
-      if (publishCommand({ type: "entity-light", lightId, light: pending.light, seq: pending.seq }))
+      if (publishCommand({
+        type: "entity-light",
+        lightId,
+        light: pending.light,
+        command: pending.command,
+        seq: pending.seq,
+      }))
         delete pendingHa[lightId];
       else
         pending.sendAt = frame + 15;
@@ -371,6 +425,17 @@ function Panel() {
       return <DimmerScreen {...shared()} lightId={current.lightId} onAction={dispatch} />;
     if (current.kind === "sensor")
       return <SensorDetailScreen {...shared()} sensorId={current.sensorId} />;
+    if (current.kind === "arm")
+      return (
+        <ArmScreen
+          state={state()}
+          actionConfigured={isActionConfigured}
+          focus={focus()}
+          onFocus={onFocus}
+          onHaAction={onHaAction}
+          onNav={onNav}
+        />
+      );
     if (current.kind === "provision")
       return <ProvisionScreen topic={current.topic} onNav={onNav} />;
     if (current.tab === "lights")
@@ -397,7 +462,8 @@ function Panel() {
         network={network()}
         utcOffsetMinutes={utcOffsetMinutes}
         onAction={dispatch}
-        onScene={onScene}
+        onHaAction={onHaAction}
+        actionConfigured={isActionConfigured}
       />
     );
   };
@@ -419,7 +485,8 @@ function Panel() {
         onAction={dispatch}
         onSettings={onSettings}
         onNav={onNav}
-        onScene={onScene}
+        onHaAction={onHaAction}
+        actionConfigured={isActionConfigured}
         onRotate={rotate}
       />
     );

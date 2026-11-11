@@ -1,6 +1,8 @@
 # D1001 Home Assistant panel
 
-A density-2 dashboard with 400x640 portrait and genuinely rearranged 640x400 landscape layouts. Both orientations provide home, lights, read-only sensors and settings; landscape uses left navigation and a horizontal dimmer control area. Weather appears only when a live HA weather entity is available. The app has no IMU card, tilt readout, chip-temperature card, or demonstration weather.
+App id: `dev.pocket-nexus.d1001.ha-panel`.
+
+The density-2 app provides a 400x640 portrait console and a genuinely rearranged 640x400 landscape console. Home contains the main HA light, temperature/humidity/weather, six Reachy actions and live telemetry. The light list, read-only environment pages, dimmer and settings remain available. There are no scene cards, local scene presets, IMU cards or invented weather readings.
 
 ## Run and test
 
@@ -11,24 +13,67 @@ bun test apps/ha-panel tools/screen-state.test.ts tools/partitions.test.ts
 bun run fonts --check
 bun run pocket check --manifest apps/ha-panel/pocket.app.json \
   --host-config programs/reterminal-d1001/pocket.host.config.ts
-bun run app:push apps/ha-panel --wifi <device-ip>
+bun run pocket host export --config programs/reterminal-d1001/pocket.host.config.ts \
+  --out .pocket-build/host-export/reterminal-d1001
 ```
 
-`model.ts` owns immutable entity and connection state. `navigation.ts`, `dimmer.ts`, `scenes.ts`, `input.ts`, and `settings.ts` contain pure navigation, input, scene, and settings transitions. `devices.ts` is the virtual/onboard/HA adapter boundary, `native.ts` validates host data, `worker.ts` serializes HA network I/O, and `ui/` contains the screens and controls.
+`model.ts` owns immutable entity, pending, error and connection state. `showroom.ts` validates stable display keys and the public example map. `console.ts` shares command coalescing and dimmer behavior. `ha-request.ts` builds requests, `ha-engine.ts` routes them, and `worker.ts` owns network I/O. `native.ts` reads the existing local/native configuration. `ui/` contains both orientations.
 
-## Showroom configuration and front-end seams
+## Console behavior
 
-`showroom.ts` contains the versioned example configuration. Stable display keys separate UI references from HA entity IDs; virtual, onboard and HA lights share `LightState`. Home sections are limited to four lights, two sensors and three scenes, while full light/sensor lists use fixed-size pages. Configuration validation rejects duplicate keys and dangling references. Labels are local display text, not HA `friendly_name`, so their CJK glyphs enter the existing font subset.
+Tapping the main light card switches power; long-pressing it opens the existing dimmer for continuous brightness and hue/saturation color control. Touch, keyboard and logical buttons share those intents in both orientations. There is no home brightness, RGB or color-temperature preset grid. `light.turn_off` sends only `entity_id`. Explicit `light.turn_on` commands use `brightness_pct`, `rgb_color` or `color_temp_kelvin`; RGB and Kelvin are mutually exclusive. The current dimmer sends brightness percentage and RGB values, while the Kelvin payload remains available without adding an artificial preset entry. Rapid changes coalesce per light without mixing color modes. A keyed HA light is writable only after a valid live snapshot. `unavailable`, request failure and pending state stay per entity and do not disconnect other lights or sensors.
 
-The two virtual lamps and onboard RGB retain local behavior. The legacy HA lamp still requires `lightEntityId` from Kconfig and a live connection; `worker.ts` and `WorkerCommand` remain single-light. Additional HA lights start as `待接入`. A keyed `entity-light` event supplies their snapshots but marks them read-only until a keyed command adapter exists. Sensors start with no value and `待接入`; keyed `sensor` events carry value, freshness status and RTC update time. Live readings become `过期` after `staleAfterSeconds`; a disconnect retains the last value with `离线`. Unknown display keys are ignored.
+The six Reachy slots are:
 
-`scenes.ts` distinguishes local presets from HA scene effects. Local scenes report unavailable members or adapter failure instead of always reporting completion. There is no HA scene command adapter yet, so HA scene activation returns `待接入` without reusing the light command.
+- `reachy-intro-retail`: 零售讲解
+- `reachy-intro-space`: 空间讲解
+- `reachy-intro-emergency`: 救灾讲解
+- `reachy-wake`: 唤醒
+- `reachy-lang-toggle`: 中英切换
+- `reachy-stop`: 停止 / STOP
 
-`input.ts` defines the logical keyboard/button `InputSource` seam and shared focus intents. A source is optional; settings shows `待接入` when none is installed. Physical keyboard events are not currently supplied by the D1001 host. GPIO3/CIRCLE remains owned by native rotation, screen and restart arbitration and is deliberately not mapped to panel activation.
+Each maps to a local `input_button` and calls `/api/services/input_button/press`. HTTP success means **已受理**, not that Reachy finished speaking or moving. The separate `reachy-result` sensor supplies the latest execution result. `reachy-agent` supplies online state and `arm-mode` supplies `idle`, `playback` or `gravity`. Dynamic result text is reduced to known labels or bounded ASCII so it cannot bypass the baked font coverage.
 
-## Host preview
+The arm page exposes telemetry by default. `arm-gravity` and `arm-playback` have no public entity mapping and their buttons are hidden until local configuration supplies protected `input_button` entities. Configured actions require a touch long-press or the keyboard `D`/details intent; the worker rejects a missing mapping or missing confirmation again. No KeyMesh/MQTT writer exists in this app. The always-visible STOP calls only the existing Reachy stop button; it does not claim to stop or home the arm.
 
-The preview compiles the real app, boots it in the PocketJS WASM core, replays touch and logical keyboard/button input, and writes 800x1280 portrait PNGs or 1280x800 landscape PNGs. Compilation rejects packages larger than the 7 MiB `apps` partition. The preview uses fixed native fixtures and does not access a device, serial port, or network. Keyed sensor events are explicitly marked `mock` and rendered as `示例`; they are not production readings.
+Virtual lamps and onboard RGB remain on the full light list. They are not local scenes and do not appear as fake HA actions on home.
+
+## Local configuration
+
+The committed app is unconfigured. Use the existing ignored `programs/reterminal-d1001/sdkconfig.local` for a basic local deployment:
+
+```ini
+CONFIG_D1001_TIMEZONE="CST-8"
+CONFIG_D1001_HA_BASE_URL="http://host:8123"
+CONFIG_D1001_HA_TOKEN="replace-with-a-local-long-lived-token"
+CONFIG_D1001_HA_LIGHT_ENTITY="edidt.replace_with_local_main_light"
+```
+
+`LOCAL_HA_CONFIG` in `local-config.ts` remains the build-time override seam for private deployment tooling; the committed value is `undefined`. Empty base URL/token disables HA HTTP activity. Tokens exist only in generated configuration and in-memory worker messages. Do not log them or commit generated sdkconfig files. Existing `sdkconfig` takes precedence over defaults; see the root README before rebuilding after a local configuration change.
+
+`CONFIG_D1001_HA_LIGHT_ENTITY` is the legacy single-light path. The six actions and telemetry require a keyed `entityMap`. `entity-map.example.json` documents the public map structure: its `example_*` IDs are placeholders, while the `edidt.*` main-light value is non-sensitive structural data. Replace every placeholder with local HA entity IDs.
+
+The map contains `version`, `lights`, `sensors`, `actions` and optional `weather`. Legacy `scenes`, credentials in the map, unknown display keys and wrong domains are rejected. `light.*` and the showroom's `edidt.*` light-compatible entity are accepted; actions accept only `input_button.*`. Arm mappings are optional and empty in the public example.
+
+Secure provisioning, data.fs migration, partition erasure and readback/token scanning are follow-up tasks, not part of this app iteration.
+
+## Queueing and freshness
+
+The UI sends basic configuration and the entity map through separate 1024-byte `ha-config` and `ha-entity-map` snapshots. Commands use a capacity-8, 1024-byte `ha-commands` ring; events use a capacity-8, 512-byte `ha-events` ring. Light changes debounce for six UI frames per entity, keeping the latest state and compatible request fields.
+
+The engine has independent poll and command lanes. Each lane is serial: a blocked poll does not block a command, while commands execute in queue order. Poll snapshots from an older light revision are discarded. A per-light count suppresses replacement polls until all queued writes for that light finish; the last write triggers an immediate fresh poll. Light/sensor polls are scheduled every 3000 worker ticks, errors retry after 300 ticks, and weather polls every 6000 ticks; the worker tick is 100 ms.
+
+Live sensors and telemetry expire after their configured `staleAfterSeconds`, using RTC time stamped on arrival. A disconnect retains the last value as `离线` and disables writes. Reconnection marks readings pending until fresh data arrives. Light snapshots have equivalent stale handling. Mock readings remain marked `示例` and do not expire. Weather is shown only from a live HA weather entity. Without `entityMap.weather`, the legacy template API discovers the first `weather.*` entity; template access depends on token permissions.
+
+## Input and native behavior
+
+Arrow keys or logical next/previous buttons move the same focus targets used by touch. Enter/activate performs ordinary actions; `D`/details is the keyboard equivalent of a long-press for protected actions. Escape returns. GPIO3/CIRCLE is deliberately not mapped to panel activation: native code retains rotation, screen timeout/wake-swallow and restart arbitration.
+
+The portrait settings `横屏` and landscape `返回竖屏` controls use the existing runtime restart and synchronized touch mapping. Session state preserves lights, the current route and screen timeout. Backlight, auto screen-off, RTC/SNTP, timezone and firmware-version behavior are unchanged. In-app Wi-Fi/HA provisioning pages remain placeholders.
+
+## Host preview and package checks
+
+The preview compiles the real app, boots it in the PocketJS WASM core, replays touch and logical input, verifies emitted worker commands, and writes 800x1280 portrait or 1280x800 landscape PNGs. It uses fixed native fixtures and does not access a device, serial port or network.
 
 ```sh
 bun run preview --smoke                       # home screen, portrait and landscape
@@ -38,46 +83,30 @@ bun run preview                               # every portrait shot
 bun run preview --all                         # every shot in both orientations
 ```
 
-The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. Shot names are the PNG names in `tools/ha-panel-preview-shots.ts`; offline and no-weather variants carry the `offline-` and `no-weather-` prefixes. The shot set covers home, sensors, focus, offline, navigation, scenes, dimmer and settings interactions.
+The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. The shot tape covers home, sensors, focus, continuous dimming, hue/saturation control, Reachy actions, unavailable and confirmed arm actions, navigation, offline state and settings; offline, no-weather and protected-arm variants carry filename prefixes.
 
-`tools/ha-panel-assets.py` generates the icons, display numerals, QR placeholder, and dimmer corner mask. Regenerate them through mise-managed uv:
+A direct compile and extent check uses:
 
 ```sh
-mise x uv -- uv run --no-project --with fonttools --with svgelements \
-  python tools/ha-panel-assets.py --font /path/to/InterDisplay-Bold.ttf
+bun run pocket compile --manifest apps/ha-panel/pocket.app.json \
+  --host-config programs/reterminal-d1001/pocket.host.config.ts \
+  --project-root apps/ha-panel \
+  --outdir .pocket-build/export/ha-panel \
+  --output .pocket-build/export/ha-panel.pocket
 ```
 
-## Local configuration
-
-Put panel settings in ignored `programs/reterminal-d1001/sdkconfig.local`:
-
-```ini
-CONFIG_D1001_TIMEZONE="CST-8"
-CONFIG_D1001_HA_BASE_URL="http://host:8123"
-CONFIG_D1001_HA_TOKEN="replace-with-a-local-long-lived-token"
-CONFIG_D1001_HA_LIGHT_ENTITY="light.example"
-```
-
-Empty base URL/token disables HA HTTP activity. The remote lamp then displays `未连接 HA`; local lamps, the RTC, and settings continue to work. The token exists only in generated configuration and in-memory worker messages. Do not log it or commit generated sdkconfig files. Existing `sdkconfig` takes precedence over defaults; see the root README before rebuilding after a local configuration change.
-
-The worker reads the configured HA light and uses the HA template API to discover the first `weather.*` entity. A missing entity, malformed response, or failed weather request hides the weather block without changing the HA light connection. Template API access depends on the token's HA permissions.
-
-`D1001_SNTP_SERVER` defaults to `pool.ntp.org`. The PCF8563 stores UTC. When the station is online, the panel starts SNTP and writes a successful synchronization back to the RTC. `D1001_TIMEZONE` accepts a POSIX TZ value and defaults to `CST-8`; the clock and settings display the resulting UTC offset without altering the stored RTC epoch.
-
-The backlight slider calls the existing framework device binding. Auto screen-off choices pass through `ScreenOffControl` to `d1001.setScreenOffSeconds(seconds)`; 30/60/300-second choices and `0` (never) run in the native input task. Touch/button activity resets the timer, waking restores the previous nonzero brightness, and a wake contact is swallowed until release. A GPIO3 short press (after the 350 ms double-click window) and the portrait settings `横屏` button, or the landscape `返回竖屏` button, call `d1001.setLandscape()`; the runtime restarts with synchronized display/touch orientation and `d1001.landscape()` selects the rearranged UI at boot. Before the restart the app writes its lights, current route and screen timeout with `d1001.savePanelState()`; the new realm consumes that snapshot with `d1001.takePanelState()`, so the same tab, dimmer light and local state return. Landscape admission copies the installed package to PSRAM and rewrites the plan viewport to 640x400; the flash copy is untouched, and the embedded portrait fallback is kept if no external package is installed. Native Wi-Fi/HA configuration is read again by the worker. The manifest requires `input.buttons` so the GPIO3/CIRCLE stream is admitted. The about row calls `d1001.firmwareVersion()`, which returns `esp_app_get_description()->version` from the running image, and displays `未知` if the value is unavailable. Wi-Fi and HA provisioning currently open a placeholder only; softAP, a real QR payload, and the configuration web page are not implemented.
+Acceptance is `ceil((64 + packageSize)/65536)*65536 <= 0x700000`. The board's two internal-DMA staging buffers remain within their 128 KiB total budget. Generated build trees, screenshots and validation logs stay out of Git.
 
 ## Fonts
 
-`fonts.json` declares the Simplified Chinese fallback glyphs. `theme.ts` owns the design's dark palette and radii. Run `bun run fonts` after editing panel text; it updates `fonts/characters.txt` and rebuilds the subset when the character set changes. Large clock and dimmer numerals are generated SVG outlines, so those sizes do not add full CJK font atlases.
+`fonts.json` declares the Simplified Chinese fallback and `fonts/characters.txt` is generated from source strings, templates and JSX. Run `bun run fonts` after editing panel text; it updates the character file and deterministically rebuilds the subset when needed. `bun run fonts --check` and `font-coverage.test.ts` verify that the real font supplies every collected glyph in every active density-2 size/weight atlas. Use the shared 10/12/14 px regular/bold styles for Chinese labels; large clock and dimmer numerals are generated SVG outlines. See `fonts/README.md` for provenance and the underlying fonttools command.
 
 ## Mock HA
 
-Run the mock on a host reachable from the device:
+Run the isolated mock on a host reachable from the device:
 
 ```sh
 MOCK_HA_TOKEN="replace-with-a-test-token" bun tools/mock-ha.ts
 ```
 
-It listens on `0.0.0.0:18123`, requires Bearer authentication, and handles the mock light state and turn-on/turn-off services. Logs contain request paths and whitelisted body fields, never the Authorization header or token. Its legacy sensor-post endpoints are not used by this dashboard. The mock does not render the weather-discovery template, so the panel hides weather against this mock.
-
-For an isolated mock run, set `D1001_HA_BASE_URL` to that host and port, use the same test token in `D1001_HA_TOKEN`, set `D1001_HA_LIGHT_ENTITY="light.mock_lamp"`, and enable `D1001_HA_SELFTEST=y`. The self-test is off by default; it exercises onboard RGB once and sends one mock light command after the initial state read.
+It listens on `0.0.0.0:18123`, requires Bearer authentication and makes no outbound HA, KeyMesh or MQTT calls. It serves the public example lights, environment, weather and telemetry, and accepts light commands and the six button presses. Logs contain paths and whitelisted body fields, never Authorization headers or tokens. Its legacy sensor-post endpoints remain independent of this dashboard.

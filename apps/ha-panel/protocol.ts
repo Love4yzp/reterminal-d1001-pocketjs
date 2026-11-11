@@ -1,4 +1,4 @@
-import type { HaConfig } from "./ha-request";
+import type { HaConfig, HaLightCommand } from "./ha-request";
 import type { LightState, Weather } from "./model";
 import type { SensorReading, ShowroomEntityMap } from "./showroom";
 
@@ -10,8 +10,8 @@ export interface PanelHaConfig extends HaConfig {
 
 export type WorkerCommand =
   | { type: "light"; light: LightState }
-  | { type: "entity-light"; lightId: string; light: LightState; seq: number }
-  | { type: "service"; sceneId: string; runId: number };
+  | { type: "entity-light"; lightId: string; light: LightState; command?: HaLightCommand; seq: number }
+  | { type: "action"; actionId: string; runId: number; confirmed?: boolean };
 
 export type WorkerEvent =
   | { type: "status"; configured: boolean; connected: boolean; error: string }
@@ -19,7 +19,7 @@ export type WorkerEvent =
   | { type: "entity-light"; lightId: string; light: LightState }
   | { type: "sensor"; sensorId: string; reading: SensorReading }
   | { type: "entity-error"; domain: "light" | "sensor"; key: string; availability: "offline" | "unavailable"; error: string }
-  | { type: "service-result"; sceneId: string; runId: number; status: "applied" | "failed"; error: string }
+  | { type: "action-result"; actionId: string; runId: number; status: "accepted" | "failed"; error: string }
   /** `null` when the instance has no usable weather entity. */
   | { type: "weather"; weather: Weather | null };
 

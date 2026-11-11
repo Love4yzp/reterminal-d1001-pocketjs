@@ -22,6 +22,8 @@ export const theme = {
   tileOn: 0xff162126,
   /** HA connected dot (#4caf50). */
   green: 0xff50af4c,
+  danger: 0xff6c6cf0,
+  dangerChip: 0xff2c2c46,
   white: 0xffffffff,
   /** Grip line on the dimmer slider: white at 75%. */
   sliderMark: 0xbfffffff,

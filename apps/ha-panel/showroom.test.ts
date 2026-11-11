@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  actionStatusText,
   formatSensorValue,
   pageWindow,
   sensorStatusText,
@@ -20,37 +21,41 @@ const reading = (value: number | string | null, status: SensorReading["status"] 
 describe("showroom configuration", () => {
   test("the example configuration is valid and uses stable display keys", () => {
     expect(validateShowroomConfig(SHOWROOM)).toEqual([]);
-    expect(SHOWROOM.home.lights).toEqual(["desk", "shelf", "onboard", "remote"]);
+    expect(SHOWROOM.home.lights).toEqual(["remote"]);
     expect(SHOWROOM.lights.find(light => light.key === "remote")?.legacy).toBe(true);
     expect(SHOWROOM.lights.find(light => light.key === "remote")?.entityId).toBeUndefined();
-    expect(JSON.stringify(SHOWROOM)).not.toMatch(/baseUrl|token|password/i);
+    expect(JSON.stringify(SHOWROOM)).not.toMatch(/baseUrl|token|password|yeelink_cn_975205352/i);
   });
 
-  test("rejects duplicate keys and dangling home or scene references", () => {
+  test("rejects duplicate keys and dangling home references", () => {
     const invalid = {
       ...SHOWROOM,
       lights: [SHOWROOM.lights[0]!, { ...SHOWROOM.lights[0]!, name: "Duplicate" }],
-      home: { ...SHOWROOM.home, lights: ["desk", "missing"], sensors: ["missing"], scenes: ["missing"] },
-      scenes: [{ key: "broken", name: "Invalid", kind: "local" as const, changes: { missing: { on: true } } }],
+      home: { lights: ["missing"], sensors: ["missing"], actions: ["missing"] },
+      actions: [{ key: "broken", name: "Invalid", group: "reachy" as const, entityId: "input_button.example_broken" }],
     } satisfies ShowroomConfig;
     const errors = validateShowroomConfig(invalid);
     expect(errors.some(error => error.includes("duplicate"))).toBe(true);
-    expect(errors.filter(error => error.includes("unknown")).length).toBeGreaterThanOrEqual(4);
+    expect(errors.filter(error => error.includes("unknown")).length).toBe(3);
   });
 
   test("rejects unsupported versions and oversized home sections", () => {
     expect(validateShowroomConfig({ ...SHOWROOM, version: 2 })).toContain("unsupported version");
     expect(validateShowroomConfig({
       ...SHOWROOM,
-      home: { ...SHOWROOM.home, lights: ["desk", "shelf", "onboard", "remote", "desk"] },
-    })).toContain("home.lights exceeds 4 entries");
+      home: { ...SHOWROOM.home, lights: ["remote", "desk"] },
+    })).toContain("home.lights exceeds 1 entries");
+    expect(validateShowroomConfig({
+      ...SHOWROOM,
+      home: { ...SHOWROOM.home, actions: [...SHOWROOM.home.actions, "reachy-stop"] },
+    })).toContain("home.actions exceeds 6 entries");
   });
 
   test("rejects repeated home targets and invalid initial light values", () => {
     expect(validateShowroomConfig({
       ...SHOWROOM,
-      home: { ...SHOWROOM.home, lights: ["desk", "desk"] },
-    })).toContain("home.lights duplicate key");
+      home: { ...SHOWROOM.home, sensors: ["temperature", "temperature"] },
+    })).toContain("home.sensors duplicate key");
     const lights = SHOWROOM.lights.map((light, index) => index === 0
       ? { ...light, initial: { ...light.initial, brightness: 999 } }
       : light);
@@ -80,7 +85,7 @@ describe("small-screen windows", () => {
   });
 });
 
-describe("sensor presentation", () => {
+describe("sensor and action presentation", () => {
   const sensor = SHOWROOM.sensors[0]!;
 
   test("formats configured precision without inventing a value", () => {
@@ -96,5 +101,12 @@ describe("sensor presentation", () => {
     expect(sensorStatusText(reading(20, "stale"))).toBe("过期");
     expect(sensorStatusText(reading(null, "unavailable"))).toBe("不可用");
     expect(sensorStatusText(reading(20))).toBe("在线");
+  });
+
+  test("describes service acceptance rather than execution completion", () => {
+    expect(actionStatusText("pending")).toBe("发送中");
+    expect(actionStatusText("accepted")).toBe("已受理");
+    expect(actionStatusText("failed")).toBe("未完成");
+    expect(actionStatusText("idle")).toBe("");
   });
 });

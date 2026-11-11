@@ -15,10 +15,12 @@ import { SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../
 import { haStatus } from "../status";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
+import { ArmScreen } from "./arm-screen";
+import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
 import { BacklightSlider, VerticalSlider } from "./controls";
 import { BulbChip, bulbIcon, Divider, Icon, Numerals, Pressable, Switch } from "./primitives";
 import { SensorDetailScreen } from "./sensors-screen";
-import { LightTile, Pager, SceneButton, SensorCard, type FocusProps } from "./showroom-cards";
+import { Pager, SensorCard, type FocusProps } from "./showroom-cards";
 
 interface LandscapeProps extends FocusProps {
   state: PanelState;
@@ -33,7 +35,8 @@ interface LandscapeProps extends FocusProps {
   onAction(action: PanelAction): void;
   onSettings(action: SettingsAction): void;
   onNav(event: NavEvent): void;
-  onScene(sceneId: string): void;
+  onHaAction(actionId: string, confirmed: boolean): void;
+  actionConfigured(actionId: string): boolean;
   onRotate: (landscape: boolean) => void;
 }
 
@@ -81,52 +84,56 @@ function Home(props: LandscapeProps) {
     <View class="absolute" style={{ insetL: 88, insetT: 0, width: 552, height: 400 }}>
       <StatusLine {...props} />
       {props.state.clockEpochSeconds === null ? (
-        <Text class="absolute text-2xl font-bold" style={{ insetL: 16, insetT: 48, width: 220, textColor: theme.text }}>--:--</Text>
+        <Text class="absolute text-2xl font-bold" style={{ insetL: 16, insetT: 48, width: 140, textColor: theme.text }}>--:--</Text>
       ) : (
         <Numerals text={formatClock(props.state.clockEpochSeconds, props.utcOffsetMinutes)} size={44} left={16} top={38} />
       )}
-      <Text class="absolute text-xs" style={{ insetL: 16, insetT: 94, width: 220, textColor: theme.secondaryText }}>
+      <Text class="absolute text-xs" style={{ insetL: 16, insetT: 94, width: 160, textColor: theme.secondaryText }}>
         {formatChineseDate(props.state.clockEpochSeconds, props.utcOffsetMinutes)}
       </Text>
       {weather() ? (
-        <View class="absolute" style={{ insetL: 440, insetT: 34, width: 80, height: 76 }}>
-          <Icon name={weatherIcon(weather()!)} left={22} top={0} size={36} />
-          <Text class="absolute text-lg font-bold text-right" style={{ insetL: 0, insetT: 36, width: 80, textColor: theme.text }}>{weatherTemperature(weather()!)}</Text>
-          <Text class="absolute text-2xs text-right" style={{ insetL: 0, insetT: 60, width: 80, textColor: theme.secondaryText }}>{weatherLabel(weather()!)}</Text>
+        <View class="absolute" style={{ insetL: 180, insetT: 38, width: 112, height: 68 }}>
+          <Icon name={weatherIcon(weather()!)} left={0} top={2} size={32} />
+          <Text class="absolute text-lg font-bold text-right" style={{ insetL: 38, insetT: 0, width: 74, textColor: theme.text }}>{weatherTemperature(weather()!)}</Text>
+          <Text class="absolute text-2xs text-right" style={{ insetL: 38, insetT: 28, width: 74, textColor: theme.secondaryText }}>{weatherLabel(weather()!)}</Text>
         </View>
       ) : null}
-      <For each={SHOWROOM.home.lights}>{(lightId, index) => (
-        <LightTile
-          state={props.state}
-          lightId={lightId}
-          box={{ left: 16 + index() * 130, top: 116, width: 122, height: 104 }}
-          focus={props.focus}
-          onFocus={props.onFocus}
-          onAction={props.onAction}
-          onNav={props.onNav}
-        />
-      )}</For>
+      <MainLightControl
+        {...props}
+        lightId={SHOWROOM.home.lights[0]!}
+        box={{ left: 16, top: 116, width: 292, height: 78 }}
+      />
       <For each={SHOWROOM.home.sensors}>{(sensorId, index) => (
         <SensorCard
           state={props.state}
           sensorId={sensorId}
-          box={{ left: 16 + index() * 268, top: 226, width: 252, height: 76 }}
+          box={{ left: 16 + index() * 148, top: 204, width: 140 + (index() === 1 ? 4 : 0), height: 84 }}
           compact
           focus={props.focus}
           onFocus={props.onFocus}
           onNav={props.onNav}
         />
       )}</For>
-      <For each={SHOWROOM.home.scenes}>{(sceneId, index) => (
-        <SceneButton
+      <Text class="absolute text-sm font-bold" style={{ insetL: 320, insetT: 40, width: 216, textColor: theme.text }}>Reachy 快捷操作</Text>
+      <Text class="absolute text-2xs" style={{ insetL: 320, insetT: 62, width: 216, textColor: theme.secondaryText }}>由 HA 执行</Text>
+      <For each={SHOWROOM.home.actions}>{(actionId, index) => (
+        <ActionButton
           state={props.state}
-          sceneId={sceneId}
-          box={{ left: 16 + index() * 176, top: 316, width: 166, height: 48 }}
+          actionId={actionId}
+          box={{ left: 320 + (index() % 2) * 110, top: 84 + Math.floor(index() / 2) * 52, width: 102, height: 44 }}
+          configured={props.actionConfigured(actionId)}
           focus={props.focus}
           onFocus={props.onFocus}
-          onScene={props.onScene}
+          onHaAction={props.onHaAction}
         />
       )}</For>
+      <TelemetryPanel
+        state={props.state}
+        box={{ left: 320, top: 252, width: 216, height: 108 }}
+        focus={props.focus}
+        onFocus={props.onFocus}
+        onNav={props.onNav}
+      />
     </View>
   );
 }
@@ -360,6 +367,7 @@ export function LandscapeScreen(props: LandscapeProps) {
     const route = props.route;
     if (route.kind === "dimmer") return <Dimmer {...props} lightId={route.lightId} />;
     if (route.kind === "sensor") return <SensorDetailScreen state={props.state} sensorId={route.sensorId} landscape focus={props.focus} onFocus={props.onFocus} onNav={props.onNav} />;
+    if (route.kind === "arm") return <ArmScreen state={props.state} landscape actionConfigured={props.actionConfigured} focus={props.focus} onFocus={props.onFocus} onHaAction={props.onHaAction} onNav={props.onNav} />;
     if (route.kind === "provision") return <Provision {...props} topic={route.topic} />;
     if (route.tab === "lights") return <Lights {...props} />;
     if (route.tab === "sensors") return <Sensors {...props} />;
