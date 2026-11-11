@@ -26,7 +26,7 @@ describe("tab navigation", () => {
     expect(navigate(dimmer, { type: "back" })).toEqual({ kind: "tab", tab: "lights" });
   });
 
-  test("opens the arm status page and returns to the console", () => {
+  test("opens the arm operation page and returns to the console", () => {
     const arm = navigate(INITIAL_ROUTE, { type: "open-arm" });
     expect(arm).toEqual({ kind: "arm", from: "home" });
     expect(activeTab(arm)).toBe("home");

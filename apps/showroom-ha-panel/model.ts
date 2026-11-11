@@ -53,7 +53,6 @@ export interface PanelState {
   legacyHaLightId: LightId | null;
   sensors: Record<string, SensorReading>;
   sensorOrder: string[];
-  telemetryOrder: string[];
   sensorStaleAfter: Record<string, number>;
   sensorErrors: Record<string, string>;
   actionRuns: Record<string, ActionRunStatus>;
@@ -132,8 +131,7 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
     lightStaleAfter,
     legacyHaLightId,
     sensors,
-    sensorOrder: config.sensors.filter(sensor => sensor.kind !== "telemetry").map(sensor => sensor.key),
-    telemetryOrder: config.sensors.filter(sensor => sensor.kind === "telemetry").map(sensor => sensor.key),
+    sensorOrder: config.sensors.map(sensor => sensor.key),
     sensorStaleAfter,
     sensorErrors: {},
     actionRuns,
@@ -300,7 +298,7 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
     case "sensor-tick": {
       if (action.nowSeconds === null) return state;
       let sensors = state.sensors;
-      for (const sensorId of [...state.sensorOrder, ...state.telemetryOrder]) {
+      for (const sensorId of state.sensorOrder) {
         const reading = sensors[sensorId]!;
         if (reading.status !== "live" || reading.updatedAt === null) continue;
         if (action.nowSeconds >= reading.updatedAt &&
@@ -352,7 +350,7 @@ export function reducePanel(state: PanelState, action: PanelAction): PanelState 
         else if (lightAvailability[lightId] === "offline") lightAvailability[lightId] = "pending";
       }
       const sensors = { ...state.sensors };
-      for (const sensorId of [...state.sensorOrder, ...state.telemetryOrder]) {
+      for (const sensorId of state.sensorOrder) {
         const reading = sensors[sensorId]!;
         if (!action.haConnected && (reading.status === "live" || reading.status === "stale"))
           sensors[sensorId] = { ...reading, status: "offline" };

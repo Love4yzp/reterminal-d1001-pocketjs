@@ -2,14 +2,7 @@ import { Text } from "@pocketjs/framework/solid/components";
 import { lightInfo, lightStatusText, lightTone } from "../lights";
 import { availableLights, isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
 import { tileIntent, type NavEvent } from "../navigation";
-import {
-  actionStatusText,
-  sensorStatusText,
-  SHOWROOM,
-  showroomAction,
-  showroomTelemetry,
-} from "../showroom";
-import { agentText, armModeText, resultText, withFreshness } from "../telemetry";
+import { actionStatusText, SHOWROOM, showroomAction } from "../showroom";
 import { theme } from "../theme";
 import { BulbChip, Pressable, Switch, type Box } from "./primitives";
 
@@ -99,85 +92,35 @@ export function ArmControlCard(props: {
   box: Box;
   onNav(event: NavEvent): void;
 }) {
+  const compact = props.box.height < 120;
   return (
     <Pressable
       box={props.box}
       style={{ radius: 12, bgColor: theme.card }}
       onTap={() => props.onNav({ type: "open-arm" })}
     >
-      <Text class="absolute text-sm font-bold" style={{ insetL: 12, insetT: 14, width: props.box.width - 24, textColor: theme.text }}>
+      <Text class="absolute text-sm font-bold" style={{ insetL: 12, insetT: compact ? 12 : 14, width: props.box.width - (compact ? 112 : 24), textColor: theme.text }}>
         机械臂操作
       </Text>
-      <Text class="absolute text-xs" style={{ insetL: 12, insetT: 58, width: props.box.width - 24, textColor: theme.text }}>
-        重力补偿
-      </Text>
-      <Text class="absolute text-xs" style={{ insetL: 12, insetT: 88, width: props.box.width - 24, textColor: theme.text }}>
-        动作回放
-      </Text>
-      <Text class="absolute text-2xs" style={{ insetL: 12, insetT: props.box.height - 36, width: props.box.width - 24, textColor: theme.primary }}>
-        点击操作
-      </Text>
-    </Pressable>
-  );
-}
-
-export function TelemetryPanel(props: {
-  state: PanelState;
-  box: Box;
-  onNav(event: NavEvent): void;
-}) {
-  const agent = () => props.state.sensors["reachy-agent"]!;
-  const result = () => props.state.sensors["reachy-result"]!;
-  const arm = () => props.state.sensors["arm-mode"]!;
-  const compact = props.box.width < 300;
-  const agentLabel = () => withFreshness(agentText(agent()), agent(), props.state.sensorErrors["reachy-agent"]);
-  const armLabel = () => withFreshness(armModeText(arm()), arm(), props.state.sensorErrors["arm-mode"]);
-  return (
-    <Pressable
-      box={props.box}
-      style={{ radius: 12, bgColor: theme.card }}
-      onTap={() => props.onNav({ type: "open-arm" })}
-    >
       {compact ? (
         <>
-          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: 8, width: props.box.width - 24, textColor: theme.text }}>
-            {`Reachy ${agentLabel()}`}
+          <Text class="absolute text-xs" style={{ insetL: 12, insetT: 48, width: props.box.width - 24, textColor: theme.text }}>
+            重力补偿 / 动作回放
           </Text>
-          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: 30, width: props.box.width - 24, textColor: theme.text }}>
-            {`机械臂 ${armLabel()}`}
-          </Text>
-          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: 52, width: 54, textColor: theme.secondaryText }}>
-            {showroomTelemetry("reachy-result").name}
-          </Text>
-          <Text class="absolute text-xs" style={{ insetL: 72, insetT: 49, width: props.box.width - 84, textColor: theme.text }}>
-            {resultText(result())}
-          </Text>
-          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: 82, width: props.box.width - 100, textColor: theme.secondaryText }}>
-            {`回执 ${sensorStatusText(result(), props.state.sensorErrors["reachy-result"])}`}
-          </Text>
-          <Text class="absolute text-2xs text-right" style={{ insetL: props.box.width - 88, insetT: 82, width: 76, textColor: theme.primary }}>
-            查看详情
+          <Text class="absolute text-2xs text-right" style={{ insetL: props.box.width - 88, insetT: 16, width: 76, textColor: theme.primary }}>
+            点击操作
           </Text>
         </>
       ) : (
         <>
-          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: 9, width: props.box.width / 2 - 18, textColor: theme.text }}>
-            {`Reachy ${agentLabel()}`}
+          <Text class="absolute text-xs" style={{ insetL: 12, insetT: 58, width: props.box.width - 24, textColor: theme.text }}>
+            重力补偿
           </Text>
-          <Text class="absolute text-2xs text-right" style={{ insetL: props.box.width / 2, insetT: 9, width: props.box.width / 2 - 12, textColor: theme.text }}>
-            {`${showroomTelemetry("arm-mode").name} ${armLabel()}`}
+          <Text class="absolute text-xs" style={{ insetL: 12, insetT: 88, width: props.box.width - 24, textColor: theme.text }}>
+            动作回放
           </Text>
-          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: 33, width: 54, textColor: theme.secondaryText }}>
-            {showroomTelemetry("reachy-result").name}
-          </Text>
-          <Text class="absolute text-xs" style={{ insetL: 72, insetT: 30, width: props.box.width - 84, textColor: theme.text }}>
-            {resultText(result())}
-          </Text>
-          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: 59, width: props.box.width - 100, textColor: theme.secondaryText }}>
-            {`回执 ${sensorStatusText(result(), props.state.sensorErrors["reachy-result"])}`}
-          </Text>
-          <Text class="absolute text-2xs text-right" style={{ insetL: props.box.width - 88, insetT: 59, width: 76, textColor: theme.primary }}>
-            查看详情
+          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: props.box.height - 36, width: props.box.width - 24, textColor: theme.primary }}>
+            点击操作
           </Text>
         </>
       )}

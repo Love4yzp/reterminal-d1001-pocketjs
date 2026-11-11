@@ -5,10 +5,7 @@
   },
   "sensors": {
     "temperature": "sensor.example_temperature",
-    "humidity": "sensor.example_humidity",
-    "reachy-agent": "sensor.example_reachy_agent",
-    "reachy-result": "sensor.example_reachy_result",
-    "arm-mode": "sensor.example_arm_mode"
+    "humidity": "sensor.example_humidity"
   },
   "actions": {
     "reachy-intro-retail": "input_button.example_reachy_intro_retail",

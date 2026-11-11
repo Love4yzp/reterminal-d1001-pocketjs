@@ -7,7 +7,7 @@ import type { NavEvent } from "../navigation";
 import { SHOWROOM } from "../showroom";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
-import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
+import { ActionButton, ArmControlCard, MainLightControl } from "./console-controls";
 import { Icon, Numerals } from "./primitives";
 import { SensorCard } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
@@ -71,8 +71,7 @@ export function HomeScreen(props: HomeProps) {
           onHaAction={props.onHaAction}
         />
       )}</For>
-      <TelemetryPanel
-        state={props.state}
+      <ArmControlCard
         box={{ left: 16, top: 406, width: 368, height: 96 }}
         onNav={props.onNav}
       />

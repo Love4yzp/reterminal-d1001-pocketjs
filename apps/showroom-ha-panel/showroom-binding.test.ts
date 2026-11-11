@@ -12,9 +12,6 @@ const valid = {
   sensors: {
     temperature: "sensor.example_temperature",
     humidity: "sensor.example_humidity",
-    "reachy-agent": "sensor.example_reachy_agent",
-    "reachy-result": "sensor.example_reachy_result",
-    "arm-mode": "sensor.example_arm_mode",
   },
   actions: {
     "reachy-wake": "input_button.example_wake",
@@ -30,6 +27,18 @@ describe("ignored showroom entity binding", () => {
     expect(parseShowroomEntityMap("")).toBeUndefined();
     expect(() => parseShowroomEntityMap(JSON.stringify({ ...valid, token: "secret" })))
       .toThrow("unknown field token");
+  });
+
+  test("accepts legacy telemetry bindings without retaining entities to poll", () => {
+    expect(parseShowroomEntityMap(JSON.stringify({
+      ...valid,
+      sensors: {
+        ...valid.sensors,
+        "reachy-agent": "sensor.example_reachy_agent",
+        "reachy-result": "sensor.example_reachy_result",
+        "arm-mode": "sensor.example_arm_mode",
+      },
+    }))).toEqual(valid);
   });
 
   test("keeps the public JSON example in sync with the validated mock map", async () => {
