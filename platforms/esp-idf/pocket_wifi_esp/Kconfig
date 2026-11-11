@@ -1,12 +1,30 @@
 menu "D1001 Wi-Fi"
 
 config D1001_WIFI_SSID
-    string "Station SSID (empty preserves existing connection behavior)"
+    string "First station SSID (empty preserves existing connection behavior)"
     default ""
     depends on IDF_TARGET_ESP32P4
 
 config D1001_WIFI_PASSWORD
-    string "Station password"
+    string "First station password"
+    default ""
+    depends on IDF_TARGET_ESP32P4
+    help
+        Keep the password in an ignored sdkconfig.local or another local
+        configuration source. It is never logged by the D1001 Wi-Fi component.
+
+config D1001_WIFI_SSID_2
+    string "Second station SSID (optional)"
+    default ""
+    depends on IDF_TARGET_ESP32P4
+    help
+        After repeated NO_AP_FOUND or authentication failures on one preset,
+        the station rotates to the next configured preset. The order is
+        D1001_WIFI_SSID, then D1001_WIFI_SSID_2. Leave empty to keep only the
+        first preset.
+
+config D1001_WIFI_PASSWORD_2
+    string "Second station password"
     default ""
     depends on IDF_TARGET_ESP32P4
     help
