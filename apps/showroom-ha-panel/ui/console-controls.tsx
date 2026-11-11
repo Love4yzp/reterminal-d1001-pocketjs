@@ -89,46 +89,6 @@ export function ActionButton(props: {
   );
 }
 
-export function ArmControlCard(props: {
-  box: Box;
-  onNav(event: NavEvent): void;
-}) {
-  const compact = props.box.height < 120;
-  return (
-    <Pressable
-      box={props.box}
-      style={{ radius: 12, bgColor: theme.card }}
-      onTap={() => props.onNav({ type: "open-arm" })}
-    >
-      <Text class="absolute text-sm font-bold" style={{ insetL: 12, insetT: compact ? 12 : 14, width: props.box.width - (compact ? 112 : 24), textColor: theme.text }}>
-        机械臂操作
-      </Text>
-      {compact ? (
-        <>
-          <Text class="absolute text-xs" style={{ insetL: 12, insetT: 48, width: props.box.width - 24, textColor: theme.text }}>
-            重力补偿 / 动作回放
-          </Text>
-          <Text class="absolute text-2xs text-right" style={{ insetL: props.box.width - 88, insetT: 16, width: 76, textColor: theme.primary }}>
-            点击操作
-          </Text>
-        </>
-      ) : (
-        <>
-          <Text class="absolute text-xs" style={{ insetL: 12, insetT: 58, width: props.box.width - 24, textColor: theme.text }}>
-            重力补偿
-          </Text>
-          <Text class="absolute text-xs" style={{ insetL: 12, insetT: 88, width: props.box.width - 24, textColor: theme.text }}>
-            动作回放
-          </Text>
-          <Text class="absolute text-2xs" style={{ insetL: 12, insetT: props.box.height - 36, width: props.box.width - 24, textColor: theme.primary }}>
-            点击操作
-          </Text>
-        </>
-      )}
-    </Pressable>
-  );
-}
-
 export function homeActionIds(): readonly string[] {
   return SHOWROOM.home.actions;
 }

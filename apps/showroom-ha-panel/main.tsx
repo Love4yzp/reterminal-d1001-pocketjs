@@ -49,7 +49,6 @@ import { decodeSession, encodeSession, restorePanelState, restoreSettings } from
 import { pageWindow, SHOWROOM, showroomAction } from "./showroom";
 import { theme } from "./theme";
 import type { PanelHaConfig, WorkerCommand, WorkerEvent } from "./protocol";
-import { ArmScreen } from "./ui/arm-screen";
 import { DimmerScreen } from "./ui/dimmer-screen";
 import { HomeScreen } from "./ui/home-screen";
 import { LandscapeScreen } from "./ui/landscape-screen";
@@ -213,7 +212,7 @@ function Panel() {
   });
   dispatch({ type: "clock", clockEpochSeconds: readRtcSeconds(), clockSynced: false });
   if (config.configError) console.error(`[ha-panel] HA config: ${config.configError}`);
-  console.log("[ha-panel] dashboard: console, lights, sensors, arm, dimmer, settings");
+  console.log("[ha-panel] dashboard: console, lights, sensors, dimmer, settings");
   if (config.selftest && onboardLightId) {
     dispatch({ type: "set-brightness", lightId: onboardLightId, brightness: 160 });
     dispatch({ type: "set-color", lightId: onboardLightId, hue: 210, saturation: 68 });
@@ -329,15 +328,6 @@ function Panel() {
       );
     if (current.kind === "sensor")
       return <SensorDetailScreen {...shared()} sensorId={current.sensorId} />;
-    if (current.kind === "arm")
-      return (
-        <ArmScreen
-          state={state()}
-          actionConfigured={isActionConfigured}
-          onHaAction={onHaAction}
-          onNav={onNav}
-        />
-      );
     if (current.kind === "provision")
       return (
         <ProvisionScreen

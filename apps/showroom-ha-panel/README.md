@@ -2,7 +2,7 @@
 
 App id: `dev.pocket-nexus.d1001.showroom-ha-panel`.
 
-The density-2 app provides a 400x640 portrait console and a genuinely rearranged 640x400 landscape console. Home contains the main HA light, temperature/humidity/weather and six Reachy actions. Landscape places both arm actions directly on home; portrait retains the arm-page entry in this orientation milestone. The `灯光` tab opens the main light's dimmer directly; read-only environment pages and settings remain available. There are no scene cards, local scene presets, IMU cards or invented weather readings.
+The density-2 app provides a 400x640 portrait console and a genuinely rearranged 640x400 landscape console. Home contains the main HA light, temperature/humidity/weather and six Reachy actions. Both orientations place the two arm actions directly on home; there is no arm detail route. The `灯光` tab opens the main light's dimmer directly; read-only environment pages and settings remain available. There are no scene cards, local scene presets, IMU cards or invented weather readings.
 
 ## Run and test
 
@@ -36,7 +36,7 @@ The six Reachy slots are:
 
 Each maps to a local `input_button` and calls `/api/services/input_button/press`. HTTP success means **已受理**, not that Reachy finished speaking or moving. The panel does not show Reachy Mini agent/result state; the other KeyMesh commands already drive its automatic motion.
 
-Landscape home directly shows the two tap buttons, `arm-gravity` and `arm-playback`, with transient send feedback and no MQTT state display. Animated dots replace the buttons until their mappings and the HA connection are ready; no `未配置` label appears in the arm area. Portrait retains the arm page in this milestone. Both local action keys map to the shared `script.keymesh_dispatch` and call `/api/services/script/turn_on` with `host: hall-win-3bbkv8f` and `confirm: true`. Gravity uses `task: arm-gravity-start`; playback uses `task: arm-play` and `action: act_db914a65db` (机械臂跳舞2). Legacy arm `input_button` mappings still parse, but the worker rejects them instead of sending an unsafe command. No KeyMesh/MQTT writer exists in this app.
+Both home layouts directly show the two tap buttons, `arm-gravity` and `arm-playback`, with transient send feedback and no MQTT state display. Animated dots replace the buttons until their mappings and the HA connection are ready; no `未配置` label appears in the arm area. Landscape stacks playback above gravity; portrait places gravity beside playback. Both local action keys map to the shared `script.keymesh_dispatch` and call `/api/services/script/turn_on` with `host: hall-win-3bbkv8f` and `confirm: true`. Gravity uses `task: arm-gravity-start`; playback uses `task: arm-play` and `action: act_db914a65db` (机械臂跳舞2). Legacy arm `input_button` mappings still parse, but the worker rejects them instead of sending an unsafe command. No KeyMesh/MQTT writer exists in this app.
 
 Live rollout follow-up: the current hall `script.keymesh_dispatch` template only forwards `text` and `start`; it must also accept and forward `action` and `confirm` before these arm requests can execute. No live HA configuration was changed.
 

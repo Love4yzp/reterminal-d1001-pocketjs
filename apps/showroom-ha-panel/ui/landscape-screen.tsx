@@ -11,7 +11,6 @@ import { SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../
 import { haStatus } from "../status";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
-import { ArmScreen } from "./arm-screen";
 import { ActionButton, MainLightControl } from "./console-controls";
 import { HomeArmActions } from "./home-arm-actions";
 import { BacklightSlider, ColorWheel, ModeButton, VerticalSlider } from "./controls";
@@ -376,7 +375,6 @@ export function LandscapeScreen(props: LandscapeProps) {
     const route = props.route;
     if (route.kind === "dimmer") return <Dimmer {...props} lightId={route.lightId} />;
     if (route.kind === "sensor") return <SensorDetailScreen state={props.state} sensorId={route.sensorId} landscape onNav={props.onNav} />;
-    if (route.kind === "arm") return <ArmScreen state={props.state} landscape actionConfigured={props.actionConfigured} onHaAction={props.onHaAction} onNav={props.onNav} />;
     if (route.kind === "provision") return <Provision {...props} topic={route.topic} />;
     if (route.tab === "sensors") return <Sensors {...props} />;
     if (route.tab === "settings") return <Settings {...props} />;
