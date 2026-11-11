@@ -35,7 +35,6 @@ export const ICONS = {
   "power-primary": "art/power-primary.svg",
   "power-secondary": "art/power-secondary.svg",
   "power-text": "art/power-text.svg",
-  "qr-placeholder": "art/qr-placeholder.svg",
   "weather-cloudy": "art/weather-cloudy.svg",
   "weather-night": "art/weather-night.svg",
   "weather-partly": "art/weather-partly.svg",

@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  canSwitchNetwork,
+  formatRssi,
+  NOT_CONNECTED_TEXT,
   readFirmwareVersion,
   readHaConfig,
   readLandscape,
+  readNetwork,
   requestLandscape,
+  requestNextPreset,
   savePanelState,
   takePanelState,
   UNKNOWN_TEXT,
@@ -20,13 +25,35 @@ const globalWithNative = globalThis as typeof globalThis & {
   };
 };
 const originalNative = globalWithNative.d1001;
+const globalWithWifi = globalThis as typeof globalThis & {
+  wifi?: {
+    status(): string;
+    setEnabled(): boolean;
+    connect(): boolean;
+    nextPreset?(): boolean;
+  };
+};
+const originalWifi = globalWithWifi.wifi;
 
 afterEach(() => {
   if (originalNative === undefined)
     delete globalWithNative.d1001;
   else
     globalWithNative.d1001 = originalNative;
+  if (originalWifi === undefined)
+    delete globalWithWifi.wifi;
+  else
+    globalWithWifi.wifi = originalWifi;
 });
+
+function installWifi(status: Record<string, unknown>, nextPreset?: () => boolean) {
+  globalWithWifi.wifi = {
+    status: () => JSON.stringify(status),
+    setEnabled: () => true,
+    connect: () => false,
+    ...(nextPreset ? { nextPreset } : {}),
+  };
+}
 
 describe("firmware version", () => {
   test("returns the version reported by the firmware binding", () => {
@@ -76,6 +103,53 @@ describe("orientation binding", () => {
     delete globalWithNative.d1001;
     expect(savePanelState("{}")).toBe(false);
     expect(takePanelState()).toBe("");
+  });
+});
+
+describe("station network status", () => {
+  test("reads the current SSID, address and RSSI", () => {
+    installWifi({ state: "connected", ssid: "Seeed-Demo", strength: 3, rssi: -52, address: "10.0.0.5" });
+    expect(readNetwork()).toEqual({
+      connected: true,
+      ssid: "Seeed-Demo",
+      address: "10.0.0.5",
+      strength: 3,
+      rssi: -52,
+    });
+    expect(formatRssi(-52)).toBe("-52 dBm");
+  });
+
+  test("keeps a missing RSSI visible as unknown", () => {
+    installWifi({ state: "connected", ssid: "SEEED-COM", strength: 2, address: "10.0.0.6" });
+    expect(readNetwork().rssi).toBeNull();
+    expect(formatRssi(null)).toBe(UNKNOWN_TEXT);
+    installWifi({ state: "idle", ssid: "", strength: 0, address: "" });
+    expect(readNetwork()).toMatchObject({
+      connected: false,
+      ssid: NOT_CONNECTED_TEXT,
+      address: NOT_CONNECTED_TEXT,
+      rssi: null,
+    });
+  });
+
+  test("requests the next preset only when the firmware binds it", () => {
+    let requested = 0;
+    installWifi({ state: "connected", ssid: "Seeed-Demo", strength: 3, address: "10.0.0.5" }, () => {
+      requested += 1;
+      return true;
+    });
+    expect(canSwitchNetwork()).toBe(true);
+    expect(requestNextPreset()).toBe(true);
+    expect(requested).toBe(1);
+
+    installWifi({ state: "connected", ssid: "Seeed-Demo", strength: 3, address: "10.0.0.5" });
+    expect(canSwitchNetwork()).toBe(false);
+    expect(requestNextPreset()).toBe(false);
+
+    installWifi({ state: "connected", ssid: "Seeed-Demo", strength: 3, address: "10.0.0.5" }, () => {
+      throw new Error("radio unavailable");
+    });
+    expect(requestNextPreset()).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
 import { deviceStatus, setBrightness } from "@pocketjs/framework/device";
-import { wifiStatus } from "@pocketjs/framework/wifi";
+import { wifiStatus, type WifiStatus } from "@pocketjs/framework/wifi";
 import { readLocalHaConfig } from "./ha-local";
 import type { PanelHaConfig } from "./protocol";
 import type { ScreenOffNative } from "./settings";
@@ -97,17 +97,49 @@ export interface NetworkInfo {
   address: string;
   /** 0..3 bars. */
   strength: number;
+  /** dBm when the firmware reports it, otherwise null. */
+  rssi: number | null;
 }
 
 export function readNetwork(): NetworkInfo {
-  const status = wifiStatus();
+  const status = wifiStatus() as (WifiStatus & { rssi?: number }) | null;
   const connected = status?.state === "connected" && status.ssid.length > 0;
   return {
     connected,
     ssid: connected ? status!.ssid : NOT_CONNECTED_TEXT,
     address: connected && status!.address ? status!.address : NOT_CONNECTED_TEXT,
     strength: connected ? Math.max(0, Math.min(3, Math.round(status!.strength))) : 0,
+    rssi: connected && typeof status!.rssi === "number" && Number.isFinite(status!.rssi)
+      ? Math.round(status!.rssi)
+      : null,
   };
+}
+
+export function formatRssi(rssi: number | null): string {
+  return rssi === null ? UNKNOWN_TEXT : `${rssi} dBm`;
+}
+
+/** Older firmware images do not bind the optional next-preset op. */
+export function canSwitchNetwork(): boolean {
+  return typeof wifiOps()?.nextPreset === "function";
+}
+
+/** Ask the firmware to join the next configured station preset. */
+export function requestNextPreset(): boolean {
+  try {
+    return wifiOps()?.nextPreset?.() === true;
+  } catch {
+    return false;
+  }
+}
+
+interface PresetWifiOps {
+  nextPreset?(): boolean;
+}
+
+function wifiOps(): PresetWifiOps | undefined {
+  const wifi = (globalThis as { wifi?: PresetWifiOps }).wifi;
+  return wifi && typeof wifi === "object" ? wifi : undefined;
 }
 
 /** Backlight percent, or null when the host has no device module. */

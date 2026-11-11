@@ -317,7 +317,14 @@ function Panel() {
         />
       );
     if (current.kind === "provision")
-      return <ProvisionScreen topic={current.topic} onNav={onNav} />;
+      return (
+        <ProvisionScreen
+          topic={current.topic}
+          network={network()}
+          state={state()}
+          onNav={onNav}
+        />
+      );
     if (current.tab === "sensors")
       return <SensorsScreen {...shared()} network={network()} page={sensorPage()} />;
     if (current.tab === "settings")

@@ -2,7 +2,7 @@ import { hsvToRgb } from "../apps/showroom-ha-panel/color";
 import { hueFromX, saturationFromX } from "../apps/showroom-ha-panel/dimmer";
 import type { HaLightCommand } from "../apps/showroom-ha-panel/ha-request";
 import type { WorkerCommand } from "../apps/showroom-ha-panel/protocol";
-import { gestures, type Shot } from "./showroom-ha-panel-preview.ts";
+import { gestures, type NativeCalls, type Shot } from "./showroom-ha-panel-preview.ts";
 
 const { tap, hold, drag } = gestures;
 
@@ -24,6 +24,11 @@ function verifyAction(actionId: string, confirmed: boolean) {
 function verifyNoArm(commands: readonly WorkerCommand[]) {
   const matches = commands.filter(command => command.type === "action" && command.actionId.startsWith("arm-"));
   if (matches.length) throw new Error(`unconfigured arm action sent ${JSON.stringify(matches)}`);
+}
+
+function verifyOnePresetSwitch(_commands: readonly WorkerCommand[], native: NativeCalls) {
+  const count = native.presetSwitches();
+  if (count !== 1) throw new Error(`expected one next-preset request; got ${count}`);
 }
 
 function verifyLight(lightId: string, expected: HaLightCommand) {
@@ -68,6 +73,7 @@ export const SHOTS: ShotSet = {
     { name: "settings-timeout", tape: [...tap(350, 610), ...tap(242, 199)] },
     { name: "settings-backlight", tape: [...tap(350, 610), ...drag(240, 100, 330, 100)] },
     { name: "provision", tape: [...tap(350, 610), ...tap(100, 296)] },
+    { name: "provision-switch", tape: [...tap(350, 610), ...tap(100, 296), ...tap(200, 436)], verify: verifyOnePresetSwitch },
   ],
   offline: [
     { name: "home", tape: [] },
@@ -105,6 +111,7 @@ export const LANDSCAPE_SHOTS: ShotSet = {
     { name: "settings-backlight", tape: [...tap(44, 315), ...drag(240, 85, 330, 85)] },
     { name: "settings-rotate", tape: [...tap(44, 315), ...tap(500, 344)] },
     { name: "provision", tape: [...tap(44, 315), ...tap(450, 90)] },
+    { name: "provision-switch", tape: [...tap(44, 315), ...tap(450, 90), ...tap(164, 276)], verify: verifyOnePresetSwitch },
   ],
   offline: [
     { name: "home", tape: [] },
