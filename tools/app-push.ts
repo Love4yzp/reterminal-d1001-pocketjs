@@ -17,17 +17,19 @@ interface Options {
   packagePath?: string;
   slotId?: string;
   wifiIp?: string;
+  imageDirectory?: string;
 }
 
 function usage() {
-  console.log("usage: bun run app:push <app-directory> [--wifi <ip>]\n" +
-    "       bun run app:push --package <existing.pocket> --slot <manifest-id> [--wifi <ip>]\n\n" +
+  console.log("usage: bun run app:push <app-directory> [--wifi <ip>] [--image-dir <path>]\n" +
+    "       bun run app:push --package <existing.pocket> --slot <manifest-id> [--wifi <ip>] [--image-dir <path>]\n\n" +
     "Compile an app or reuse a package, then write its PKAP v1 short image.\n" +
     "The serial port defaults to /dev/ttyACM0; set D1001_PORT to override it.\n" +
-    "Wi-Fi uses port 8080 and requires a non-empty D1001_WIFI_TOKEN.");
+    "Wi-Fi uses port 8080 and requires a non-empty D1001_WIFI_TOKEN.\n" +
+    "image-dir defaults to .pocket-build/apps; secret provisioning must use tmpfs.");
 }
 
-function parseOptions(args: string[]): Options | undefined {
+export function parseOptions(args: string[]): Options | undefined {
   if (args.includes("--help")) {
     usage();
     return;
@@ -35,10 +37,11 @@ function parseOptions(args: string[]): Options | undefined {
   const options: Options = {};
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]!;
-    if (argument === "--package" || argument === "--slot" || argument === "--wifi") {
+    if (argument === "--package" || argument === "--slot" || argument === "--wifi" || argument === "--image-dir") {
       const value = args[index + 1];
       if (!value || value.startsWith("--")) throw new Error(`${argument} requires a value`);
-      const key = argument === "--package" ? "packagePath" : argument === "--slot" ? "slotId" : "wifiIp";
+      const key = argument === "--package" ? "packagePath" : argument === "--slot" ? "slotId" :
+        argument === "--wifi" ? "wifiIp" : "imageDirectory";
       if (options[key] !== undefined) throw new Error(`${argument} was provided more than once`);
       options[key] = value;
       index += 1;
@@ -122,7 +125,7 @@ function shortImage(packageBytes: Uint8Array, id: string, partitionSize: number)
 
 function startWriter(offset: number) {
   return Bun.spawn([
-    "python", resolve(root, "tools/esptool-push.py"),
+    process.env.D1001_PYTHON || "python", resolve(root, "tools/esptool-push.py"),
     "--port", process.env.D1001_PORT || "/dev/ttyACM0",
     "--offset", `0x${offset.toString(16)}`,
   ], { cwd: root, stdin: "pipe", stdout: "inherit", stderr: "inherit" });
@@ -176,9 +179,10 @@ async function main() {
     const packageBytes = new Uint8Array(await Bun.file(packagePath).arrayBuffer());
     const { image, hash, slot } = shortImage(packageBytes, id, partition.size);
     const name = basename(packagePath, extname(packagePath)) || "app";
-    const imagePath = resolve(buildDirectory, `${name}.short.bin`);
-    const previousImagePath = resolve(buildDirectory, `${name}.previous.bin`);
-    mkdirSync(buildDirectory, { recursive: true });
+    const imageDirectory = options.imageDirectory ? resolve(options.imageDirectory) : buildDirectory;
+    const imagePath = resolve(imageDirectory, `${name}.short.bin`);
+    const previousImagePath = resolve(imageDirectory, `${name}.previous.bin`);
+    mkdirSync(imageDirectory, { recursive: true });
     await Bun.write(imagePath, image);
 
     console.log(`package: ${packagePath}`);
@@ -209,8 +213,10 @@ async function main() {
   }
 }
 
-try { await main(); }
-catch (error) {
-  console.error(`app-push: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
+if (import.meta.main) {
+  try { await main(); }
+  catch (error) {
+    console.error(`app-push: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
 }

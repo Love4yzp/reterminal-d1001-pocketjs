@@ -1,9 +1,8 @@
 import { deviceStatus, setBrightness } from "@pocketjs/framework/device";
 import { wifiStatus } from "@pocketjs/framework/wifi";
+import { readLocalHaConfig } from "./ha-local";
 import type { PanelHaConfig } from "./protocol";
-import { LOCAL_HA_CONFIG } from "./local-config";
 import type { ScreenOffNative } from "./settings";
-import { parseShowroomEntityMap } from "./showroom";
 
 /** `globalThis.d1001`, installed by programs/reterminal-d1001 (pocket_d1001). */
 interface D1001Native extends ScreenOffNative {
@@ -11,7 +10,6 @@ interface D1001Native extends ScreenOffNative {
   utcOffsetMinutes(): number;
   syncClock(): string;
   setRgb(red: number, green: number, blue: number): boolean;
-  haConfig(): unknown;
   firmwareVersion(): string;
   landscape(): boolean;
   setLandscape(landscape: boolean): boolean;
@@ -66,31 +64,14 @@ export function syncNativeClock(): ClockSyncState {
   return value === "pending" || value === "synchronized" || value === "offline" ? value : "error";
 }
 
-function text(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
 export function readHaConfig(): PanelHaConfig {
-  if (LOCAL_HA_CONFIG) return LOCAL_HA_CONFIG;
-  const value = native()?.haConfig();
-  if (typeof value !== "object" || value === null)
-    return { baseUrl: "", token: "", lightEntityId: "", weatherEntityId: "", selftest: false };
-  const candidate = value as Record<string, unknown>;
-  let entityMap: PanelHaConfig["entityMap"];
-  let configError = "";
-  try {
-    entityMap = parseShowroomEntityMap(text(candidate.entityMapJson));
-  } catch (error) {
-    configError = error instanceof Error ? error.message : String(error);
-  }
-  return {
-    baseUrl: text(candidate.baseUrl),
-    token: text(candidate.token),
-    lightEntityId: text(candidate.lightEntityId),
-    weatherEntityId: entityMap?.weather ?? text(candidate.weatherEntityId),
-    selftest: candidate.selftest === true,
-    entityMap,
-    configError,
+  return readLocalHaConfig() ?? {
+    baseUrl: "",
+    token: "",
+    lightEntityId: "",
+    weatherEntityId: "",
+    selftest: false,
+    configError: "",
   };
 }
 

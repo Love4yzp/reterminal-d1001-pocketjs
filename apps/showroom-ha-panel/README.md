@@ -38,24 +38,15 @@ The arm page exposes telemetry by default. `arm-gravity` and `arm-playback` have
 
 Virtual lamps and onboard RGB remain on the full light list. They are not local scenes and do not appear as fake HA actions on home.
 
-## Local configuration
+## Slot-local configuration
 
-The committed app is unconfigured. Use the existing ignored `programs/reterminal-d1001/sdkconfig.local` for a basic local deployment:
+The committed package contains no HA URL, token or local entity bindings. At startup it reads `ha-panel.json` only from this app slot's `data.fs`, which is backed by the D1001 internal `storage` partition. It does not fall back to firmware Kconfig credentials or a build-time source override. A missing or invalid file disables HA without exposing its contents.
 
-```ini
-CONFIG_D1001_TIMEZONE="CST-8"
-CONFIG_D1001_HA_BASE_URL="http://host:8123"
-CONFIG_D1001_HA_TOKEN="replace-with-a-local-long-lived-token"
-CONFIG_D1001_HA_LIGHT_ENTITY="edidt.replace_with_local_main_light"
-```
+`seed.example.json` documents the versioned file format. The map contains `lights`, `sensors`, `actions` and optional `weather`; unknown display keys, credentials inside the map and wrong entity domains are rejected. `light.*` and the showroom's `edidt.*` light-compatible entity are accepted; actions accept only `input_button.*`. Arm mappings remain optional.
 
-`LOCAL_HA_CONFIG` in `local-config.ts` remains the build-time override seam for private deployment tooling; the committed value is `undefined`. Empty base URL/token disables HA HTTP activity. Tokens exist only in generated configuration and in-memory worker messages. Do not log them or commit generated sdkconfig files. Existing `sdkconfig` takes precedence over defaults; see the root README before rebuilding after a local configuration change.
+Production provisioning uses `tools/showroom-ha-panel-provision.ts` in two phases. The private seed and all generated seed artifacts must be mode-600 files inside a mode-700 child directory of `/dev/shm`. The seed app writes and reads back the slot-local file. The finish phase requires that exact readback marker, compiles the normal tokenless package before erasing, erases only the complete `apps@0x510000+0x700000` region, installs the normal package, reads back all 7 MiB and rejects raw or UTF-16 token bytes. `storage@0xc10000` is preserved. The tool refuses `/dev/shm` itself, non-tmpfs staging, public secret files, an incompatible esptool Python environment, incomplete readback and unowned cleanup directories. Set `D1001_PYTHON` when the compatible esptool module is not provided by `python` on `PATH`.
 
-`CONFIG_D1001_HA_LIGHT_ENTITY` is the legacy single-light path. The six actions and telemetry require a keyed `entityMap`. `entity-map.example.json` documents the public map structure: its `example_*` IDs are placeholders, while the `edidt.*` main-light value is non-sensitive structural data. Replace every placeholder with local HA entity IDs.
-
-The map contains `version`, `lights`, `sensors`, `actions` and optional `weather`. Legacy `scenes`, credentials in the map, unknown display keys and wrong domains are rejected. `light.*` and the showroom's `edidt.*` light-compatible entity are accepted; actions accept only `input_button.*`. Arm mappings are optional and empty in the public example.
-
-Current provisioning is limited to ignored local Kconfig values or the private build-time override; the in-app Wi-Fi/HA provisioning pages are placeholders and do not save credentials. Secure provisioning, data.fs migration, partition erasure and readback/token scanning are not implemented by this app.
+The in-app Wi-Fi/HA pages remain informational placeholders; they do not save credentials.
 
 ## Queueing and freshness
 

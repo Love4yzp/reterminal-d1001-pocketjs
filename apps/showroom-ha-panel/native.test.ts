@@ -13,7 +13,6 @@ import {
 const globalWithNative = globalThis as typeof globalThis & {
   d1001?: {
     firmwareVersion(): string;
-    haConfig?(): unknown;
     landscape?(): boolean;
     setLandscape?(landscape: boolean): boolean;
     savePanelState?(json: string): boolean;
@@ -80,34 +79,12 @@ describe("orientation binding", () => {
   });
 });
 
-describe("HA entity-map binding", () => {
-  test("reads a validated map and selects its weather entity", () => {
-    globalWithNative.d1001 = {
-      firmwareVersion: () => "test",
-      haConfig: () => ({
-        baseUrl: "http://example.test",
-        token: "local-test-token",
-        lightEntityId: "light.legacy",
-        entityMapJson: JSON.stringify({
-          version: 1,
-          lights: { remote: "light.example_main" },
-          weather: "weather.example_home",
-        }),
-      }),
-    };
+describe("HA configuration source", () => {
+  test("does not fall back to firmware Kconfig when data.fs is unavailable", () => {
+    globalWithNative.d1001 = { firmwareVersion: () => "test" };
     const config = readHaConfig();
-    expect(config.entityMap?.lights.remote).toBe("light.example_main");
-    expect(config.weatherEntityId).toBe("weather.example_home");
-    expect(config.configError).toBe("");
-  });
-
-  test("fails closed when the map is invalid", () => {
-    globalWithNative.d1001 = {
-      firmwareVersion: () => "test",
-      haConfig: () => ({ baseUrl: "http://example.test", token: "local-test-token", entityMapJson: "not json" }),
-    };
-    const config = readHaConfig();
+    expect(config.baseUrl).toBe("");
+    expect(config.token).toBe("");
     expect(config.entityMap).toBeUndefined();
-    expect(config.configError).toContain("valid JSON");
   });
 });

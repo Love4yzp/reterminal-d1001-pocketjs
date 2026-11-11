@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "baseUrl": "http://home-assistant.example:8123",
+  "token": "replace-with-local-token",
+  "lightEntityId": "",
+  "weatherEntityId": "",
+  "entityMap": {
+    "version": 1,
+    "lights": { "remote": "light.example_main" },
+    "sensors": {
+      "temperature": "sensor.example_temperature",
+      "humidity": "sensor.example_humidity",
+      "reachy-agent": "sensor.example_reachy_agent",
+      "reachy-result": "sensor.example_reachy_result",
+      "arm-mode": "sensor.example_arm_mode"
+    },
+    "actions": {
+      "reachy-intro-retail": "input_button.example_reachy_intro_retail",
+      "reachy-intro-space": "input_button.example_reachy_intro_space",
+      "reachy-intro-emergency": "input_button.example_reachy_intro_emergency",
+      "reachy-stop": "input_button.example_reachy_stop",
+      "reachy-wake": "input_button.example_reachy_wake",
+      "reachy-lang-toggle": "input_button.example_reachy_lang_toggle"
+    },
+    "weather": "weather.example_home"
+  }
+}
