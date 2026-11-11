@@ -1,5 +1,5 @@
 // Pure mapping for the dimming page: HA brightness (0..255) <-> percent,
-// vertical slider geometry, swipe classification and the color presets.
+// vertical slider geometry, swipe classification and hue/saturation tracks.
 
 export function percentFromBrightness(brightness: number): number {
   return Math.min(100, Math.max(0, Math.round(brightness / 255 * 100)));
@@ -38,19 +38,12 @@ export function swipeDirection(dx: number, dy: number): -1 | 0 | 1 {
   return dx < 0 ? 1 : -1;
 }
 
-export interface ColorPreset {
-  hue: number;
-  saturation: number;
+/** Hue (0..359) at a touch x inside a horizontal track starting at `left`. */
+export function hueFromX(x: number, left: number, width: number): number {
+  return Math.round(Math.min(1, Math.max(0, (x - left) / width)) * 359);
 }
 
-// Design swatches #ffb74d, #fff3e0, #4fc3f7, #ba68c8 as HA hs_color values.
-export const COLOR_PRESETS: readonly [ColorPreset, ColorPreset, ColorPreset, ColorPreset] = [
-  { hue: 36, saturation: 70 },
-  { hue: 37, saturation: 12 },
-  { hue: 199, saturation: 68 },
-  { hue: 291, saturation: 48 },
-];
-
-export function activePreset(hue: number, saturation: number): number {
-  return COLOR_PRESETS.findIndex(preset => preset.hue === hue && preset.saturation === saturation);
+/** Saturation percent (0..100) at a touch x inside a horizontal track. */
+export function saturationFromX(x: number, left: number, width: number): number {
+  return clampPercent((x - left) / width * 100);
 }

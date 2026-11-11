@@ -3,8 +3,7 @@ import { createGesture } from "@pocketjs/framework/gesture";
 import type { NodeMirror } from "@pocketjs/framework/renderer";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { formatChineseDate, formatClock, timezoneLabel } from "../clock";
-import { abgr, hsvToRgb } from "../color";
-import { brightnessFromPercent, COLOR_PRESETS, percentFromBrightness, swipeDirection } from "../dimmer";
+import { brightnessFromPercent, percentFromBrightness, swipeDirection } from "../dimmer";
 import { lightInfo, lightStatusText, lightTone } from "../lights";
 import { availableLights, isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
 import type { NetworkInfo } from "../native";
@@ -16,7 +15,7 @@ import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
 import { ArmScreen } from "./arm-screen";
 import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
-import { BacklightSlider, VerticalSlider } from "./controls";
+import { BacklightSlider, ColorSlider, VerticalSlider } from "./controls";
 import { BulbChip, bulbIcon, Divider, Icon, Numerals, Pressable, Switch } from "./primitives";
 import { SensorDetailScreen } from "./sensors-screen";
 import { Pager, SensorCard } from "./showroom-cards";
@@ -306,14 +305,17 @@ function Dimmer(props: LandscapeProps & { lightId: LightId }) {
       >
         <Icon name={light().on && enabled() ? "power-page" : "power-secondary"} left={14} top={14} size={28} />
       </Pressable>
-      <For each={COLOR_PRESETS}>{(preset, index) => (
-        <Pressable
-          box={{ left: 360 + index() * 56, top: 320, width: 44, height: 44 }}
-          style={{ radius: 22, bgColor: abgr(hsvToRgb(preset.hue, preset.saturation / 100)) }}
-          onTap={() => props.onAction({ type: "set-color", lightId: props.lightId, hue: preset.hue, saturation: preset.saturation })}
-        />
-      )}</For>
-      <Text class="absolute text-2xs text-center" style={{ insetL: 330, insetT: 376, width: 290, textColor: theme.disabledText }}>上下拖动调亮度，左右滑动切换灯</Text>
+      <ColorSlider
+        kind="hue" label="色相" left={336} top={272} labelWidth={50} width={236}
+        hue={light().hue} saturation={light().saturation} enabled={enabled()}
+        onChange={(hue, saturation) => props.onAction({ type: "set-color", lightId: props.lightId, hue, saturation })}
+      />
+      <ColorSlider
+        kind="saturation" label="饱和度" left={336} top={320} labelWidth={50} width={236}
+        hue={light().hue} saturation={light().saturation} enabled={enabled()}
+        onChange={(hue, saturation) => props.onAction({ type: "set-color", lightId: props.lightId, hue, saturation })}
+      />
+      <Text class="absolute text-2xs text-center" style={{ insetL: 330, insetT: 376, width: 290, textColor: theme.disabledText }}>上下拖动调亮度，空白处左右滑动切换灯</Text>
     </View>
   );
 }

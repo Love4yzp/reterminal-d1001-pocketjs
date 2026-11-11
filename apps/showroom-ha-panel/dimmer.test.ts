@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { hsvToRgb } from "./color";
 import {
-  activePreset,
   brightnessFromPercent,
-  COLOR_PRESETS,
   dragPercent,
   fillHeight,
+  hueFromX,
   percentFromBrightness,
   percentFromY,
+  saturationFromX,
   swipeDirection,
 } from "./dimmer";
 
@@ -53,7 +52,7 @@ describe("vertical slider", () => {
   });
 });
 
-describe("swipes and presets", () => {
+describe("swipes and color tracks", () => {
   test("only a clear horizontal move counts as a swipe", () => {
     expect(swipeDirection(-80, 10)).toBe(1);
     expect(swipeDirection(80, 0)).toBe(-1);
@@ -61,13 +60,14 @@ describe("swipes and presets", () => {
     expect(swipeDirection(-80, -70)).toBe(0);
   });
 
-  test("presets match the design swatches", () => {
-    const swatches = [[0xff, 0xb7, 0x4d], [0xff, 0xf3, 0xe0], [0x4f, 0xc3, 0xf7], [0xba, 0x68, 0xc8]];
-    COLOR_PRESETS.forEach((preset, index) => {
-      const rgb = hsvToRgb(preset.hue, preset.saturation / 100, Math.max(...swatches[index]!) / 255);
-      rgb.forEach((channel, c) => expect(Math.abs(channel - swatches[index]![c]!)).toBeLessThanOrEqual(4));
-    });
-    expect(activePreset(199, 68)).toBe(2);
-    expect(activePreset(10, 10)).toBe(-1);
+  test("color tracks map touch x to continuous hue and saturation", () => {
+    expect(hueFromX(84, 84, 292)).toBe(0);
+    expect(hueFromX(230, 84, 292)).toBe(180);
+    expect(hueFromX(376, 84, 292)).toBe(359);
+    expect(hueFromX(20, 84, 292)).toBe(0);
+    expect(hueFromX(500, 84, 292)).toBe(359);
+    expect(saturationFromX(157, 84, 292)).toBe(25);
+    expect(saturationFromX(0, 84, 292)).toBe(0);
+    expect(saturationFromX(400, 84, 292)).toBe(100);
   });
 });

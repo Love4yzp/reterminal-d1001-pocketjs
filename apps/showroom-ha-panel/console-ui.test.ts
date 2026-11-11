@@ -31,7 +31,8 @@ describe("showroom console UI", () => {
     expect(main).not.toContain("LIGHT_OPTION_IDS");
     expect(shots).not.toContain('name: "dimmer-detail"');
     expect(shots).toContain('name: "dimmer-drag"');
-    expect(shots).toContain('name: "dimmer-preset"');
+    expect(shots).toContain('name: "dimmer-color"');
+    expect(shots).not.toContain('name: "dimmer-preset"');
     for (const name of ["brightness-25", "color-warm", "color-blue"]) expect(shots).not.toContain(`name: "${name}"`);
   });
 });

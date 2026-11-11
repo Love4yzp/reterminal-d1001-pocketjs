@@ -1,3 +1,5 @@
+import { hsvToRgb } from "../apps/showroom-ha-panel/color";
+import { hueFromX, saturationFromX } from "../apps/showroom-ha-panel/dimmer";
 import type { HaLightCommand } from "../apps/showroom-ha-panel/ha-request";
 import type { WorkerCommand } from "../apps/showroom-ha-panel/protocol";
 import { gestures, type Shot } from "./showroom-ha-panel-preview.ts";
@@ -32,6 +34,19 @@ function verifyLight(lightId: string, expected: HaLightCommand) {
   };
 }
 
+// The last command for the light must turn it on with the RGB of the hue and
+// saturation under the finger at the end of the two drags; no turn_off follows.
+function verifyColor(lightId: string, hue: number, saturation: number) {
+  return (commands: readonly WorkerCommand[]) => {
+    const matches = commands.filter(command => command.type === "entity-light" && command.lightId === lightId);
+    const last = matches.at(-1);
+    const expected = hsvToRgb(hue, saturation / 100);
+    if (!last || last.type !== "entity-light" || last.command?.on !== true ||
+        JSON.stringify(last.command?.rgbColor) !== JSON.stringify(expected))
+      throw new Error(`expected ${lightId} on with rgb ${JSON.stringify(expected)}; got ${JSON.stringify(matches)}`);
+  };
+}
+
 export const SHOTS: ShotSet = {
   connected: [
     { name: "home", tape: [] },
@@ -47,7 +62,11 @@ export const SHOTS: ShotSet = {
     { name: "dimmer", tape: hold(100, 140) },
     { name: "dimmer-drag", tape: [...hold(100, 140), ...drag(200, 390, 200, 270)] },
     { name: "dimmer-swipe", tape: [...hold(100, 140), ...drag(330, 450, 90, 450)] },
-    { name: "dimmer-preset", tape: [...hold(100, 140), ...tap(262, 500)] },
+    {
+      name: "dimmer-color",
+      tape: [...hold(100, 140), ...tap(328, 322), ...drag(100, 494, 230, 494), ...drag(300, 546, 157, 546)],
+      verify: verifyColor("remote", hueFromX(230, 84, 292), saturationFromX(157, 84, 292)),
+    },
     { name: "settings", tape: tap(350, 610) },
     { name: "settings-timeout", tape: [...tap(350, 610), ...tap(242, 199)] },
     { name: "settings-backlight", tape: [...tap(350, 610), ...drag(240, 100, 330, 100)] },
@@ -83,7 +102,11 @@ export const LANDSCAPE_SHOTS: ShotSet = {
     { name: "dimmer", tape: hold(160, 140) },
     { name: "dimmer-drag", tape: [...hold(160, 140), ...drag(240, 340, 240, 200)] },
     { name: "dimmer-swipe", tape: [...hold(160, 140), ...drag(500, 250, 100, 250)] },
-    { name: "dimmer-preset", tape: [...hold(160, 140), ...tap(494, 342)] },
+    {
+      name: "dimmer-color",
+      tape: [...hold(160, 140), ...tap(480, 230), ...drag(400, 290, 504, 290), ...drag(600, 338, 445, 338)],
+      verify: verifyColor("remote", hueFromX(504, 386, 236), saturationFromX(445, 386, 236)),
+    },
     { name: "settings", tape: tap(44, 315) },
     { name: "settings-timeout", tape: [...tap(44, 315), ...tap(170, 240)] },
     { name: "settings-backlight", tape: [...tap(44, 315), ...drag(240, 85, 330, 85)] },
