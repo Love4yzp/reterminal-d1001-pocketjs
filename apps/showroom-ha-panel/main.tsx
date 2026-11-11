@@ -52,7 +52,6 @@ import { ArmScreen } from "./ui/arm-screen";
 import { DimmerScreen } from "./ui/dimmer-screen";
 import { HomeScreen } from "./ui/home-screen";
 import { LandscapeScreen } from "./ui/landscape-screen";
-import { LightsScreen } from "./ui/lights-screen";
 import { NavBar } from "./ui/nav-bar";
 import { ProvisionScreen } from "./ui/provision-screen";
 import { SensorDetailScreen, SensorsScreen } from "./ui/sensors-screen";
@@ -144,7 +143,11 @@ function Panel() {
       changePage(event.target, event.direction);
       return;
     }
-    setRoute(navigate(route(), event));
+    // The showroom has one controllable light: the 灯光 tab opens its dimmer directly.
+    const next = event.type === "tab" && event.tab === "lights"
+      ? { type: "open-dimmer" as const, lightId: SHOWROOM.home.lights[0]! }
+      : event;
+    setRoute(navigate(route(), next));
   };
 
   const onHaAction = (actionId: string, confirmed: boolean) => {
@@ -315,8 +318,6 @@ function Panel() {
       );
     if (current.kind === "provision")
       return <ProvisionScreen topic={current.topic} onNav={onNav} />;
-    if (current.tab === "lights")
-      return <LightsScreen {...shared()} network={network()} page={lightPage()} onAction={dispatch} />;
     if (current.tab === "sensors")
       return <SensorsScreen {...shared()} network={network()} page={sensorPage()} />;
     if (current.tab === "settings")

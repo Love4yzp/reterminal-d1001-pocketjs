@@ -53,6 +53,10 @@ class SerialLanes {
 const LIGHT_RETRY_TICKS = 3_000;
 const SENSOR_RETRY_TICKS = 3_000;
 const ERROR_RETRY_TICKS = 300;
+// Wi-Fi usually gets its address a few seconds after the app starts; probe
+// again soon instead of leaving HA offline for a full error interval.
+const NO_ADDRESS_RETRY_TICKS = 20;
+const NO_ADDRESS = "the network has no address";
 const HEARTBEAT_TICKS = 3_000;
 const WEATHER_TICKS = 6_000;
 
@@ -149,8 +153,9 @@ export class HaEngine {
     } catch (error) {
       if (epoch !== this.epoch) return;
       this.connected = false;
-      this.heartbeatDue = this.tickCount + ERROR_RETRY_TICKS;
-      this.publishStatus(this.errorMessage(error), true);
+      const message = this.errorMessage(error);
+      this.heartbeatDue = this.tickCount + (message.includes(NO_ADDRESS) ? NO_ADDRESS_RETRY_TICKS : ERROR_RETRY_TICKS);
+      this.publishStatus(message, true);
     } finally {
       this.heartbeatInFlight = false;
     }

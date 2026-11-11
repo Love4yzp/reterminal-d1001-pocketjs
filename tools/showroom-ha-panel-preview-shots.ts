@@ -55,13 +55,10 @@ export const SHOTS: ShotSet = {
     { name: "reachy-stop", tape: tap(327, 374), verify: verifyAction("reachy-stop", false) },
     { name: "arm-unconfigured", tape: [...tap(100, 450), ...tap(110, 330)], verify: verifyNoArm },
     { name: "lights", tape: tap(150, 610) },
-    { name: "lights-switch", tape: [...tap(150, 610), ...tap(290, 160)] },
-    { name: "lights-row", tape: [...tap(150, 610), ...tap(100, 160)] },
     { name: "sensors", tape: tap(250, 610) },
     { name: "sensor-detail", tape: [...tap(250, 610), ...tap(100, 160)] },
     { name: "dimmer", tape: hold(100, 140) },
     { name: "dimmer-drag", tape: [...hold(100, 140), ...drag(200, 390, 200, 270)] },
-    { name: "dimmer-swipe", tape: [...hold(100, 140), ...drag(330, 450, 90, 450)] },
     {
       name: "dimmer-color",
       tape: [...hold(100, 140), ...tap(328, 322), ...drag(100, 494, 230, 494), ...drag(300, 546, 157, 546)],
@@ -76,7 +73,6 @@ export const SHOTS: ShotSet = {
     { name: "home", tape: [] },
     { name: "lights", tape: tap(150, 610) },
     { name: "sensors", tape: tap(250, 610) },
-    { name: "dimmer", tape: [...tap(150, 610), ...hold(100, 160)] },
     { name: "settings", tape: tap(350, 610) },
   ],
   noWeather: [
@@ -91,17 +87,14 @@ export const LANDSCAPE_SHOTS: ShotSet = {
   connected: [
     { name: "home", tape: [] },
     { name: "home-toggle", tape: tap(160, 140), verify: verifyLight("remote", { on: true }) },
-    { name: "reachy-retail", tape: tap(459, 106), verify: verifyAction("reachy-intro-retail", false) },
-    { name: "reachy-stop", tape: tap(559, 210), verify: verifyAction("reachy-stop", false) },
-    { name: "arm-unconfigured", tape: [...tap(450, 300), ...tap(400, 150)], verify: verifyNoArm },
+    { name: "reachy-retail", tape: tap(150, 325), verify: verifyAction("reachy-intro-retail", false) },
+    { name: "reachy-stop", tape: tap(350, 371), verify: verifyAction("reachy-stop", false) },
+    { name: "arm-unconfigured", tape: [...tap(500, 300), ...tap(400, 150)], verify: verifyNoArm },
     { name: "lights", tape: tap(44, 155) },
-    { name: "lights-switch", tape: [...tap(44, 155), ...tap(300, 155)] },
-    { name: "lights-row", tape: [...tap(44, 155), ...tap(150, 150)] },
     { name: "sensors", tape: tap(44, 230) },
     { name: "sensor-detail", tape: [...tap(44, 230), ...tap(150, 150)] },
     { name: "dimmer", tape: hold(160, 140) },
     { name: "dimmer-drag", tape: [...hold(160, 140), ...drag(240, 340, 240, 200)] },
-    { name: "dimmer-swipe", tape: [...hold(160, 140), ...drag(500, 250, 100, 250)] },
     {
       name: "dimmer-color",
       tape: [...hold(160, 140), ...tap(480, 230), ...drag(400, 290, 504, 290), ...drag(600, 338, 445, 338)],
@@ -117,13 +110,12 @@ export const LANDSCAPE_SHOTS: ShotSet = {
     { name: "home", tape: [] },
     { name: "lights", tape: tap(44, 155) },
     { name: "sensors", tape: tap(44, 230) },
-    { name: "dimmer", tape: [...tap(44, 155), ...hold(150, 150)] },
     { name: "settings", tape: tap(44, 315) },
   ],
   noWeather: [
     { name: "home", tape: [] },
   ],
   arm: [
-    { name: "arm-hold-confirm", tape: [...tap(450, 300), ...tap(400, 150), ...hold(400, 150)], verify: verifyAction("arm-gravity", true) },
+    { name: "arm-hold-confirm", tape: [...tap(500, 300), ...tap(400, 150), ...hold(400, 150)], verify: verifyAction("arm-gravity", true) },
   ],
 };
