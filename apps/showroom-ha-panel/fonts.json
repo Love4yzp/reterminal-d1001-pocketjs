@@ -1,0 +1,4 @@
+{
+  "fallback": ["fonts/D1001SansSC-Regular.otf"],
+  "characterFiles": ["fonts/characters.txt"]
+}

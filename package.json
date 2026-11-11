@@ -12,7 +12,10 @@
     "pocket": "bun third_party/pocketjs/tools/pocket.ts",
     "app:push": "bun tools/app-push.ts",
     "fonts": "bun tools/ha-panel-fonts.ts",
-    "preview": "bun tools/ha-panel-preview.ts"
+    "preview": "bun tools/ha-panel-preview.ts",
+    "showroom:fonts": "bun apps/showroom-ha-panel/fonts/tool.ts",
+    "showroom:preview": "bun tools/showroom-ha-panel-preview.ts",
+    "showroom:mock-ha": "bun tools/mock-showroom-ha.ts"
   },
   "dependencies": {
     "@pocketjs/framework": "workspace:*",
