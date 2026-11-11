@@ -88,6 +88,7 @@ function Panel() {
   const pendingHa: Record<LightId, { light: LightState; command: HaLightCommand; seq: number; sendAt: number }> = {};
   const haSequences: Record<LightId, number> = {};
   const actionRuns: Record<string, number> = {};
+  const actionFeedbackUntil: Record<string, number> = {};
   let selftestSent = false;
   let lastHaError = "";
 
@@ -155,14 +156,16 @@ function Panel() {
 
   const onHaAction = (actionId: string, confirmed: boolean) => {
     const definition = showroomAction(actionId);
-    if (!definition || (definition.requiresHold && !confirmed) || !configured ||
-        !state().haConnected || !isActionConfigured(actionId)) return;
+    if (!definition || !configured || !state().haConnected || !isActionConfigured(actionId)) return;
+    delete actionFeedbackUntil[actionId];
     const runId = (actionRuns[actionId] ?? 0) + 1;
     actionRuns[actionId] = runId;
     if (publishCommand({ type: "action", actionId, runId, confirmed }))
       dispatch({ type: "action-result", actionId, status: "pending" });
-    else
+    else {
       dispatch({ type: "action-result", actionId, status: "failed", error: "HA command queue is full" });
+      if (definition.group === "arm") actionFeedbackUntil[actionId] = frame + 60;
+    }
   };
 
   const rotate = (landscape: boolean) => {
@@ -264,11 +267,19 @@ function Panel() {
           error: event.error,
         }, true);
       } else if (event.type === "action-result") {
-        if (actionRuns[event.actionId] === event.runId)
+        if (actionRuns[event.actionId] === event.runId) {
           dispatch({ type: "action-result", actionId: event.actionId, status: event.status, error: event.error }, true);
+          if (showroomAction(event.actionId)?.group === "arm") actionFeedbackUntil[event.actionId] = frame + 60;
+        }
       } else if (event.type === "weather") {
         dispatch({ type: "weather", weather: event.weather }, true);
       }
+    }
+
+    for (const [actionId, until] of Object.entries(actionFeedbackUntil)) {
+      if (frame < until) continue;
+      delete actionFeedbackUntil[actionId];
+      dispatch({ type: "action-result", actionId, status: "idle" }, true);
     }
 
     for (const [lightId, pending] of Object.entries(pendingHa)) {

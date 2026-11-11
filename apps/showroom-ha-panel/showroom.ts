@@ -30,7 +30,6 @@ export interface ShowroomAction {
   group: "reachy" | "arm";
   /** Public example only; production commands require the local entityMap override. */
   entityId?: string;
-  requiresHold?: boolean;
 }
 
 export interface ShowroomConfig {
@@ -136,8 +135,8 @@ export const SHOWROOM: ShowroomConfig = {
       key: "reachy-lang-toggle", name: "中英切换", group: "reachy",
       entityId: "input_button.example_reachy_lang_toggle",
     },
-    { key: "arm-gravity", name: "重力补偿", group: "arm", requiresHold: true },
-    { key: "arm-playback", name: "联动表演", group: "arm", requiresHold: true },
+    { key: "arm-gravity", name: "重力补偿", group: "arm" },
+    { key: "arm-playback", name: "动作回放", group: "arm" },
   ],
 };
 
@@ -219,10 +218,9 @@ export function validateShowroomConfig(config: ShowroomConfig): string[] {
       errors.push(`sensors.${sensor.key} invalid staleAfterSeconds`);
   }
   for (const action of config.actions) {
-    if (action.entityId !== undefined && !/^input_button\.[a-z0-9_]+$/.test(action.entityId))
-      errors.push(`actions.${action.key} invalid input_button entityId`);
-    if (action.requiresHold && action.group !== "arm")
-      errors.push(`actions.${action.key} hold confirmation is only for arm actions`);
+    const domain = action.group === "arm" ? /^(?:script\.keymesh_dispatch|input_button\.[a-z0-9_]+)$/ : /^input_button\.[a-z0-9_]+$/;
+    if (action.entityId !== undefined && !domain.test(action.entityId))
+      errors.push(`actions.${action.key} invalid ${action.group === "arm" ? "script" : "input_button"} entityId`);
   }
   return errors;
 }
@@ -270,7 +268,10 @@ export function parseShowroomEntityMap(text: string, config: ShowroomConfig = SH
     light.key, /^(light|edidt)\.[a-z0-9_]+$/,
   ])));
   readEntries("sensors", new Map(config.sensors.map(sensor => [sensor.key, /^sensor\.[a-z0-9_]+$/])));
-  readEntries("actions", new Map(config.actions.map(action => [action.key, /^input_button\.[a-z0-9_]+$/])));
+  readEntries("actions", new Map(config.actions.map(action => [
+    action.key,
+    action.group === "arm" ? /^(?:script\.keymesh_dispatch|input_button\.[a-z0-9_]+)$/ : /^input_button\.[a-z0-9_]+$/,
+  ])));
   if (value.weather !== undefined) {
     if (typeof value.weather !== "string" || !/^weather\.[a-z0-9_]+$/.test(value.weather))
       throw new Error("entityMap.weather invalid entityId");

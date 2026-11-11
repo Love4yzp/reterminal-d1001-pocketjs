@@ -57,14 +57,15 @@ export function ActionButton(props: {
   onHaAction(actionId: string, confirmed: boolean): void;
 }) {
   const action = () => showroomAction(props.actionId)!;
-  const enabled = () => props.configured && props.state.haConnected;
   const runStatus = () => props.state.actionRuns[props.actionId] ?? "idle";
+  const enabled = () => props.configured && props.state.haConnected &&
+    (action().group !== "arm" || runStatus() === "idle");
   const status = () => !props.configured
     ? "未配置"
     : !props.state.haConnected
       ? "离线"
-      : action().requiresHold && runStatus() === "idle"
-        ? "长按确认"
+      : action().group === "arm" && runStatus() === "accepted"
+        ? "已发送"
         : actionStatusText(runStatus());
   const stop = () => props.actionId === "reachy-stop";
   const background = () => stop() ? theme.dangerChip : runStatus() === "pending" ? theme.primaryChip : theme.secondaryBackground;
@@ -72,10 +73,10 @@ export function ActionButton(props: {
     <Pressable
       box={props.box}
       style={{ radius: 10, bgColor: background() }}
-      onTap={action().requiresHold ? undefined : () => {
-        if (enabled()) props.onHaAction(props.actionId, false);
+      onTap={() => {
+        if (enabled()) props.onHaAction(props.actionId, action().group === "arm");
       }}
-      onLongPress={action().requiresHold ? () => {
+      onLongPress={action().group === "arm" ? () => {
         if (enabled()) props.onHaAction(props.actionId, true);
       } : undefined}
     >
@@ -90,6 +91,32 @@ export function ActionButton(props: {
           {status()}
         </Text>
       ) : null}
+    </Pressable>
+  );
+}
+
+export function ArmControlCard(props: {
+  box: Box;
+  onNav(event: NavEvent): void;
+}) {
+  return (
+    <Pressable
+      box={props.box}
+      style={{ radius: 12, bgColor: theme.card }}
+      onTap={() => props.onNav({ type: "open-arm" })}
+    >
+      <Text class="absolute text-sm font-bold" style={{ insetL: 12, insetT: 14, width: props.box.width - 24, textColor: theme.text }}>
+        机械臂操作
+      </Text>
+      <Text class="absolute text-xs" style={{ insetL: 12, insetT: 58, width: props.box.width - 24, textColor: theme.text }}>
+        重力补偿
+      </Text>
+      <Text class="absolute text-xs" style={{ insetL: 12, insetT: 88, width: props.box.width - 24, textColor: theme.text }}>
+        动作回放
+      </Text>
+      <Text class="absolute text-2xs" style={{ insetL: 12, insetT: props.box.height - 36, width: props.box.width - 24, textColor: theme.primary }}>
+        点击操作
+      </Text>
     </Pressable>
   );
 }

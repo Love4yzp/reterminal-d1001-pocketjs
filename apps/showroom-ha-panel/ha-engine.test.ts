@@ -276,28 +276,65 @@ describe("production HA engine", () => {
     expect(JSON.parse(services.at(-1)!.request.body!)).toMatchObject({ entity_id: "light.legacy" });
   });
 
-  test("never executes unconfigured or unconfirmed arm actions", async () => {
+  test("never executes an unconfigured arm action", async () => {
     const services: { request: HttpRequest }[] = [];
     const events: WorkerEvent[] = [];
     const engine = new HaEngine(immediateExecutor({}, services), event => events.push(event));
     engine.setConfig(config(true, false));
     await connected(engine);
-    await engine.command({ type: "action", actionId: "arm-gravity", runId: 1, confirmed: true });
+    await engine.command({ type: "action", actionId: "arm-gravity", runId: 1 });
     expect(services).toHaveLength(0);
     expect(events).toContainEqual(expect.objectContaining({
       type: "action-result", actionId: "arm-gravity", status: "failed", error: "action entity is not configured",
     }));
+  });
 
+  test("fails closed for a legacy arm input_button mapping", async () => {
+    const services: { request: HttpRequest }[] = [];
+    const events: WorkerEvent[] = [];
+    const engine = new HaEngine(immediateExecutor({}, services), event => events.push(event));
     engine.setConfig(config());
     await connected(engine);
-    await engine.command({ type: "action", actionId: "arm-gravity", runId: 2 });
+    await engine.command({ type: "action", actionId: "arm-gravity", runId: 1, confirmed: true });
     expect(services).toHaveLength(0);
     expect(events).toContainEqual(expect.objectContaining({
-      type: "action-result", actionId: "arm-gravity", status: "failed", error: "hold confirmation is required",
+      type: "action-result", actionId: "arm-gravity", status: "failed", error: "arm actions require script.keymesh_dispatch",
     }));
+  });
 
-    await engine.command({ type: "action", actionId: "arm-gravity", runId: 3, confirmed: true });
-    expect(services).toHaveLength(1);
-    expect(JSON.parse(services[0]!.request.body!)).toEqual({ entity_id: "input_button.example_arm_gravity" });
+  test("runs both arm scripts on a tap and reports acceptance", async () => {
+    const services: { request: HttpRequest }[] = [];
+    const events: WorkerEvent[] = [];
+    const engine = new HaEngine(immediateExecutor({}, services), event => events.push(event));
+    const panelConfig = config(true, false);
+    panelConfig.entityMap!.actions["arm-gravity"] = "script.keymesh_dispatch";
+    panelConfig.entityMap!.actions["arm-playback"] = "script.keymesh_dispatch";
+    engine.setConfig(panelConfig);
+    await connected(engine);
+
+    await engine.command({ type: "action", actionId: "arm-gravity", runId: 1 });
+    await engine.command({ type: "action", actionId: "arm-playback", runId: 2 });
+
+    expect(services.map(service => service.request.url)).toEqual([
+      "http://example.test:8123/api/services/script/turn_on",
+      "http://example.test:8123/api/services/script/turn_on",
+    ]);
+    expect(services.map(service => JSON.parse(service.request.body!))).toEqual([
+      {
+        entity_id: "script.keymesh_dispatch",
+        host: "hall-win-3bbkv8f",
+        task: "arm-gravity-start",
+        confirm: true,
+      },
+      {
+        entity_id: "script.keymesh_dispatch",
+        host: "hall-win-3bbkv8f",
+        task: "arm-play",
+        action: "act_db914a65db",
+        confirm: true,
+      },
+    ]);
+    expect(events).toContainEqual({ type: "action-result", actionId: "arm-gravity", runId: 1, status: "accepted", error: "" });
+    expect(events).toContainEqual({ type: "action-result", actionId: "arm-playback", runId: 2, status: "accepted", error: "" });
   });
 });

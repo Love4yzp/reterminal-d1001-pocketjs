@@ -12,7 +12,7 @@ import { haStatus } from "../status";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
 import { ArmScreen } from "./arm-screen";
-import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
+import { ActionButton, ArmControlCard, MainLightControl } from "./console-controls";
 import { BacklightSlider, ColorWheel, ModeButton, VerticalSlider } from "./controls";
 import { Divider, Icon, Numerals, Pressable } from "./primitives";
 import { SensorDetailScreen } from "./sensors-screen";
@@ -120,8 +120,7 @@ function Home(props: LandscapeProps) {
           onHaAction={props.onHaAction}
         />
       )}</For>
-      <TelemetryPanel
-        state={props.state}
+      <ArmControlCard
         box={{ left: 320, top: 198, width: 216, height: 192 }}
         onNav={props.onNav}
       />

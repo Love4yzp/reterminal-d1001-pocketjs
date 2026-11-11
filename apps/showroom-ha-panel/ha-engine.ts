@@ -1,5 +1,6 @@
 import {
   createApiProbeRequest,
+  createArmScriptRequest,
   createGetEntityStateRequest,
   createGetWeatherRequest,
   createLightCommandRequest,
@@ -110,7 +111,7 @@ export class HaEngine {
   }
 
   command(command: WorkerCommand): Promise<void> {
-    if (command.type === "action") return this.action(command.actionId, command.runId, command.confirmed === true);
+    if (command.type === "action") return this.action(command.actionId, command.runId);
     if (command.type === "light") {
       const lightId = "remote";
       const seq = (this.revisions[lightId] ?? 0) + 1;
@@ -317,7 +318,7 @@ export class HaEngine {
     });
   }
 
-  private action(actionId: string, runId: number, confirmed: boolean): Promise<void> {
+  private action(actionId: string, runId: number): Promise<void> {
     const config = this.config;
     if (!config || !this.configured) return Promise.resolve();
     if ((this.actionRuns[actionId] ?? 0) > runId) return Promise.resolve();
@@ -328,14 +329,12 @@ export class HaEngine {
       this.publishActionResult(actionId, runId, "failed", "action entity is not configured");
       return Promise.resolve();
     }
-    if (definition.requiresHold && !confirmed) {
-      this.publishActionResult(actionId, runId, "failed", "hold confirmation is required");
-      return Promise.resolve();
-    }
     const epoch = this.epoch;
     return this.lanes.run("command", async () => {
       try {
-        await this.execute(createPressButtonRequest(config, entityId));
+        await this.execute(definition.group === "arm"
+          ? createArmScriptRequest(config, entityId, actionId)
+          : createPressButtonRequest(config, entityId));
         if (epoch === this.epoch && this.actionRuns[actionId] === runId)
           this.publishActionResult(actionId, runId, "accepted", "");
       } catch (error) {

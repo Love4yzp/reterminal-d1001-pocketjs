@@ -73,18 +73,26 @@ describe("ignored showroom entity binding", () => {
     }
   });
 
-  test("accepts protected arm mappings without shipping a fake default button", () => {
+  test("binds both arm modes to the shared KeyMesh script without a fake default", () => {
     const armActions = SHOWROOM.actions.filter(action => action.group === "arm");
-    expect(armActions).toHaveLength(2);
+    expect(armActions.map(action => action.name)).toEqual(["重力补偿", "动作回放"]);
     for (const action of armActions) {
-      expect(action.requiresHold).toBe(true);
       expect(action.entityId).toBeUndefined();
       expect(SHOWROOM_ENTITY_MAP_EXAMPLE.actions[action.key]).toBeUndefined();
     }
     const mapped = parseShowroomEntityMap(JSON.stringify({
       version: 1,
+      actions: {
+        "arm-gravity": "script.keymesh_dispatch",
+        "arm-playback": "script.keymesh_dispatch",
+      },
+    }));
+    expect(mapped?.actions["arm-gravity"]).toBe("script.keymesh_dispatch");
+    expect(mapped?.actions["arm-playback"]).toBe("script.keymesh_dispatch");
+    const legacy = parseShowroomEntityMap(JSON.stringify({
+      version: 1,
       actions: { "arm-gravity": "input_button.example_arm_gravity" },
     }));
-    expect(mapped?.actions["arm-gravity"]).toBe("input_button.example_arm_gravity");
+    expect(legacy?.actions["arm-gravity"]).toBe("input_button.example_arm_gravity");
   });
 });
