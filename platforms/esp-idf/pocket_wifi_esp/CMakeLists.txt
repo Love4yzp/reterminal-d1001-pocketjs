@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "src/d1001_wifi.c"
+    SRCS "src/d1001_wifi.c" "src/wifi_stability.c"
     INCLUDE_DIRS "include"
     REQUIRES espressif__quickjs-ng
     PRIV_REQUIRES

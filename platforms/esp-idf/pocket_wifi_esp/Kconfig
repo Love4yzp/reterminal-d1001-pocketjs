@@ -31,4 +31,15 @@ config D1001_WIFI_PASSWORD_2
         Keep the password in an ignored sdkconfig.local or another local
         configuration source. It is never logged by the D1001 Wi-Fi component.
 
+config D1001_WIFI_WEAK_RSSI
+    int "Weak-link RSSI threshold in dBm"
+    default -82
+    range -100 -30
+    depends on IDF_TARGET_ESP32P4
+    help
+        With two or more presets configured, a station that stays associated
+        below this RSSI for 60 seconds rotates to the next preset. A successful
+        weak-link rotation blocks another weak-link rotation for five minutes;
+        join failures still fall back to the next preset after three attempts.
+
 endmenu
