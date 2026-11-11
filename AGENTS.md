@@ -6,6 +6,15 @@
 - Use Seeed's reTerminal-D1001 repository only as a hardware reference. Keep this firmware independent of its BSP, components and LVGL.
 - Use `/usr/bin/mise` for Bun, the existing `rustup` for Rust and the ESP-IDF checkout under `~/esp`; system package installation and power-policy changes are out of scope.
 
+## Firmware or app
+
+Classify every task before editing; a task that needs both is split into a firmware commit and an app commit, firmware first.
+
+- Firmware (`platforms/esp-idf/*`, `programs/reterminal-d1001`, `pocket.host.json`, `partitions.csv`): board, display, touch, button, storage and Wi-Fi drivers; network policy such as preset lists, failure, instability or weak-RSSI rotation and reconnect backoff; native capabilities exposed to apps. Policy that must keep working when the guest is stopped or hung belongs here. Deploy by build and flash.
+- App (`apps/<app>/` and its asset/preview tools): screens, layout, gestures, HA entity mapping and commands, HA reconnect timing, text and fonts. An app only reads status and calls registered capabilities; it never holds Wi-Fi credentials or decides network rotation. Deploy with `app:push`, which writes only `apps`.
+- Device data (`storage`/`data.fs`, ignored `sdkconfig.local`): HA URL, token and entity map via `tools/showroom-ha-panel-provision.ts`; Wi-Fi SSIDs and passwords via Kconfig. Neither is committed, and neither a flash nor an app push may overwrite `storage`.
+- If an app feature needs a capability the firmware does not register, stop the app work, add the capability as a firmware milestone, then return; record it as a follow-up if firmware is out of scope.
+
 ## Implementation
 
 - Board initialization returns handles and owns no tasks. M1 covers the panel and backlight; M2 adds PKAP packages; GSL3670 touch belongs to M3.
