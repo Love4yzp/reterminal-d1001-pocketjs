@@ -7,7 +7,8 @@ import type { NavEvent } from "../navigation";
 import { SHOWROOM } from "../showroom";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
-import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
+import { ActionButton, MainLightControl } from "./console-controls";
+import { HomeArmActions } from "./home-arm-actions";
 import { Icon, Numerals } from "./primitives";
 import { SensorCard } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
@@ -60,7 +61,7 @@ export function HomeScreen(props: HomeProps) {
           onNav={props.onNav}
         />
       )}</For>
-      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 274, width: 190, textColor: theme.text }}>Reachy 快捷操作</Text>
+      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 274, width: 190, textColor: theme.text }}>快捷指令</Text>
       <Text class="absolute text-2xs text-right" style={{ insetL: 224, insetT: 278, width: 160, textColor: theme.secondaryText }}>由 HA 执行</Text>
       <For each={SHOWROOM.home.actions}>{(actionId, index) => (
         <ActionButton
@@ -71,10 +72,11 @@ export function HomeScreen(props: HomeProps) {
           onHaAction={props.onHaAction}
         />
       )}</For>
-      <TelemetryPanel
+      <HomeArmActions
         state={props.state}
-        box={{ left: 16, top: 406, width: 368, height: 96 }}
-        onNav={props.onNav}
+        box={{ left: 16, top: 406, width: 368, height: 92 }}
+        actionConfigured={props.actionConfigured}
+        onHaAction={props.onHaAction}
       />
     </View>
   );

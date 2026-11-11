@@ -2,7 +2,7 @@
 
 App id: `dev.pocket-nexus.d1001.showroom-ha-panel`.
 
-The density-2 app provides a 400x640 portrait console and a genuinely rearranged 640x400 landscape console. Home contains the main HA light, temperature/humidity/weather, six Reachy actions and live telemetry. The `灯光` tab opens the main light's dimmer directly; read-only environment pages and settings remain available. There are no scene cards, local scene presets, IMU cards or invented weather readings.
+The density-2 app provides a 400x640 portrait console and a genuinely rearranged 640x400 landscape console. Home contains the main HA light, temperature/humidity/weather and six Reachy actions. Both orientations place the two arm actions directly on home; there is no arm detail route. The `灯光` tab opens the main light's dimmer directly; read-only environment pages and settings remain available. There are no scene cards, local scene presets, IMU cards or invented weather readings.
 
 ## Run and test
 
@@ -34,9 +34,11 @@ The six Reachy slots are:
 - `reachy-lang-toggle`: 中英切换
 - `reachy-stop`: 停止 / STOP
 
-Each maps to a local `input_button` and calls `/api/services/input_button/press`. HTTP success means **已受理**, not that Reachy finished speaking or moving. The separate `reachy-result` sensor supplies the latest execution result. `reachy-agent` supplies online state and `arm-mode` supplies `idle`, `playback` or `gravity`. Dynamic result text is reduced to known labels or bounded ASCII so it cannot bypass the baked font coverage.
+Each maps to a local `input_button` and calls `/api/services/input_button/press`. HTTP success means **已受理**, not that Reachy finished speaking or moving. The panel does not show Reachy Mini agent/result state; the other KeyMesh commands already drive its automatic motion.
 
-The arm page exposes telemetry by default. `arm-gravity` and `arm-playback` have no public entity mapping and their buttons are hidden until local configuration supplies protected `input_button` entities. Configured actions require a touch long-press; the worker rejects a missing mapping or missing confirmation again. No KeyMesh/MQTT writer exists in this app. The always-visible STOP calls only the existing Reachy stop button; it does not claim to stop or home the arm.
+Both home layouts directly show the two tap buttons, `arm-gravity` and `arm-playback`, with transient send feedback and no MQTT state display. Animated dots replace the buttons until their mappings and the HA connection are ready; no `未配置` label appears in the arm area. Landscape stacks playback above gravity; portrait places gravity beside playback. Both local action keys map to the shared `script.keymesh_dispatch` and call `/api/services/script/turn_on` with `host: hall-win-3bbkv8f` and `confirm: true`. Gravity uses `task: arm-gravity-start`; playback uses `task: arm-play` and `action: act_db914a65db` (机械臂跳舞2). Legacy arm `input_button` mappings still parse, but the worker rejects them instead of sending an unsafe command. No KeyMesh/MQTT writer exists in this app.
+
+Live rollout follow-up: the current hall `script.keymesh_dispatch` template only forwards `text` and `start`; it must also accept and forward `action` and `confirm` before these arm requests can execute. No live HA configuration was changed.
 
 The virtual desk/shelf lamps and onboard RGB remain in the model for the mock and self-test paths, but this console exposes only the showroom main light's dimmer. They are not local scenes and do not appear as fake HA actions on home.
 
@@ -44,7 +46,7 @@ The virtual desk/shelf lamps and onboard RGB remain in the model for the mock an
 
 The committed package contains no HA URL, token or local entity bindings. At startup it reads `ha-panel.json` only from this app slot's `data.fs`, which is backed by the D1001 internal `storage` partition. It does not fall back to firmware Kconfig credentials or a build-time source override. A missing or invalid file disables HA without exposing its contents.
 
-`seed.example.json` documents the versioned file format. The map contains `lights`, `sensors`, `actions` and optional `weather`; unknown display keys, credentials inside the map and wrong entity domains are rejected. `light.*` and the showroom's `edidt.*` light-compatible entity are accepted; actions accept only `input_button.*`. Arm mappings remain optional.
+`seed.example.json` documents the versioned file format. The map contains `lights`, `sensors`, `actions` and optional `weather`; unknown display keys, credentials inside the map and wrong entity domains are rejected. `light.*` and the showroom's `edidt.*` light-compatible entity are accepted. Reachy actions accept `input_button.*`; arm actions use `script.keymesh_dispatch`, with legacy `input_button.*` accepted only to fail closed at execution. Arm mappings remain optional device data. Legacy Reachy/arm telemetry sensor keys are accepted and discarded without polling.
 
 Production provisioning uses `tools/showroom-ha-panel-provision.ts` in two phases. The private seed and all generated seed artifacts must be mode-600 files inside a mode-700 child directory of `/dev/shm`. The seed app writes and reads back the slot-local file. The finish phase requires that exact readback marker, compiles the normal tokenless package before erasing, erases only the complete `apps@0x510000+0x700000` region, installs the normal package, reads back all 7 MiB and rejects raw or UTF-16 token bytes. `storage@0xc10000` is preserved. The tool refuses `/dev/shm` itself, non-tmpfs staging, public secret files, an incompatible esptool Python environment, incomplete readback and unowned cleanup directories. Set `D1001_PYTHON` when the compatible esptool module is not provided by `python` on `PATH`.
 
@@ -56,11 +58,11 @@ The UI sends basic configuration and the entity map through separate 1024-byte `
 
 The engine has independent poll and command lanes. Each lane is serial: a blocked poll does not block a command, while commands execute in queue order. Poll snapshots from an older light revision are discarded. A per-light count suppresses replacement polls until all queued writes for that light finish; the last write triggers an immediate fresh poll. Light/sensor polls are scheduled every 3000 worker ticks, errors retry after 300 ticks, and weather polls every 6000 ticks; the worker tick is 100 ms.
 
-Live sensors and telemetry expire after their configured `staleAfterSeconds`, using RTC time stamped on arrival. A disconnect retains the last value as `离线` and disables writes. Reconnection marks readings pending until fresh data arrives. Light snapshots have equivalent stale handling. Mock readings remain marked `示例` and do not expire. Weather is shown only from a live HA weather entity. Without `entityMap.weather`, the legacy template API discovers the first `weather.*` entity; template access depends on token permissions.
+Live environment sensors expire after their configured `staleAfterSeconds`, using RTC time stamped on arrival. A disconnect retains the last value as `离线` and disables writes. Reconnection marks readings pending until fresh data arrives. Light snapshots have equivalent stale handling. Mock readings remain marked `示例` and do not expire. Weather is shown only from a live HA weather entity. Without `entityMap.weather`, the legacy template API discovers the first `weather.*` entity; template access depends on token permissions.
 
 ## Touch and native behavior
 
-The app responds only to touch gestures: taps activate ordinary actions, long-press opens the main-light dimmer or confirms protected arm actions, and paging uses the on-screen touch controls. GPIO3/CIRCLE remains entirely native-owned for rotation, screen timeout/wake-swallow and restart arbitration; the app does not map it to panel activation.
+The app responds only to touch gestures: taps activate actions, long-press opens the main-light dimmer, and paging uses the on-screen touch controls. Arm buttons ignore further gestures while a request is pending and for the two-second result feedback. GPIO3/CIRCLE remains entirely native-owned for rotation, screen timeout/wake-swallow and restart arbitration; the app does not map it to panel activation.
 
 The portrait settings `横屏` and landscape `返回竖屏` controls use the existing runtime restart and synchronized touch mapping. Session state preserves lights, the current route and screen timeout. Backlight, auto screen-off, RTC/SNTP, timezone and firmware-version behavior are unchanged. The Wi-Fi/HA pages are status-only and do not write credentials.
 
@@ -76,7 +78,7 @@ bun run showroom:preview                               # every portrait shot
 bun run showroom:preview --all                         # every shot in both orientations
 ```
 
-The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/showroom-ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/showroom-dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. The shot tape covers home, the direct dimmer, sensors, continuous dimming, light swiping, Reachy actions, the hidden unconfigured arm actions and a confirmed protected arm action, offline state, settings and the connection-status page with its preset switch. `dimmer-drag` drags the brightness pill, and `dimmer-color` drags the hue/saturation wheel in each orientation and checks that the last light command turns the light on with the RGB under the finger. Paging and per-entity `unavailable` have unit tests but no preview shot. Offline, no-weather and protected-arm variants carry filename prefixes.
+The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/showroom-ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/showroom-dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. The shot tape covers home, the direct dimmer, sensors, continuous dimming, light swiping, Reachy actions, disabled unconfigured arm buttons and transient arm send feedback, offline state, settings and the connection-status page with its preset switch. `dimmer-drag` drags the brightness pill, and `dimmer-color` drags the hue/saturation wheel in each orientation and checks that the last light command turns the light on with the RGB under the finger. Paging and per-entity `unavailable` have unit tests but no preview shot. Offline, no-weather and protected-arm variants carry filename prefixes.
 
 A direct compile and extent check uses:
 
@@ -102,4 +104,4 @@ Run the isolated mock on a host reachable from the device:
 MOCK_HA_TOKEN="replace-with-a-test-token" bun tools/mock-showroom-ha.ts
 ```
 
-It listens on `0.0.0.0:18123`, requires Bearer authentication and makes no outbound HA, KeyMesh or MQTT calls. It serves the public example lights, environment, weather and telemetry, and accepts light commands and the six button presses. Logs contain paths and whitelisted body fields, never Authorization headers or tokens. Its legacy sensor-post endpoints remain independent of this dashboard.
+It listens on `0.0.0.0:18123`, requires Bearer authentication and makes no outbound HA, KeyMesh or MQTT calls. It serves the public example lights, environment and weather, and accepts light commands and the six button presses. Logs contain paths and whitelisted body fields, never Authorization headers or tokens. Its legacy sensor-post endpoints remain independent of this dashboard.

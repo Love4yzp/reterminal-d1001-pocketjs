@@ -4,6 +4,7 @@ import type { NavEvent } from "../navigation";
 import { formatSensorValue, sensorStatusText, showroomSensor } from "../showroom";
 import { theme } from "../theme";
 import { Pressable, type Box } from "./primitives";
+import { LoadingDots } from "./loading-dots";
 
 export function SensorCard(props: {
   state: PanelState;
@@ -27,6 +28,7 @@ export function SensorCard(props: {
       <Text class={props.compact ? "absolute text-lg font-bold" : "absolute text-2xl font-bold"} style={{ insetL: 12, insetT: valueTop(), width: props.box.width - 24, textColor: theme.text }}>
         {`${formatSensorValue(sensor(), reading())}${reading().value === null ? "" : ` ${sensor().unit}`}`}
       </Text>
+      {reading().value === null ? <LoadingDots centerX={36} centerY={valueTop() + 14} /> : null}
       <Text class="absolute text-2xs" style={{ insetL: 12, insetT: props.box.height - 22, width: props.box.width - 24, textColor: reading().status === "live" ? theme.green : theme.disabledText }}>
         {sensorStatusText(reading(), props.state.sensorErrors[props.sensorId])}
       </Text>

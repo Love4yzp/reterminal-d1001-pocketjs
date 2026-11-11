@@ -25,6 +25,7 @@ describe("orientation session snapshot", () => {
     expect(decodeSession("not json")).toBeNull();
     expect(decodeSession('{"version":2}')).toBeNull();
     expect(decodeSession('{"version":1,"route":{"kind":"tab","tab":"bogus"}}')!.route).toEqual(INITIAL_ROUTE);
+    expect(decodeSession('{"version":1,"route":{"kind":"arm","from":"home"}}')!.route).toEqual(INITIAL_ROUTE);
   });
 
   test("clamps light values and ignores unknown settings", () => {

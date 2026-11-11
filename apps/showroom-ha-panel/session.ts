@@ -64,7 +64,6 @@ function readRoute(value: unknown): Route {
     return { kind: "dimmer", lightId: value.lightId, from: value.from };
   if (value.kind === "sensor" && isSensorId(value.sensorId))
     return { kind: "sensor", sensorId: value.sensorId, from: value.from };
-  if (value.kind === "arm") return { kind: "arm", from: value.from };
   if (value.kind === "provision" && typeof value.topic === "string" &&
       (TOPICS as readonly string[]).includes(value.topic))
     return { kind: "provision", topic: value.topic as ProvisionTopic, from: value.from };

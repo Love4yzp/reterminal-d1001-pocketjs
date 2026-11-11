@@ -121,6 +121,25 @@ export function createPressButtonRequest(config: HaConfig, entityId: string): Ht
   return postRequest(config, "/api/services/input_button/press", { entity_id: entityId });
 }
 
+export function createArmScriptRequest(config: HaConfig, entityId: string, actionId: string): HttpRequest {
+  if (entityId !== "script.keymesh_dispatch")
+    throw new Error("arm actions require script.keymesh_dispatch");
+  const command = {
+    entity_id: entityId,
+    host: "hall-win-3bbkv8f",
+    confirm: true,
+  };
+  if (actionId === "arm-gravity")
+    return postRequest(config, "/api/services/script/turn_on", { ...command, task: "arm-gravity-start" });
+  if (actionId === "arm-playback")
+    return postRequest(config, "/api/services/script/turn_on", {
+      ...command,
+      task: "arm-play",
+      action: "act_db914a65db",
+    });
+  throw new Error("unsupported arm action");
+}
+
 /**
  * Renders the first weather entity in the same JSON shape as /api/states/<id>,
  * or `null` when the instance has none. /api/template needs an admin token.

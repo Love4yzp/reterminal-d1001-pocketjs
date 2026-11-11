@@ -20,4 +20,4 @@ mise x uv -- uvx --from fonttools pyftsubset \
 
 `fonts.json` follows `third_party/pocketjs/docs/DYNAMIC_TEXT.md`, section “Packaged fonts and GPU pages”. The compiler packs these glyphs into the app's baked atlases; the original font is not loaded on the device. Declaring a scalar does not supply an outline missing from this OTF.
 
-Every active font slot receives the declared character set, so keep Chinese labels in the shared 10px, 12px and 14px regular/bold styles. Large clock and weather digits use Inter only. HA `friendly_name` and arbitrary dynamic CJK are not baked; telemetry uses known local labels or bounded ASCII. `bun run showroom:preview` and `app:push` fail if a text or glyph change makes the package outgrow the `apps` partition.
+Every active font slot receives the declared character set, so keep Chinese labels in the shared 10px, 12px and 14px regular/bold styles. Large clock and weather digits use Inter only. HA `friendly_name` and arbitrary dynamic CJK are not baked; action feedback uses fixed local labels. `bun run showroom:preview` and `app:push` fail if a text or glyph change makes the package outgrow the `apps` partition.

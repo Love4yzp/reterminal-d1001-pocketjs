@@ -20,8 +20,9 @@ export const LIGHT_INFO: Record<LightId, LightInfo> = {
   remote: { name: "展厅主灯", chip: "主灯", tag: "Home Assistant" },
 };
 
-export const UNAVAILABLE_TEXT = "未连接 HA";
-export const PENDING_TEXT = "待接入";
+/** Not-ready states render as LoadingDots, so they carry no text. */
+export const UNAVAILABLE_TEXT = "";
+export const PENDING_TEXT = "";
 
 export function lightInfo(state: PanelState, lightId: LightId): LightInfo {
   return state.lightInfo[lightId] ?? { name: lightId, chip: lightId, tag: "Home Assistant" };

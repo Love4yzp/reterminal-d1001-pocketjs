@@ -15,14 +15,12 @@ export type Route =
   | { kind: "tab"; tab: Tab }
   | { kind: "dimmer"; lightId: LightId; from: Tab }
   | { kind: "sensor"; sensorId: string; from: Tab }
-  | { kind: "arm"; from: Tab }
   | { kind: "provision"; topic: ProvisionTopic; from: Tab };
 
 export type NavEvent =
   | { type: "tab"; tab: Tab }
   | { type: "open-dimmer"; lightId: LightId }
   | { type: "open-sensor"; sensorId: string }
-  | { type: "open-arm" }
   | { type: "open-provision"; topic: ProvisionTopic }
   | { type: "cycle-light"; direction: -1 | 1; available: readonly LightId[]; order?: readonly LightId[] }
   | { type: "select-light"; lightId: LightId; available: readonly LightId[] }
@@ -59,8 +57,6 @@ export function navigate(route: Route, event: NavEvent): Route {
       return { kind: "dimmer", lightId: event.lightId, from: activeTab(route) };
     case "open-sensor":
       return { kind: "sensor", sensorId: event.sensorId, from: activeTab(route) };
-    case "open-arm":
-      return { kind: "arm", from: activeTab(route) };
     case "open-provision":
       return { kind: "provision", topic: event.topic, from: activeTab(route) };
     case "cycle-light": {

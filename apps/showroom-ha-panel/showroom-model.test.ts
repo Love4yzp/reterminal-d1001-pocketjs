@@ -84,21 +84,17 @@ describe("multi-entity front-end seam", () => {
     expect(offline.sensors.temperature?.value).toBe(23.4);
   });
 
-  test("telemetry freshness is independent and survives disconnect as offline", () => {
-    const live = reducePanel(createInitialPanelState(), {
+  test("does not create or accept Reachy and arm MQTT telemetry", () => {
+    const initial = createInitialPanelState();
+    expect(initial.sensorOrder).toEqual(["temperature", "humidity"]);
+    expect(initial.sensors).not.toHaveProperty("reachy-agent");
+    expect(initial.sensors).not.toHaveProperty("reachy-result");
+    expect(initial.sensors).not.toHaveProperty("arm-mode");
+    expect(reducePanel(initial, {
       type: "sensor",
-      sensorId: "reachy-agent",
-      reading: { value: "online", status: "live", updatedAt: 100 },
-    });
-    expect(live.sensorOrder).toEqual(["temperature", "humidity"]);
-    expect(live.telemetryOrder).toEqual(["reachy-agent", "reachy-result", "arm-mode"]);
-    expect(reducePanel(live, { type: "sensor-tick", nowSeconds: 190 })).toBe(live);
-    const stale = reducePanel(live, { type: "sensor-tick", nowSeconds: 191 });
-    expect(stale.sensors["reachy-agent"]?.status).toBe("stale");
-    const offline = reducePanel(stale, {
-      type: "ha", haConfigured: true, haConnected: false, haLightConfigured: true,
-    });
-    expect(offline.sensors["reachy-agent"]).toMatchObject({ value: "online", status: "offline", updatedAt: 100 });
+      sensorId: "arm-mode",
+      reading: { value: "gravity", status: "live", updatedAt: 100 },
+    })).toBe(initial);
   });
 
   test("mock readings remain explicitly marked as examples", () => {

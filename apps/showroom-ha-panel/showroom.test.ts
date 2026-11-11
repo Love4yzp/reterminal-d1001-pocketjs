@@ -90,12 +90,12 @@ describe("sensor and action presentation", () => {
 
   test("formats configured precision without inventing a value", () => {
     expect(formatSensorValue(sensor, reading(21.26))).toBe("21.3");
-    expect(formatSensorValue(sensor, reading(null, "pending"))).toBe("--");
+    expect(formatSensorValue(sensor, reading(null, "pending"))).toBe("");
     expect(formatSensorValue(sensor, reading("normal"))).toBe("normal");
   });
 
   test("distinguishes pending, mock, offline and unavailable states", () => {
-    expect(sensorStatusText(reading(null, "pending"))).toBe("待接入");
+    expect(sensorStatusText(reading(null, "pending"))).toBe("");
     expect(sensorStatusText(reading(20, "mock"))).toBe("示例");
     expect(sensorStatusText(reading(20, "offline"))).toBe("离线");
     expect(sensorStatusText(reading(20, "stale"))).toBe("过期");

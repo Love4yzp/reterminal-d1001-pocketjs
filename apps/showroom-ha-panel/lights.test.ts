@@ -4,11 +4,11 @@ import { lightColor, lightStatusText, lightTone } from "./lights";
 import { createInitialPanelState, reducePanel } from "./model";
 
 describe("light presentation", () => {
-  test("status text shows percent when on, 关 when off and 未连接 HA when unavailable", () => {
+  test("status text shows percent when on, 关 when off and nothing (loading dots) when unavailable", () => {
     const state = reducePanel(createInitialPanelState(), { type: "set-brightness", lightId: "desk", brightness: 204 });
     expect(lightStatusText(state, "desk")).toBe("开 80%");
     expect(lightStatusText(state, "shelf")).toBe("关");
-    expect(lightStatusText(state, "remote")).toBe("未连接 HA");
+    expect(lightStatusText(state, "remote")).toBe("");
   });
 
   test("light color carries hue and saturation in ABGR", () => {
