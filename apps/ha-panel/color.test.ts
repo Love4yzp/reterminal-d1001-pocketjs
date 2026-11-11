@@ -1,15 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyBrightness, abgr, hsvToRgb, rgbToHsv } from "./color";
-
-describe("rgbToHsv", () => {
-  test("reads HA RGB colors and greys without a hue", () => {
-    expect(rgbToHsv([255, 0, 0])).toEqual([0, 100]);
-    expect(rgbToHsv([0, 255, 0])).toEqual([120, 100]);
-    expect(rgbToHsv([0, 0, 255])).toEqual([240, 100]);
-    expect(rgbToHsv([128, 128, 128])).toEqual([0, 0]);
-  });
-});
+import { applyBrightness, abgr, hsvToRgb } from "./color";
 
 describe("hsvToRgb", () => {
   test("converts the three primary hue sectors", () => {

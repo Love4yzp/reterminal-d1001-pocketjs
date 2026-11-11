@@ -70,7 +70,6 @@ export function Numerals(props: { text: string; size: NumeralSize; left: number;
 export function Pressable(props: {
   box: Box;
   style?: Record<string, number>;
-  focused?: boolean;
   onTap?: () => void;
   onLongPress?: () => void;
   children?: JSX.Element;
@@ -85,14 +84,7 @@ export function Pressable(props: {
     <View
       ref={mirror => { node = mirror; }}
       class="absolute"
-      style={{
-        insetL: props.box.left,
-        insetT: props.box.top,
-        width: props.box.width,
-        height: props.box.height,
-        ...props.style,
-        ...(props.focused ? { borderWidth: 2, borderColor: theme.primary } : {}),
-      }}
+      style={{ insetL: props.box.left, insetT: props.box.top, width: props.box.width, height: props.box.height, ...props.style }}
     >
       {props.children}
     </View>

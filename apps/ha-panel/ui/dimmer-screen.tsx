@@ -4,23 +4,21 @@ import type { NodeMirror } from "@pocketjs/framework/renderer";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { abgr, hsvToRgb } from "../color";
 import { brightnessFromPercent, COLOR_PRESETS, percentFromBrightness, swipeDirection } from "../dimmer";
-import { sameFocus } from "../input";
-import { lightInfo, lightStatusText, lightTone } from "../lights";
+import { LIGHT_INFO, lightTone } from "../lights";
 import {
   availableLights,
   isLightAvailable,
+  LIGHT_IDS,
   type LightId,
   type PanelAction,
   type PanelState,
 } from "../model";
 import type { NavEvent } from "../navigation";
-import { slidingWindow } from "../showroom";
 import { theme } from "../theme";
 import { VerticalSlider } from "./controls";
 import { bulbIcon, Icon, Numerals, Pressable } from "./primitives";
-import type { FocusProps } from "./showroom-cards";
 
-interface DimmerProps extends FocusProps {
+interface DimmerProps {
   state: PanelState;
   lightId: LightId;
   onAction(action: PanelAction): void;
@@ -38,12 +36,7 @@ export function DimmerScreen(props: DimmerProps) {
     onPanEnd: contact => {
       const direction = swipeDirection(contact.dx, contact.dy);
       if (direction !== 0)
-        props.onNav({
-          type: "cycle-light",
-          direction,
-          available: availableLights(props.state),
-          order: props.state.lightOrder,
-        });
+        props.onNav({ type: "cycle-light", direction, available: availableLights(props.state) });
     },
   });
   return (
@@ -52,37 +45,29 @@ export function DimmerScreen(props: DimmerProps) {
       class="absolute"
       style={{ insetL: 0, insetT: 0, width: 400, height: 640, bgColor: theme.page }}
     >
-      <Pressable
-        box={{ left: 0, top: 0, width: 238, height: 44 }}
-        focused={sameFocus(props.focus, { kind: "back", id: "back" })}
-        onTap={() => props.onNav({ type: "back" })}
-      >
+      <Pressable box={{ left: 0, top: 0, width: 238, height: 44 }} onTap={() => props.onNav({ type: "back" })}>
         <Icon name="back-text" left={16} top={8} size={24} />
         <Text class="absolute text-lg font-bold" style={{ insetL: 48, insetT: 10, width: 180, textColor: theme.text }}>
-          {lightInfo(props.state, props.lightId).name}
+          {LIGHT_INFO[props.lightId].name}
         </Text>
       </Pressable>
       <Text class="absolute text-xs text-right" style={{ insetL: 260, insetT: 13, width: 124, textColor: theme.disabledText }}>
-        {enabled() ? lightInfo(props.state, props.lightId).tag : lightStatusText(props.state, props.lightId)}
+        {enabled() ? LIGHT_INFO[props.lightId].tag : "未连接 HA"}
       </Text>
       <View class="absolute" style={{ insetL: 0, insetT: 44, width: 400, height: 64 }}>
-        <For each={slidingWindow(props.state.lightOrder, props.lightId, 4)}>{(lightId, index) => {
+        <For each={LIGHT_IDS}>{(lightId, index) => {
           const selected = () => props.lightId === lightId;
           const available = () => isLightAvailable(props.state, lightId);
           return (
             <Pressable
               box={{ left: 16 + index() * 94, top: 0, width: 86, height: 64 }}
-              focused={sameFocus(props.focus, { kind: "light", id: lightId })}
               style={{
                 radius: 12,
                 bgColor: selected() ? theme.secondaryBackground : theme.card,
                 borderWidth: selected() ? 2 : 0,
                 borderColor: theme.primary,
               }}
-              onTap={() => {
-                props.onFocus({ kind: "light", id: lightId });
-                props.onNav({ type: "select-light", lightId, available: availableLights(props.state) });
-              }}
+              onTap={() => props.onNav({ type: "select-light", lightId, available: availableLights(props.state) })}
             >
               <Icon name={bulbIcon(lightTone(props.state, lightId))} left={31} top={8} size={24} />
               <Text
@@ -94,7 +79,7 @@ export function DimmerScreen(props: DimmerProps) {
                   textColor: selected() ? theme.text : available() ? theme.secondaryText : theme.disabledText,
                 }}
               >
-                {lightInfo(props.state, lightId).chip}
+                {LIGHT_INFO[lightId].chip}
               </Text>
             </Pressable>
           );
