@@ -4,6 +4,7 @@ import { haStatus } from "../status";
 import type { PanelState } from "../model";
 import { theme } from "../theme";
 import { Icon } from "./primitives";
+import { LoadingDots } from "./loading-dots";
 
 /** Top strip on the home and lights tabs: Wi-Fi on the left, HA on the right. */
 export function StatusBar(props: { network: NetworkInfo; state: PanelState }) {
@@ -20,8 +21,9 @@ export function StatusBar(props: { network: NetworkInfo; state: PanelState }) {
       </Text>
       <View class="absolute" style={{ insetL: 236, insetT: 11, width: 8, height: 8, radius: 4, bgColor: dot() }} />
       <Text class="absolute text-xs" style={{ insetL: 250, insetT: 6, width: 140, textColor: theme.secondaryText }}>
-        {`Home Assistant ${ha().label}`}
+        {ha().tone === "connected" ? `Home Assistant ${ha().label}` : "Home Assistant"}
       </Text>
+      {ha().tone === "connected" ? null : <LoadingDots centerX={372} centerY={14} />}
     </View>
   );
 }

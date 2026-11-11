@@ -294,9 +294,9 @@ export function slidingWindow<T>(items: readonly T[], selected: T, size: number)
 }
 
 export function formatSensorValue(sensor: ShowroomSensor, reading: SensorReading): string {
-  if (reading.value === null) return "--";
+  if (reading.value === null) return "";
   if (typeof reading.value === "number")
-    return Number.isFinite(reading.value) ? reading.value.toFixed(sensor.decimals) : "--";
+    return Number.isFinite(reading.value) ? reading.value.toFixed(sensor.decimals) : "";
   return reading.value;
 }
 
@@ -304,7 +304,7 @@ export function sensorStatusText(reading: SensorReading, error = ""): string {
   if (reading.status === "stale") return "过期";
   if (error) return "更新失败";
   switch (reading.status) {
-    case "pending": return "待接入";
+    case "pending": return "";
     case "mock": return "示例";
     case "offline": return "离线";
     case "unavailable": return "不可用";

@@ -5,6 +5,7 @@ import { tileIntent, type NavEvent } from "../navigation";
 import { actionStatusText, SHOWROOM, showroomAction } from "../showroom";
 import { theme } from "../theme";
 import { BulbChip, Pressable, Switch, type Box } from "./primitives";
+import { LoadingDots } from "./loading-dots";
 
 export interface ConsoleControlProps {
   state: PanelState;
@@ -34,6 +35,7 @@ export function MainLightControl(props: ConsoleControlProps & { lightId: LightId
       <Text class="absolute text-2xs" style={{ insetL: 58, insetT: 31, width: props.box.width - 126, textColor: enabled() ? theme.secondaryText : theme.disabledText }}>
         {props.state.lightPending[props.lightId] ? "更新中" : lightStatusText(props.state, props.lightId)}
       </Text>
+      {lightStatusText(props.state, props.lightId) ? null : <LoadingDots centerX={82} centerY={38} />}
       <Switch on={light().on} enabled={enabled()} left={props.box.width - 60} top={15} />
       <Text class="absolute text-2xs" style={{ insetL: 58, insetT: 50, width: props.box.width - 72, textColor: enabled() ? theme.secondaryText : theme.disabledText }}>
         点击开关，长按调光
@@ -53,11 +55,10 @@ export function ActionButton(props: {
   const runStatus = () => props.state.actionRuns[props.actionId] ?? "idle";
   const enabled = () => props.configured && props.state.haConnected &&
     (action().group !== "arm" || runStatus() === "idle");
-  const status = () => !props.configured
-    ? "未配置"
-    : !props.state.haConnected
-      ? "离线"
-      : action().group === "arm" && runStatus() === "accepted"
+  const ready = () => props.configured && props.state.haConnected;
+  const status = () => !ready()
+    ? ""
+    : action().group === "arm" && runStatus() === "accepted"
         ? "已发送"
         : actionStatusText(runStatus());
   const stop = () => props.actionId === "reachy-stop";
@@ -74,17 +75,21 @@ export function ActionButton(props: {
         if (enabled()) props.onHaAction(props.actionId, true);
       } : undefined}
     >
-      <Text
-        class="absolute text-xs font-bold text-center"
-        style={{ insetL: 3, insetT: (status() ? 5 : 14) + contentOffset(), width: props.box.width - 6, textColor: enabled() ? stop() ? theme.danger : theme.text : theme.disabledText }}
-      >
-        {stop() ? "停止 STOP" : action().name}
-      </Text>
-      {status() ? (
-        <Text class="absolute text-2xs text-center" style={{ insetL: 3, insetT: 25 + contentOffset(), width: props.box.width - 6, textColor: runStatus() === "accepted" ? theme.green : theme.secondaryText }}>
-          {status()}
-        </Text>
-      ) : null}
+      {ready() ? (
+        <>
+          <Text
+            class="absolute text-xs font-bold text-center"
+            style={{ insetL: 3, insetT: (status() ? 5 : 14) + contentOffset(), width: props.box.width - 6, textColor: enabled() ? stop() ? theme.danger : theme.text : theme.disabledText }}
+          >
+            {stop() ? "停止 STOP" : action().name}
+          </Text>
+          {status() ? (
+            <Text class="absolute text-2xs text-center" style={{ insetL: 3, insetT: 25 + contentOffset(), width: props.box.width - 6, textColor: runStatus() === "accepted" ? theme.green : theme.secondaryText }}>
+              {status()}
+            </Text>
+          ) : null}
+        </>
+      ) : <LoadingDots centerX={props.box.width / 2} centerY={props.box.height / 2} />}
     </Pressable>
   );
 }

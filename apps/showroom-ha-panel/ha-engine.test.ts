@@ -276,30 +276,14 @@ describe("production HA engine", () => {
     expect(JSON.parse(services.at(-1)!.request.body!)).toMatchObject({ entity_id: "light.legacy" });
   });
 
-  test("never executes an unconfigured arm action", async () => {
+  test("arm actions always dispatch through script.keymesh_dispatch, ignoring legacy mappings", async () => {
     const services: { request: HttpRequest }[] = [];
-    const events: WorkerEvent[] = [];
-    const engine = new HaEngine(immediateExecutor({}, services), event => events.push(event));
-    engine.setConfig(config(true, false));
-    await connected(engine);
-    await engine.command({ type: "action", actionId: "arm-gravity", runId: 1 });
-    expect(services).toHaveLength(0);
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "action-result", actionId: "arm-gravity", status: "failed", error: "action entity is not configured",
-    }));
-  });
-
-  test("fails closed for a legacy arm input_button mapping", async () => {
-    const services: { request: HttpRequest }[] = [];
-    const events: WorkerEvent[] = [];
-    const engine = new HaEngine(immediateExecutor({}, services), event => events.push(event));
+    const engine = new HaEngine(immediateExecutor({}, services), () => {});
     engine.setConfig(config());
     await connected(engine);
     await engine.command({ type: "action", actionId: "arm-gravity", runId: 1, confirmed: true });
-    expect(services).toHaveLength(0);
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "action-result", actionId: "arm-gravity", status: "failed", error: "arm actions require script.keymesh_dispatch",
-    }));
+    expect(services).toHaveLength(1);
+    expect(services[0]!.request.url).toEndWith("/api/services/script/turn_on");
   });
 
   test("runs both arm scripts on a tap and reports acceptance", async () => {

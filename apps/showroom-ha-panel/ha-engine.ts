@@ -19,6 +19,7 @@ import {
   type WorkerEvent,
 } from "./protocol";
 import { SHOWROOM, showroomAction } from "./showroom";
+import { actionEntityId } from "./console";
 import { parseWeatherEntity } from "./weather";
 
 export interface HaResponse {
@@ -324,7 +325,7 @@ export class HaEngine {
     if ((this.actionRuns[actionId] ?? 0) > runId) return Promise.resolve();
     this.actionRuns[actionId] = runId;
     const definition = showroomAction(actionId);
-    const entityId = config.entityMap?.actions[actionId];
+    const entityId = actionEntityId(config, actionId);
     if (!definition || !entityId) {
       this.publishActionResult(actionId, runId, "failed", "action entity is not configured");
       return Promise.resolve();

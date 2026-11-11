@@ -9,6 +9,7 @@ import { activeTab, TABS, type NavEvent, type Route, type Tab } from "../navigat
 import { pageWindow, SHOWROOM } from "../showroom";
 import { SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
 import { haStatus } from "../status";
+import { LoadingDots } from "./loading-dots";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
 import { ActionButton, MainLightControl } from "./console-controls";
@@ -68,9 +69,10 @@ function StatusLine(props: LandscapeProps) {
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: 552, height: 30 }}>
       <Icon name="wifi-secondary" left={16} top={12} size={16} />
       <Text class="absolute text-2xs" style={{ insetL: 38, insetT: 13, width: 180, textColor: theme.secondaryText }}>{props.network.ssid}</Text>
-      <Text class="absolute text-2xs text-right" style={{ insetL: 300, insetT: 13, width: 236, textColor: theme.secondaryText }}>
-        {`Home Assistant ${ha().label}`}
+      <Text class="absolute text-2xs text-right" style={{ insetL: 300, insetT: 13, width: ha().tone === "connected" ? 236 : 190, textColor: theme.secondaryText }}>
+        {ha().tone === "connected" ? `Home Assistant ${ha().label}` : "Home Assistant"}
       </Text>
+      {ha().tone === "connected" ? null : <LoadingDots centerX={516} centerY={20} />}
     </View>
   );
 }
@@ -109,7 +111,7 @@ function Home(props: LandscapeProps) {
           onNav={props.onNav}
         />
       )}</For>
-      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 280, width: 180, textColor: theme.text }}>Reachy 快捷操作</Text>
+      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 280, width: 180, textColor: theme.text }}>快捷指令</Text>
       <Text class="absolute text-2xs text-right" style={{ insetL: 196, insetT: 284, width: 112, textColor: theme.secondaryText }}>由 HA 执行</Text>
       <For each={SHOWROOM.home.actions}>{(actionId, index) => (
         <ActionButton

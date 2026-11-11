@@ -61,7 +61,7 @@ export function HomeScreen(props: HomeProps) {
           onNav={props.onNav}
         />
       )}</For>
-      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 274, width: 190, textColor: theme.text }}>Reachy 快捷操作</Text>
+      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 274, width: 190, textColor: theme.text }}>快捷指令</Text>
       <Text class="absolute text-2xs text-right" style={{ insetL: 224, insetT: 278, width: 160, textColor: theme.secondaryText }}>由 HA 执行</Text>
       <For each={SHOWROOM.home.actions}>{(actionId, index) => (
         <ActionButton

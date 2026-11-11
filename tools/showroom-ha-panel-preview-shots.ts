@@ -21,11 +21,6 @@ function verifyAction(actionId: string, confirmed: boolean) {
   };
 }
 
-function verifyNoArm(commands: readonly WorkerCommand[]) {
-  const matches = commands.filter(command => command.type === "action" && command.actionId.startsWith("arm-"));
-  if (matches.length) throw new Error(`unconfigured arm action sent ${JSON.stringify(matches)}`);
-}
-
 function verifyOnePresetSwitch(_commands: readonly WorkerCommand[], native: NativeCalls) {
   const count = native.presetSwitches();
   if (count !== 1) throw new Error(`expected one next-preset request; got ${count}`);
@@ -58,7 +53,6 @@ export const SHOTS: ShotSet = {
     { name: "home-toggle", tape: tap(100, 140), verify: verifyLight("remote", { on: true }) },
     { name: "reachy-retail", tape: tap(75, 322), verify: verifyAction("reachy-intro-retail", false) },
     { name: "reachy-stop", tape: tap(327, 374), verify: verifyAction("reachy-stop", false) },
-    { name: "arm-unconfigured", tape: [...tap(100, 450), ...tap(110, 330)], verify: verifyNoArm },
     { name: "lights", tape: tap(150, 610) },
     { name: "sensors", tape: tap(250, 610) },
     { name: "sensor-detail", tape: [...tap(250, 610), ...tap(100, 160)] },
@@ -97,7 +91,6 @@ export const LANDSCAPE_SHOTS: ShotSet = {
     { name: "home-toggle", tape: tap(160, 140), verify: verifyLight("remote", { on: true }) },
     { name: "reachy-retail", tape: tap(150, 325), verify: verifyAction("reachy-intro-retail", false) },
     { name: "reachy-stop", tape: tap(350, 371), verify: verifyAction("reachy-stop", false) },
-    { name: "arm-unconfigured", tape: [...tap(500, 300), ...tap(400, 150)], verify: verifyNoArm },
     { name: "lights", tape: tap(44, 155) },
     { name: "sensors", tape: tap(44, 230) },
     { name: "sensor-detail", tape: [...tap(44, 230), ...tap(150, 150)] },

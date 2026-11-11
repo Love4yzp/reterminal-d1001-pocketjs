@@ -3,6 +3,7 @@ import { percentFromBrightness } from "./dimmer";
 import type { HaLightCommand } from "./ha-request";
 import type { LightState, PanelAction } from "./model";
 import type { PanelHaConfig } from "./protocol";
+import { showroomAction } from "./showroom";
 
 export function lightStateCommand(light: LightState): HaLightCommand {
   if (!light.on) return { on: false };
@@ -46,6 +47,15 @@ export function mergeLightCommands(
   return merged;
 }
 
+/** HA script every arm action dispatches through; its KeyMesh parameters are fixed in ha-request. */
+export const ARM_SCRIPT_ENTITY_ID = "script.keymesh_dispatch";
+
+/** The entity an action calls: arm actions are fixed, Reachy actions come from the device entity map. */
+export function actionEntityId(config: Pick<PanelHaConfig, "entityMap">, actionId: string): string | undefined {
+  if (showroomAction(actionId)?.group === "arm") return ARM_SCRIPT_ENTITY_ID;
+  return config.entityMap?.actions[actionId];
+}
+
 export function actionConfigured(config: Pick<PanelHaConfig, "entityMap">, actionId: string): boolean {
-  return Boolean(config.entityMap?.actions[actionId]);
+  return Boolean(actionEntityId(config, actionId));
 }

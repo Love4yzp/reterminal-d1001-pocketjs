@@ -6,6 +6,7 @@ import type { PanelState } from "../model";
 import { formatSensorValue, pageWindow, sensorStatusText, showroomSensor } from "../showroom";
 import { theme } from "../theme";
 import { Icon, Pressable } from "./primitives";
+import { LoadingDots } from "./loading-dots";
 import { Pager, SensorCard } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
 
@@ -66,8 +67,9 @@ export function SensorDetailScreen(props: {
           {sensorStatusText(reading(), props.state.sensorErrors[props.sensorId])}
         </Text>
         <Text class="absolute text-xs" style={{ insetL: 20, insetT: 166, width: cardWidth() - 40, textColor: theme.disabledText }}>
-          {reading().status === "pending" ? "等待接口数据" : `显示键 ${sensor().key}`}
+          {`显示键 ${sensor().key}`}
         </Text>
+        {reading().value === null ? <LoadingDots centerX={44} centerY={82} /> : null}
       </View>
       <Text class="absolute text-xs text-center" style={{ insetL: cardLeft(), insetT: 324, width: cardWidth(), textColor: theme.disabledText }}>
         只读，不可调节
