@@ -10,6 +10,7 @@ import {
   mergeLightCommands,
 } from "./console";
 import { createLightAdapter, type LightAdapter } from "./devices";
+import type { DimmerMode } from "./dimmer";
 import type { HaLightCommand } from "./ha-request";
 import {
   changedLights,
@@ -70,6 +71,7 @@ function Panel() {
   );
   const [lightPage, setLightPage] = createSignal(0);
   const [sensorPage, setSensorPage] = createSignal(0);
+  const [dimmerMode, setDimmerMode] = createSignal<DimmerMode>("brightness");
   const config: PanelHaConfig = readHaConfig();
   const utcOffsetMinutes = readUtcOffsetMinutes();
   const firmwareVersion = readFirmwareVersion();
@@ -147,6 +149,7 @@ function Panel() {
     const next = event.type === "tab" && event.tab === "lights"
       ? { type: "open-dimmer" as const, lightId: SHOWROOM.home.lights[0]! }
       : event;
+    if (next.type === "open-dimmer") setDimmerMode("brightness");
     setRoute(navigate(route(), next));
   };
 
@@ -304,7 +307,15 @@ function Panel() {
   const screen = () => {
     const current = route();
     if (current.kind === "dimmer")
-      return <DimmerScreen {...shared()} lightId={current.lightId} onAction={dispatch} />;
+      return (
+        <DimmerScreen
+          {...shared()}
+          lightId={current.lightId}
+          mode={dimmerMode()}
+          onMode={setDimmerMode}
+          onAction={dispatch}
+        />
+      );
     if (current.kind === "sensor")
       return <SensorDetailScreen {...shared()} sensorId={current.sensorId} />;
     if (current.kind === "arm")
@@ -317,7 +328,14 @@ function Panel() {
         />
       );
     if (current.kind === "provision")
-      return <ProvisionScreen topic={current.topic} onNav={onNav} />;
+      return (
+        <ProvisionScreen
+          topic={current.topic}
+          network={network()}
+          state={state()}
+          onNav={onNav}
+        />
+      );
     if (current.tab === "sensors")
       return <SensorsScreen {...shared()} network={network()} page={sensorPage()} />;
     if (current.tab === "settings")
@@ -362,6 +380,8 @@ function Panel() {
         onHaAction={onHaAction}
         actionConfigured={isActionConfigured}
         onRotate={rotate}
+        dimmerMode={dimmerMode()}
+        onDimmerMode={setDimmerMode}
       />
     );
   return (
