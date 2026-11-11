@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "d1001_wifi.h"
+#include "wifi_stability.h"
 #include "esp_event.h"
 #include "esp_heap_caps.h"
 #include "esp_hosted.h"
@@ -30,7 +31,10 @@
 #define D1001_WIFI_STATUS_BYTES (8U * 1024U)
 #define D1001_WIFI_RECONNECT_MIN_MS 1000U
 #define D1001_WIFI_RECONNECT_MAX_MS 30000U
-#define D1001_WIFI_HAS_STATION_CONFIG (CONFIG_D1001_WIFI_SSID[0] != '\0')
+#define D1001_WIFI_PRESET_ATTEMPTS 3U
+#define D1001_WIFI_RSSI_REFRESH_MS 1000U
+#define D1001_WIFI_HAS_STATION_CONFIG                                        \
+  (CONFIG_D1001_WIFI_SSID[0] != '\0' || CONFIG_D1001_WIFI_SSID_2[0] != '\0')
 
 static const char *TAG = "d1001_wifi";
 
@@ -47,6 +51,19 @@ typedef struct {
   int8_t rssi;
   bool secure;
 } d1001_found_network;
+
+typedef struct {
+  const char *ssid;
+  const char *password;
+} d1001_wifi_preset;
+
+/* Ordered presets: entry 1 keeps the original single-network Kconfig working. */
+static const d1001_wifi_preset PRESETS[] = {
+    {CONFIG_D1001_WIFI_SSID, CONFIG_D1001_WIFI_PASSWORD},
+    {CONFIG_D1001_WIFI_SSID_2, CONFIG_D1001_WIFI_PASSWORD_2},
+};
+#define D1001_WIFI_PRESET_COUNT (sizeof PRESETS / sizeof PRESETS[0])
+#define D1001_WIFI_NO_PRESET D1001_WIFI_PRESET_COUNT
 
 typedef struct {
   char *data;
@@ -71,6 +88,12 @@ static size_t network_count;
 static char status_out[D1001_WIFI_STATUS_BYTES];
 static int64_t reconnect_at_us;
 static uint32_t reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
+static size_t preset_index;
+static size_t preset_failures;
+static size_t preset_switch_index = D1001_WIFI_NO_PRESET;
+static int64_t rssi_read_at_us;
+static bool associated;
+static d1001_wifi_stability stability;
 
 static void take(void) { xSemaphoreTake(lock, portMAX_DELAY); }
 
@@ -78,6 +101,57 @@ static void give(void) { xSemaphoreGive(lock); }
 
 static int bars(int8_t value) {
   return value >= -55 ? 3 : value >= -66 ? 2 : value >= -77 ? 1 : 0;
+}
+
+static bool preset_configured(size_t index) {
+  return PRESETS[index].ssid[0] != '\0';
+}
+
+/* The first configured preset, or D1001_WIFI_NO_PRESET when there is none. */
+static size_t first_configured_preset(void) {
+  for (size_t index = 0; index < D1001_WIFI_PRESET_COUNT; ++index)
+    if (preset_configured(index))
+      return index;
+  return D1001_WIFI_NO_PRESET;
+}
+
+/* The next configured preset after 'from', wrapping; 'from' when it is the
+ * only one, D1001_WIFI_NO_PRESET when none is configured. */
+static size_t next_configured_preset(size_t from) {
+  if (from >= D1001_WIFI_PRESET_COUNT)
+    return first_configured_preset();
+  for (size_t step = 1; step <= D1001_WIFI_PRESET_COUNT; ++step) {
+    const size_t index = (from + step) % D1001_WIFI_PRESET_COUNT;
+    if (preset_configured(index))
+      return index;
+  }
+  return D1001_WIFI_NO_PRESET;
+}
+
+/* Caller holds the lock. */
+static bool has_other_preset(void) {
+  const size_t next = next_configured_preset(preset_index);
+  return next != D1001_WIFI_NO_PRESET && next != preset_index;
+}
+
+/* Caller holds the lock. Marks the next configured preset for the radio task. */
+static bool request_next_configured_preset(void) {
+  const size_t next = next_configured_preset(preset_index);
+  if (next == D1001_WIFI_NO_PRESET || next == preset_index)
+    return false;
+  preset_switch_index = next;
+  preset_failures = 0;
+  reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
+  reconnect_at_us = 0;
+  return true;
+}
+
+/* A missing AP or a refused credential will not heal by retrying the same
+ * preset; other disconnect reasons keep the current network. */
+static bool preset_failure_reason(uint8_t reason) {
+  return reason == WIFI_REASON_NO_AP_FOUND || reason == WIFI_REASON_AUTH_FAIL ||
+         reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+         reason == WIFI_REASON_HANDSHAKE_TIMEOUT;
 }
 
 /* Caller holds the lock. */
@@ -89,8 +163,46 @@ static void schedule_reconnect(void) {
                            : reconnect_delay_ms * 2U;
 }
 
+/* Caller holds no lock. Switches the STA configuration to 'index' and leaves
+ * the radio ready to connect. */
+static bool apply_preset(size_t index) {
+  wifi_config_t station_config = {0};
+  strlcpy((char *)station_config.sta.ssid, PRESETS[index].ssid,
+          sizeof station_config.sta.ssid);
+  strlcpy((char *)station_config.sta.password, PRESETS[index].password,
+          sizeof station_config.sta.password);
+  station_config.sta.pmf_cfg.capable = true;
+  const esp_err_t result = esp_wifi_set_config(WIFI_IF_STA, &station_config);
+  if (result != ESP_OK) {
+    take();
+    snprintf(error, sizeof error, "esp_wifi_set_config failed (%s)",
+             esp_err_to_name(result));
+    schedule_reconnect();
+    give();
+    ESP_LOGE(TAG, "esp_wifi_set_config failed for SSID=%s (%s)",
+             PRESETS[index].ssid, esp_err_to_name(result));
+    return false;
+  }
+  take();
+  preset_index = index;
+  preset_failures = 0;
+  reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
+  reconnect_at_us = 0;
+  state = D1001_WIFI_CONNECTING;
+  associated = false;
+  d1001_wifi_stability_reset_episode(&stability);
+  give();
+  ESP_LOGI(TAG, "station SSID=%s", PRESETS[index].ssid);
+  return true;
+}
+
 static void connect_station(void) {
-  ESP_LOGI(TAG, "connecting to configured SSID=%s", CONFIG_D1001_WIFI_SSID);
+  take();
+  const size_t index = preset_index;
+  give();
+  if (index >= D1001_WIFI_PRESET_COUNT)
+    return;
+  ESP_LOGI(TAG, "connecting SSID=%s", PRESETS[index].ssid);
   const esp_err_t result = esp_wifi_connect();
   if (result == ESP_OK)
     return;
@@ -100,7 +212,7 @@ static void connect_station(void) {
   schedule_reconnect();
   give();
   ESP_LOGW(TAG, "esp_wifi_connect failed for SSID=%s (%s)",
-           CONFIG_D1001_WIFI_SSID, esp_err_to_name(result));
+           PRESETS[index].ssid, esp_err_to_name(result));
 }
 
 static bool radio_esp_failed(const char *operation, esp_err_t result) {
@@ -182,8 +294,15 @@ static void on_event(void *argument, esp_event_base_t base, int32_t id,
   const bool have_rssi = base == IP_EVENT && id == IP_EVENT_STA_GOT_IP &&
                          esp_wifi_sta_get_ap_info(&access_point) == ESP_OK;
   bool disconnected = false;
+  bool switching = false;
+  bool rotating = false;
+  bool unstable = false;
+  uint8_t reason = 0;
   uint32_t retry_ms = 0;
+  char ssid[D1001_WIFI_SSID_BYTES] = {0};
   take();
+  if (preset_index < D1001_WIFI_PRESET_COUNT)
+    snprintf(ssid, sizeof ssid, "%s", PRESETS[preset_index].ssid);
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
     if (state != D1001_WIFI_CONNECTING && state != D1001_WIFI_CONNECTED)
       state = D1001_WIFI_IDLE;
@@ -192,6 +311,11 @@ static void on_event(void *argument, esp_event_base_t base, int32_t id,
     current[0] = '\0';
     address[0] = '\0';
     reconnect_at_us = 0;
+    preset_index = 0;
+    preset_failures = 0;
+    preset_switch_index = D1001_WIFI_NO_PRESET;
+    associated = false;
+    d1001_wifi_stability_reset_episode(&stability);
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
     scan_done = true;
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
@@ -204,18 +328,48 @@ static void on_event(void *argument, esp_event_base_t base, int32_t id,
     address[0] = '\0';
     state = D1001_WIFI_CONNECTING;
     reconnect_at_us = 0;
+    preset_failures = 0;
+    associated = true;
+    d1001_wifi_stability_connected(&stability);
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     const wifi_event_sta_disconnected_t *event = data;
+    const bool was_associated = associated;
+    const int64_t now = esp_timer_get_time();
+    reason = event->reason;
+    associated = false;
+    d1001_wifi_stability_disconnected(&stability);
     state = D1001_WIFI_IDLE;
     current[0] = '\0';
     address[0] = '\0';
     rssi = 0;
     snprintf(error, sizeof error, "Station disconnected (reason %u)",
              (unsigned)event->reason);
-    if (D1001_WIFI_HAS_STATION_CONFIG) {
+    if (preset_switch_index != D1001_WIFI_NO_PRESET) {
+      /* The requested preset takes the next connection. */
+      state = D1001_WIFI_CONNECTING;
+      reconnect_at_us = now;
+      reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
+      preset_failures = 0;
+      switching = true;
+    } else if (D1001_WIFI_HAS_STATION_CONFIG) {
       disconnected = true;
       retry_ms = reconnect_delay_ms;
-      schedule_reconnect();
+      if (was_associated &&
+          d1001_wifi_stability_note_disconnect(&stability, now) &&
+          request_next_configured_preset()) {
+        unstable = true;
+      } else if (preset_failure_reason(event->reason)) {
+        preset_failures += 1U;
+        if (preset_failures >= D1001_WIFI_PRESET_ATTEMPTS &&
+            request_next_configured_preset()) {
+          rotating = true;
+        } else {
+          schedule_reconnect();
+        }
+      } else {
+        preset_failures = 0;
+        schedule_reconnect();
+      }
     }
   } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
     const ip_event_got_ip_t *event = data;
@@ -224,13 +378,32 @@ static void on_event(void *argument, esp_event_base_t base, int32_t id,
     error[0] = '\0';
     reconnect_at_us = 0;
     reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
+    preset_failures = 0;
+    associated = true;
+    d1001_wifi_stability_connected(&stability);
+    rssi_read_at_us = esp_timer_get_time();
     if (have_rssi)
       rssi = access_point.rssi;
   }
   give();
-  if (disconnected)
-    ESP_LOGW(TAG, "station SSID=%s disconnected; reconnect in %u ms",
-             CONFIG_D1001_WIFI_SSID, (unsigned)retry_ms);
+  if (unstable)
+    ESP_LOGW(TAG,
+             "station SSID=%s unstable: %u disconnects in 120 s (reason %u); "
+             "switching preset",
+             ssid, (unsigned)D1001_WIFI_UNSTABLE_DISCONNECTS,
+             (unsigned)reason);
+  else if (switching)
+    ESP_LOGI(TAG,
+             "station SSID=%s disconnected (reason %u); applying the requested "
+             "preset",
+             ssid, (unsigned)reason);
+  else if (rotating)
+    ESP_LOGW(TAG,
+             "station SSID=%s disconnected (reason %u); switching preset", ssid,
+             (unsigned)reason);
+  else if (disconnected)
+    ESP_LOGW(TAG, "station SSID=%s disconnected (reason %u); reconnect in %u ms",
+             ssid, (unsigned)reason, (unsigned)retry_ms);
   if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
     if (have_rssi)
       ESP_LOGI(TAG, "station connected SSID=%s IP=%s RSSI=%d", current, address,
@@ -295,22 +468,16 @@ static bool bring_up(void) {
   error[0] = '\0';
   give();
   if (D1001_WIFI_HAS_STATION_CONFIG) {
-    wifi_config_t station_config = {0};
-    strlcpy((char *)station_config.sta.ssid, CONFIG_D1001_WIFI_SSID,
-            sizeof station_config.sta.ssid);
-    strlcpy((char *)station_config.sta.password, CONFIG_D1001_WIFI_PASSWORD,
-            sizeof station_config.sta.password);
-    station_config.sta.pmf_cfg.capable = true;
-    if (radio_esp_failed("esp_wifi_set_config(STA)",
-                         esp_wifi_set_config(WIFI_IF_STA, &station_config)))
+    const size_t first = first_configured_preset();
+    if (!apply_preset(first)) {
+      take();
+      ready = false;
+      state = D1001_WIFI_OFF;
+      give();
       return false;
-    take();
-    state = D1001_WIFI_CONNECTING;
-    reconnect_at_us = 0;
-    reconnect_delay_ms = D1001_WIFI_RECONNECT_MIN_MS;
-    give();
+    }
     connect_station();
-    ESP_LOGI(TAG, "station ready; configured SSID=%s", CONFIG_D1001_WIFI_SSID);
+    ESP_LOGI(TAG, "station ready; SSID=%s", PRESETS[first].ssid);
   } else {
     ESP_LOGI(TAG, "station ready; scan/status only");
   }
@@ -402,9 +569,76 @@ static void collect_scan(void) {
 
   ESP_LOGI(TAG, "scan complete: %u unique networks", (unsigned)found_count);
   for (size_t i = 0; i < found_count; ++i) {
-    ESP_LOGI(TAG, "SSID=%s RSSI=%d secure=%s", found[i].ssid,
-             (int)found[i].rssi, found[i].secure ? "true" : "false");
+    ESP_LOGI(TAG, "SSID=%s RSSI=%d", found[i].ssid, (int)found[i].rssi);
   }
+}
+
+/* Caller holds no lock. Applies a requested preset once the station is not
+ * connected; a connected station is disconnected first and the resulting
+ * STA_DISCONNECTED event completes the switch. Returns true when this call
+ * applied a preset and started the connection. */
+static bool service_preset_switch(void) {
+  take();
+  const size_t target = preset_switch_index;
+  const bool connected = state == D1001_WIFI_CONNECTED;
+  if (target != D1001_WIFI_NO_PRESET && !connected) {
+    preset_switch_index = D1001_WIFI_NO_PRESET;
+    preset_failures = 0;
+    reconnect_at_us = 0;
+    state = D1001_WIFI_CONNECTING;
+    give();
+    if (apply_preset(target))
+      connect_station();
+    return true;
+  }
+  give();
+  if (target == D1001_WIFI_NO_PRESET)
+    return false;
+  if (esp_wifi_disconnect() == ESP_OK)
+    return false;
+  take();
+  preset_switch_index = D1001_WIFI_NO_PRESET;
+  preset_failures = 0;
+  give();
+  if (apply_preset(target))
+    connect_station();
+  return true;
+}
+
+/* Caller holds no lock. Keeps the reported RSSI current while connected and
+ * rotates away from a link that stays below the configured threshold. */
+static void refresh_rssi(void) {
+  const int64_t now = esp_timer_get_time();
+  take();
+  const bool connected = ready && state == D1001_WIFI_CONNECTED;
+  if (!connected)
+    d1001_wifi_stability_disconnected(&stability);
+  give();
+  if (!connected ||
+      now - rssi_read_at_us < (int64_t)D1001_WIFI_RSSI_REFRESH_MS * 1000)
+    return;
+  rssi_read_at_us = now;
+  wifi_ap_record_t access_point;
+  if (esp_wifi_sta_get_ap_info(&access_point) != ESP_OK)
+    return;
+  char ssid[D1001_WIFI_SSID_BYTES] = {0};
+  bool weak = false;
+  take();
+  if (state == D1001_WIFI_CONNECTED) {
+    rssi = access_point.rssi;
+    if (d1001_wifi_stability_note_rssi(
+            &stability, now, (int)access_point.rssi,
+            (int)CONFIG_D1001_WIFI_WEAK_RSSI, has_other_preset()) &&
+        request_next_configured_preset()) {
+      weak = true;
+      snprintf(ssid, sizeof ssid, "%s", PRESETS[preset_index].ssid);
+    }
+  }
+  give();
+  if (weak)
+    ESP_LOGW(TAG,
+             "station SSID=%s RSSI=%d below %d dBm for 60 s; switching preset",
+             ssid, (int)access_point.rssi, (int)CONFIG_D1001_WIFI_WEAK_RSSI);
 }
 
 static void radio_task(void *argument) {
@@ -431,8 +665,11 @@ static void radio_task(void *argument) {
       start_scan();
     if (finish)
       collect_scan();
+    if (service_preset_switch())
+      continue;
     if (reconnect)
       connect_station();
+    refresh_rssi();
   }
 }
 
@@ -444,6 +681,7 @@ void d1001_wifi_start(void) {
     ESP_LOGE(TAG, "could not create the Wi-Fi lock");
     return;
   }
+  d1001_wifi_stability_init(&stability);
   const BaseType_t created = xTaskCreatePinnedToCoreWithCaps(
       radio_task, "d1001_wifi", D1001_WIFI_TASK_STACK_BYTES, NULL, 2, NULL, 0,
       MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -466,6 +704,26 @@ static bool request_scan(void) {
     scanning = true;
     scan_requested = true;
     error[0] = '\0';
+  }
+  give();
+  return accepted;
+}
+
+/* Ask the radio task to join the next configured preset. */
+static bool request_next_preset(void) {
+  if (lock == NULL)
+    return false;
+  take();
+  const size_t next = next_configured_preset(preset_index);
+  bool accepted = ready && state != D1001_WIFI_OFF &&
+                  next != D1001_WIFI_NO_PRESET && next != preset_index;
+  if (accepted) {
+    preset_switch_index = next;
+    preset_failures = 0;
+    error[0] = '\0';
+  } else if (error[0] == '\0') {
+    snprintf(error, sizeof error, "%s",
+             "No other Wi-Fi preset is configured");
   }
   give();
   return accepted;
@@ -544,8 +802,8 @@ static const char *status_json(void) {
                                       "connected"};
   if (lock == NULL)
     return "{\"state\":\"off\",\"ssid\":\"\",\"strength\":0,"
-           "\"address\":\"\",\"online\":false,\"error\":\"Wi-Fi is not "
-           "started\",\"scanning\":false,\"networks\":[]}";
+           "\"rssi\":null,\"address\":\"\",\"online\":false,\"error\":"
+           "\"Wi-Fi is not started\",\"scanning\":false,\"networks\":[]}";
 
   take();
   d1001_json_buffer out = {
@@ -559,6 +817,11 @@ static const char *status_json(void) {
   json_string(&out, current);
   json_format(&out, ",\"strength\":%d",
               state == D1001_WIFI_CONNECTED ? bars(rssi) : 0);
+  json_text(&out, ",\"rssi\":");
+  if (state == D1001_WIFI_CONNECTED)
+    json_format(&out, "%d", (int)rssi);
+  else
+    json_text(&out, "null");
   json_text(&out, ",\"address\":");
   json_string(&out, address);
   json_format(&out, ",\"online\":%s",
@@ -580,9 +843,9 @@ static const char *status_json(void) {
   json_text(&out, "]}");
   const char *result = out.overflow
                            ? "{\"state\":\"off\",\"ssid\":\"\",\"strength\":0,"
-                             "\"address\":\"\",\"online\":false,\"error\":"
-                             "\"Wi-Fi status overflow\",\"scanning\":false,"
-                             "\"networks\":[]}"
+                             "\"rssi\":null,\"address\":\"\",\"online\":false,"
+                             "\"error\":\"Wi-Fi status overflow\",\"scanning\":"
+                             "false,\"networks\":[]}"
                            : status_out;
   give();
   return result;
@@ -597,6 +860,8 @@ static JSValue wifi_operation(JSContext *ctx, JSValueConst this_value, int argc,
     return JS_NewBool(ctx, request_scan());
   if (magic == 1)
     return JS_NewString(ctx, status_json());
+  if (magic == 4)
+    return JS_NewBool(ctx, request_next_preset());
   return JS_NewBool(ctx, false);
 }
 
@@ -615,6 +880,7 @@ esp_err_t d1001_wifi_install(JSContext *ctx) {
   add(ctx, wifi, "status", 1);
   add(ctx, wifi, "setEnabled", 2);
   add(ctx, wifi, "connect", 3);
+  add(ctx, wifi, "nextPreset", 4);
   JS_SetPropertyStr(ctx, global, "wifi", wifi);
   const bool failed = JS_HasException(ctx);
   JS_FreeValue(ctx, global);

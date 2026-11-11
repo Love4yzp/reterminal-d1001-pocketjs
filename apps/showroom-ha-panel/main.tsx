@@ -10,6 +10,7 @@ import {
   mergeLightCommands,
 } from "./console";
 import { createLightAdapter, type LightAdapter } from "./devices";
+import type { DimmerMode } from "./dimmer";
 import type { HaLightCommand } from "./ha-request";
 import {
   changedLights,
@@ -52,7 +53,6 @@ import { ArmScreen } from "./ui/arm-screen";
 import { DimmerScreen } from "./ui/dimmer-screen";
 import { HomeScreen } from "./ui/home-screen";
 import { LandscapeScreen } from "./ui/landscape-screen";
-import { LightsScreen } from "./ui/lights-screen";
 import { NavBar } from "./ui/nav-bar";
 import { ProvisionScreen } from "./ui/provision-screen";
 import { SensorDetailScreen, SensorsScreen } from "./ui/sensors-screen";
@@ -71,6 +71,7 @@ function Panel() {
   );
   const [lightPage, setLightPage] = createSignal(0);
   const [sensorPage, setSensorPage] = createSignal(0);
+  const [dimmerMode, setDimmerMode] = createSignal<DimmerMode>("brightness");
   const config: PanelHaConfig = readHaConfig();
   const utcOffsetMinutes = readUtcOffsetMinutes();
   const firmwareVersion = readFirmwareVersion();
@@ -144,7 +145,12 @@ function Panel() {
       changePage(event.target, event.direction);
       return;
     }
-    setRoute(navigate(route(), event));
+    // The showroom has one controllable light: the 灯光 tab opens its dimmer directly.
+    const next = event.type === "tab" && event.tab === "lights"
+      ? { type: "open-dimmer" as const, lightId: SHOWROOM.home.lights[0]! }
+      : event;
+    if (next.type === "open-dimmer") setDimmerMode("brightness");
+    setRoute(navigate(route(), next));
   };
 
   const onHaAction = (actionId: string, confirmed: boolean) => {
@@ -301,7 +307,15 @@ function Panel() {
   const screen = () => {
     const current = route();
     if (current.kind === "dimmer")
-      return <DimmerScreen {...shared()} lightId={current.lightId} onAction={dispatch} />;
+      return (
+        <DimmerScreen
+          {...shared()}
+          lightId={current.lightId}
+          mode={dimmerMode()}
+          onMode={setDimmerMode}
+          onAction={dispatch}
+        />
+      );
     if (current.kind === "sensor")
       return <SensorDetailScreen {...shared()} sensorId={current.sensorId} />;
     if (current.kind === "arm")
@@ -314,9 +328,14 @@ function Panel() {
         />
       );
     if (current.kind === "provision")
-      return <ProvisionScreen topic={current.topic} onNav={onNav} />;
-    if (current.tab === "lights")
-      return <LightsScreen {...shared()} network={network()} page={lightPage()} onAction={dispatch} />;
+      return (
+        <ProvisionScreen
+          topic={current.topic}
+          network={network()}
+          state={state()}
+          onNav={onNav}
+        />
+      );
     if (current.tab === "sensors")
       return <SensorsScreen {...shared()} network={network()} page={sensorPage()} />;
     if (current.tab === "settings")
@@ -361,6 +380,8 @@ function Panel() {
         onHaAction={onHaAction}
         actionConfigured={isActionConfigured}
         onRotate={rotate}
+        dimmerMode={dimmerMode()}
+        onDimmerMode={setDimmerMode}
       />
     );
   return (

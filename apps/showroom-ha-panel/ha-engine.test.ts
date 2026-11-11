@@ -81,6 +81,23 @@ async function connected(engine: HaEngine) {
 }
 
 describe("production HA engine", () => {
+  test("probes again within two seconds while the network has no address", async () => {
+    const urls: string[] = [];
+    let online = false;
+    const engine = new HaEngine(async request => {
+      urls.push(request.url);
+      if (!online) throw new Error("unavailable: the network has no address");
+      return { code: 200, body: JSON.stringify({ message: "API running." }) };
+    }, () => {});
+    engine.setConfig(config());
+    engine.tick();
+    await engine.idle();
+    online = true;
+    for (let i = 0; i < 20; i += 1) engine.tick();
+    await engine.idle();
+    expect(urls.filter(url => url.endsWith("/api/"))).toHaveLength(2);
+  });
+
   test("runs a keyed light command while a sensor poll is still blocked", async () => {
     const network = deferredExecutor(url => url.includes("sensor.example_temperature"));
     const events: WorkerEvent[] = [];

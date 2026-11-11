@@ -1,22 +1,20 @@
-import { For } from "solid-js";
-import { createGesture } from "@pocketjs/framework/gesture";
-import type { NodeMirror } from "@pocketjs/framework/renderer";
+import { createSignal, For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { formatChineseDate, formatClock, timezoneLabel } from "../clock";
-import { brightnessFromPercent, percentFromBrightness, swipeDirection } from "../dimmer";
-import { lightInfo, lightStatusText, lightTone } from "../lights";
-import { availableLights, isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
-import type { NetworkInfo } from "../native";
-import { activeTab, rowIntent, TABS, type NavEvent, type Route, type Tab } from "../navigation";
-import { pageWindow, SHOWROOM, slidingWindow } from "../showroom";
+import { brightnessFromPercent, percentFromBrightness, type DimmerMode } from "../dimmer";
+import { lightColor, lightInfo, lightStatusText } from "../lights";
+import { isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
+import { canSwitchNetwork, formatRssi, requestNextPreset, type NetworkInfo } from "../native";
+import { activeTab, TABS, type NavEvent, type Route, type Tab } from "../navigation";
+import { pageWindow, SHOWROOM } from "../showroom";
 import { SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
 import { haStatus } from "../status";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
 import { ArmScreen } from "./arm-screen";
 import { ActionButton, MainLightControl, TelemetryPanel } from "./console-controls";
-import { BacklightSlider, ColorSlider, VerticalSlider } from "./controls";
-import { BulbChip, bulbIcon, Divider, Icon, Numerals, Pressable, Switch } from "./primitives";
+import { BacklightSlider, ColorWheel, ModeButton, VerticalSlider } from "./controls";
+import { Divider, Icon, Numerals, Pressable } from "./primitives";
 import { SensorDetailScreen } from "./sensors-screen";
 import { Pager, SensorCard } from "./showroom-cards";
 
@@ -35,6 +33,8 @@ interface LandscapeProps {
   onHaAction(actionId: string, confirmed: boolean): void;
   actionConfigured(actionId: string): boolean;
   onRotate: (landscape: boolean) => void;
+  dimmerMode: DimmerMode;
+  onDimmerMode(mode: DimmerMode): void;
 }
 
 function LandscapeNav(props: { active: Tab; onNav(event: NavEvent): void }) {
@@ -98,76 +98,33 @@ function Home(props: LandscapeProps) {
       <MainLightControl
         {...props}
         lightId={SHOWROOM.home.lights[0]!}
-        box={{ left: 16, top: 116, width: 292, height: 78 }}
+        box={{ left: 16, top: 112, width: 520, height: 78 }}
       />
       <For each={SHOWROOM.home.sensors}>{(sensorId, index) => (
         <SensorCard
           state={props.state}
           sensorId={sensorId}
-          box={{ left: 16 + index() * 148, top: 204, width: 140 + (index() === 1 ? 4 : 0), height: 84 }}
+          box={{ left: 16 + index() * 148, top: 198, width: 140 + (index() === 1 ? 4 : 0), height: 74 }}
           compact
           onNav={props.onNav}
         />
       )}</For>
-      <Text class="absolute text-sm font-bold" style={{ insetL: 320, insetT: 40, width: 216, textColor: theme.text }}>Reachy 快捷操作</Text>
-      <Text class="absolute text-2xs" style={{ insetL: 320, insetT: 62, width: 216, textColor: theme.secondaryText }}>由 HA 执行</Text>
+      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 280, width: 180, textColor: theme.text }}>Reachy 快捷操作</Text>
+      <Text class="absolute text-2xs text-right" style={{ insetL: 196, insetT: 284, width: 112, textColor: theme.secondaryText }}>由 HA 执行</Text>
       <For each={SHOWROOM.home.actions}>{(actionId, index) => (
         <ActionButton
           state={props.state}
           actionId={actionId}
-          box={{ left: 320 + (index() % 2) * 110, top: 84 + Math.floor(index() / 2) * 52, width: 102, height: 44 }}
+          box={{ left: 16 + (index() % 3) * 100, top: 304 + Math.floor(index() / 3) * 46, width: 92, height: 42 }}
           configured={props.actionConfigured(actionId)}
           onHaAction={props.onHaAction}
         />
       )}</For>
       <TelemetryPanel
         state={props.state}
-        box={{ left: 320, top: 252, width: 216, height: 108 }}
+        box={{ left: 320, top: 198, width: 216, height: 192 }}
         onNav={props.onNav}
       />
-    </View>
-  );
-}
-
-function Lights(props: LandscapeProps) {
-  const window = () => pageWindow(props.state.lightOrder, props.lightPage, 4);
-  return (
-    <View class="absolute" style={{ insetL: 88, insetT: 0, width: 552, height: 400 }}>
-      <StatusLine {...props} />
-      <Text class="absolute text-lg font-bold" style={{ insetL: 16, insetT: 38, width: 200, textColor: theme.text }}>灯光</Text>
-      <Text class="absolute text-xs" style={{ insetL: 16, insetT: 72, width: 240, textColor: theme.secondaryText }}>
-        {`${availableLights(props.state).length} / ${props.state.lightOrder.length} 盏可用`}
-      </Text>
-      <For each={window().items}>{(lightId, index) => {
-        const light = () => props.state.lights[lightId]!;
-        const enabled = () => isLightAvailable(props.state, lightId);
-        const column = index() % 2;
-        const row = Math.floor(index() / 2);
-        const intent = (target: "row" | "switch") => {
-          const next = rowIntent(target, lightId, availableLights(props.state));
-          if (next.action) props.onAction(next.action);
-          if (next.nav) props.onNav(next.nav);
-        };
-        return (
-          <Pressable
-            box={{ left: 16 + column * 268, top: 100 + row * 108, width: 252, height: 96 }}
-            style={{ radius: 12, bgColor: theme.card }}
-            onTap={() => intent("row")}
-          >
-            <BulbChip tone={lightTone(props.state, lightId)} left={12} top={14} size={36} />
-            <Text class="absolute text-xs font-bold" style={{ insetL: 58, insetT: 16, width: 110, textColor: enabled() ? theme.text : theme.secondaryText }}>
-              {lightInfo(props.state, lightId).name}
-            </Text>
-            <Text class="absolute text-2xs" style={{ insetL: 58, insetT: 40, width: 110, textColor: enabled() ? theme.secondaryText : theme.disabledText }}>
-              {lightStatusText(props.state, lightId)}
-            </Text>
-            <Pressable box={{ left: 174, top: 36, width: 66, height: 48 }} onTap={() => intent("switch")}>
-              <Switch on={light().on} enabled={enabled()} left={8} top={10} />
-            </Pressable>
-          </Pressable>
-        );
-      }}</For>
-      <Pager left={16} top={330} width={520} page={window().page} pageCount={window().pageCount} target="lights" onNav={props.onNav} />
     </View>
   );
 }
@@ -254,91 +211,158 @@ function Settings(props: LandscapeProps) {
 }
 
 function Dimmer(props: LandscapeProps & { lightId: LightId }) {
-  let surface: NodeMirror | undefined;
   const light = () => props.state.lights[props.lightId]!;
   const enabled = () => isLightAvailable(props.state, props.lightId);
   const percent = () => percentFromBrightness(light().brightness);
-  createGesture({
-    region: { node: () => surface },
-    axis: "x",
-    onPanEnd: contact => {
-      const direction = swipeDirection(contact.dx, contact.dy);
-      if (direction !== 0) props.onNav({ type: "cycle-light", direction, available: availableLights(props.state), order: props.state.lightOrder });
-    },
+  const back = () => {
+    if (props.dimmerMode === "color") props.onDimmerMode("brightness");
+    else props.onNav({ type: "back" });
+  };
+  const toggleColor = () => {
+    if (enabled()) props.onDimmerMode(props.dimmerMode === "brightness" ? "color" : "brightness");
+  };
+  const setBrightness = (value: number) => props.onAction({
+    type: "set-brightness",
+    lightId: props.lightId,
+    brightness: brightnessFromPercent(value),
+  });
+  const setColor = (hue: number, saturation: number) => props.onAction({
+    type: "set-color",
+    lightId: props.lightId,
+    hue,
+    saturation,
   });
   return (
-    <View ref={node => { surface = node; }} class="absolute" style={{ insetL: 0, insetT: 0, width: 640, height: 400, bgColor: theme.page }}>
+    <View class="absolute" style={{ insetL: 0, insetT: 0, width: 640, height: 400, bgColor: theme.page }}>
       <Pressable
         box={{ left: 0, top: 0, width: 238, height: 44 }}
-        onTap={() => props.onNav({ type: "back" })}
+        onTap={back}
       >
         <Icon name="back-text" left={16} top={8} size={24} />
         <Text class="absolute text-lg font-bold" style={{ insetL: 48, insetT: 10, width: 180, textColor: theme.text }}>{lightInfo(props.state, props.lightId).name}</Text>
       </Pressable>
-      <Text class="absolute text-xs text-right" style={{ insetL: 480, insetT: 13, width: 144, textColor: theme.disabledText }}>
-        {enabled() ? lightInfo(props.state, props.lightId).tag : lightStatusText(props.state, props.lightId)}
+      <Text class="absolute text-xs text-right" style={{ insetL: 480, insetT: 13, width: 144, textColor: enabled() ? theme.secondaryText : theme.disabledText }}>
+        {lightStatusText(props.state, props.lightId)}
       </Text>
-      <View class="absolute" style={{ insetL: 104, insetT: 44, width: 416, height: 64 }}>
-        <For each={slidingWindow(props.state.lightOrder, props.lightId, 4)}>{(lightId, index) => {
-          const selected = () => props.lightId === lightId;
-          const available = () => isLightAvailable(props.state, lightId);
-          return (
-            <Pressable
-              box={{ left: index() * 104, top: 0, width: 96, height: 64 }}
-              style={{ radius: 12, bgColor: selected() ? theme.secondaryBackground : theme.card, borderWidth: selected() ? 2 : 0, borderColor: theme.primary }}
-              onTap={() => props.onNav({ type: "select-light", lightId, available: availableLights(props.state) })}
-            >
-              <Icon name={bulbIcon(lightTone(props.state, lightId))} left={36} top={8} size={24} />
-              <Text class="absolute text-2xs text-center" style={{ insetL: 0, insetT: 39, width: 96, textColor: selected() ? theme.text : available() ? theme.secondaryText : theme.disabledText }}>
-                {lightInfo(props.state, lightId).chip}
-              </Text>
-            </Pressable>
-          );
-        }}</For>
-      </View>
-      <VerticalSlider left={176} top={116} screenTop={116} value={percent()} enabled={enabled()} onChange={value => props.onAction({ type: "set-brightness", lightId: props.lightId, brightness: brightnessFromPercent(value) })} />
-      <Numerals text={`${percent()}%`} size={44} left={480} top={126} center />
-      <Pressable
-        box={{ left: 452, top: 202, width: 56, height: 56 }}
-        style={{ radius: 28, bgColor: light().on && enabled() ? theme.on : theme.secondaryBackground }}
-        onTap={() => props.onAction({ type: "toggle-light", lightId: props.lightId })}
-      >
-        <Icon name={light().on && enabled() ? "power-page" : "power-secondary"} left={14} top={14} size={28} />
-      </Pressable>
-      <ColorSlider
-        kind="hue" label="色相" left={336} top={272} labelWidth={50} width={236}
-        hue={light().hue} saturation={light().saturation} enabled={enabled()}
-        onChange={(hue, saturation) => props.onAction({ type: "set-color", lightId: props.lightId, hue, saturation })}
+
+      <Numerals text={`${percent()}%`} size={44} left={320} top={44} center />
+      {props.dimmerMode === "brightness" ? (
+        <VerticalSlider
+          left={272}
+          top={90}
+          screenTop={90}
+          width={96}
+          height={214}
+          value={percent()}
+          color={lightColor(light())}
+          on={light().on}
+          enabled={enabled()}
+          onChange={setBrightness}
+        />
+      ) : (
+        <ColorWheel
+          left={212}
+          top={88}
+          size={216}
+          hue={light().hue}
+          saturation={light().saturation}
+          enabled={enabled()}
+          onChange={setColor}
+        />
+      )}
+
+      <ModeButton
+        left={256}
+        top={314}
+        size={48}
+        icon={light().on ? "power-page" : "power-secondary"}
+        label={light().on ? "关灯" : "开灯"}
+        background={light().on ? theme.on : theme.secondaryBackground}
+        labelColor={light().on ? theme.on : theme.secondaryText}
+        enabled={enabled()}
+        onTap={() => { if (enabled()) props.onAction({ type: "toggle-light", lightId: props.lightId }); }}
       />
-      <ColorSlider
-        kind="saturation" label="饱和度" left={336} top={320} labelWidth={50} width={236}
-        hue={light().hue} saturation={light().saturation} enabled={enabled()}
-        onChange={(hue, saturation) => props.onAction({ type: "set-color", lightId: props.lightId, hue, saturation })}
+      <ModeButton
+        left={336}
+        top={314}
+        size={48}
+        icon={props.dimmerMode === "brightness" ? "color-primary" : "bulb-primary"}
+        label={props.dimmerMode === "brightness" ? "颜色" : "亮度"}
+        background={props.dimmerMode === "brightness" ? theme.secondaryBackground : theme.primaryChip}
+        labelColor={props.dimmerMode === "brightness" ? theme.secondaryText : theme.primary}
+        enabled={enabled()}
+        onTap={toggleColor}
       />
-      <Text class="absolute text-2xs text-center" style={{ insetL: 330, insetT: 376, width: 290, textColor: theme.disabledText }}>上下拖动调亮度，空白处左右滑动切换灯</Text>
     </View>
   );
 }
 
 function Provision(props: LandscapeProps & { topic: "wifi" | "ha" }) {
+  const [switched, setSwitched] = createSignal<"idle" | "requested" | "none">("idle");
+  const ha = () => haStatus(props.state);
+  const haTone = () => ha().tone === "connected" ? theme.green : ha().tone === "offline" ? theme.on : theme.disabledText;
+  const switchNetwork = () => setSwitched(requestNextPreset() ? "requested" : "none");
   return (
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: 640, height: 400, bgColor: theme.page }}>
       <Pressable box={{ left: 0, top: 0, width: 250, height: 52 }} onTap={() => props.onNav({ type: "back" })}>
         <Icon name="back-text" left={16} top={14} size={24} />
-        <Text class="absolute text-lg font-bold" style={{ insetL: 48, insetT: 14, width: 180, textColor: theme.text }}>用手机配置</Text>
+        <Text class="absolute text-lg font-bold" style={{ insetL: 48, insetT: 14, width: 180, textColor: theme.text }}>连接状态</Text>
       </Pressable>
-      <View class="absolute" style={{ insetL: 80, insetT: 92, width: 196, height: 196, radius: 12, bgColor: theme.white }}>
-        <Icon name="qr-placeholder" left={16} top={16} size={164} />
+      <Text class="absolute text-xs" style={{ insetL: 332, insetT: 18, width: 292, textColor: theme.secondaryText }}>
+        {props.topic === "wifi" ? "设备当前的 Wi-Fi 与 Home Assistant 连接。" : "Home Assistant 连接与设备当前的 Wi-Fi。"}
+      </Text>
+
+      <View class="absolute" style={{ insetL: 16, insetT: 64, width: 296, height: 168, radius: 12, bgColor: theme.card }}>
+        <View class="absolute" style={{ insetL: 14, insetT: 18, width: 10, height: 10, radius: 5, bgColor: props.network.connected ? theme.green : theme.disabledText }} />
+        <Text class="absolute text-sm font-bold" style={{ insetL: 34, insetT: 12, width: 120, textColor: theme.text }}>Wi-Fi</Text>
+        <Text class="absolute text-xs text-right" style={{ insetL: 164, insetT: 14, width: 118, textColor: theme.secondaryText }}>
+          {props.network.connected ? "已连接" : "未连接"}
+        </Text>
+        <View class="absolute" style={{ insetL: 14, insetT: 48, width: 268, height: 1, bgColor: theme.divider }} />
+        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 62, width: 90, textColor: theme.secondaryText }}>当前网络</Text>
+        <Text class="absolute text-sm text-right" style={{ insetL: 108, insetT: 60, width: 174, textColor: theme.text }}>{props.network.ssid}</Text>
+        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 98, width: 90, textColor: theme.secondaryText }}>IP 地址</Text>
+        <Text class="absolute text-sm text-right" style={{ insetL: 108, insetT: 96, width: 174, textColor: theme.text }}>{props.network.address}</Text>
+        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 134, width: 90, textColor: theme.secondaryText }}>信号强度</Text>
+        <Text class="absolute text-sm text-right" style={{ insetL: 108, insetT: 132, width: 174, textColor: theme.text }}>{formatRssi(props.network.rssi)}</Text>
       </View>
-      <Text class="absolute text-2xs text-center" style={{ insetL: 48, insetT: 302, width: 260, textColor: theme.disabledText }}>二维码与热点名均为占位，请勿扫码</Text>
-      <Text class="absolute text-sm" style={{ insetL: 332, insetT: 88, width: 280, textColor: theme.text }}>
-        {props.topic === "wifi" ? "手机连接 Wi-Fi D1001-3F2A" : "在手机上填写 HA 地址和令牌"}
-      </Text>
-      <Text class="absolute text-xs" style={{ insetL: 332, insetT: 126, width: 280, height: 66, lineHeight: 22, textColor: theme.disabledText }}>
-        {"浏览器打开配置页，保存后设备自动连网。\n配置网页将在后续版本提供，当前页面不会发起配网。"}
-      </Text>
-      <Pressable box={{ left: 332, top: 288, width: 280, height: 48 }} style={{ radius: 24, bgColor: theme.secondaryBackground }} onTap={() => props.onNav({ type: "back" })}>
-        <Text class="absolute text-sm font-bold text-center" style={{ insetL: 0, insetT: 14, width: 280, textColor: theme.text }}>稍后设置</Text>
+
+      <View class="absolute" style={{ insetL: 328, insetT: 64, width: 296, height: 168, radius: 12, bgColor: theme.card }}>
+        <View class="absolute" style={{ insetL: 14, insetT: 18, width: 10, height: 10, radius: 5, bgColor: haTone() }} />
+        <Text class="absolute text-sm font-bold" style={{ insetL: 34, insetT: 12, width: 170, textColor: theme.text }}>Home Assistant</Text>
+        <Text class="absolute text-xs text-right" style={{ insetL: 190, insetT: 14, width: 92, textColor: theme.secondaryText }}>{ha().label}</Text>
+        <View class="absolute" style={{ insetL: 14, insetT: 48, width: 268, height: 1, bgColor: theme.divider }} />
+        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 62, width: 90, textColor: theme.secondaryText }}>连接状态</Text>
+        <Text class="absolute text-sm text-right" style={{ insetL: 108, insetT: 60, width: 174, textColor: theme.text }}>{ha().label}</Text>
+        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 100, width: 268, textColor: theme.disabledText }}>地址与令牌由技术人员写入设备。</Text>
+        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 126, width: 268, textColor: theme.disabledText }}>连接断开时，灯光和快捷操作不可用。</Text>
+      </View>
+
+      {canSwitchNetwork() ? (
+        <>
+          <Pressable
+            box={{ left: 16, top: 252, width: 296, height: 48 }}
+            style={{ radius: 24, bgColor: theme.primary }}
+            onTap={switchNetwork}
+          >
+            <Text class="absolute text-sm font-bold text-center" style={{ insetL: 0, insetT: 14, width: 296, textColor: theme.white }}>切换网络</Text>
+          </Pressable>
+          <Text class="absolute text-2xs" style={{ insetL: 16, insetT: 310, width: 296, textColor: theme.secondaryText }}>
+            {switched() === "requested"
+              ? "已请求切换，等待新网络。"
+              : switched() === "none"
+                ? "没有其他已配置的预设网络。"
+                : "设备将按预设顺序尝试下一个网络。"}
+          </Text>
+        </>
+      ) : (
+        <Text class="absolute text-sm" style={{ insetL: 16, insetT: 258, width: 296, height: 60, lineHeight: 24, textColor: theme.secondaryText }}>
+          网络由技术人员在设备上预设，展台现场无需配置。
+        </Text>
+      )}
+
+      <Pressable box={{ left: 328, top: 252, width: 296, height: 48 }} style={{ radius: 24, bgColor: theme.secondaryBackground }} onTap={() => props.onNav({ type: "back" })}>
+        <Text class="absolute text-sm font-bold text-center" style={{ insetL: 0, insetT: 14, width: 296, textColor: theme.text }}>返回</Text>
       </Pressable>
     </View>
   );
@@ -351,7 +375,6 @@ export function LandscapeScreen(props: LandscapeProps) {
     if (route.kind === "sensor") return <SensorDetailScreen state={props.state} sensorId={route.sensorId} landscape onNav={props.onNav} />;
     if (route.kind === "arm") return <ArmScreen state={props.state} landscape actionConfigured={props.actionConfigured} onHaAction={props.onHaAction} onNav={props.onNav} />;
     if (route.kind === "provision") return <Provision {...props} topic={route.topic} />;
-    if (route.tab === "lights") return <Lights {...props} />;
     if (route.tab === "sensors") return <Sensors {...props} />;
     if (route.tab === "settings") return <Settings {...props} />;
     return <Home {...props} />;

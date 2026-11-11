@@ -55,10 +55,15 @@ function compile() {
 }
 
 export type Touch = readonly [number, number] | null;
+export interface NativeCalls {
+  /** How many times the guest asked for the next station preset. */
+  presetSwitches(): number;
+}
+
 export interface Shot {
   name: string;
   tape: readonly { frames: number; touch: Touch }[];
-  verify?(commands: readonly WorkerCommand[]): void;
+  verify?(commands: readonly WorkerCommand[], native: NativeCalls): void;
 }
 
 interface PreviewOptions {
@@ -90,16 +95,6 @@ function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armC
     utcOffsetMinutes: () => 480,
     syncClock: () => "synchronized",
     setRgb: (r: number, gr: number, b: number) => { rgb = [r, gr, b]; return true; },
-    haConfig: () => options.haConfigured
-      ? {
-        baseUrl: "http://ha.local:8123",
-        token: "preview",
-        lightEntityId: "",
-        weatherEntityId: entityMap?.weather ?? "",
-        selftest: false,
-        entityMapJson: JSON.stringify(entityMap),
-      }
-      : { baseUrl: "", token: "", lightEntityId: "", selftest: false },
     firmwareVersion: () => "host-preview",
     setScreenOffSeconds: () => true,
     landscape: () => options.landscape,
@@ -107,9 +102,53 @@ function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armC
     savePanelState: (json: string) => { session = json; return true; },
     takePanelState: () => { const value = session; session = ""; return value; },
   };
+  // The panel reads its HA configuration only from this slot's data.fs.
+  const files = new Map<string, string>();
+  if (options.haConfigured) {
+    files.set("ha-panel.json", JSON.stringify({
+      version: 1,
+      baseUrl: "http://ha.local:8123",
+      token: "preview",
+      lightEntityId: "",
+      weatherEntityId: entityMap?.weather ?? "",
+      entityMap,
+    }));
+  }
+  g.fs = {
+    read: (path: string, offset: number, maxBytes: number) => {
+      const source = files.get(path);
+      if (source === undefined) return JSON.stringify({ error: "not found" });
+      const bytes = new TextEncoder().encode(source).subarray(offset, offset + maxBytes);
+      return JSON.stringify({ data: { $b: Buffer.from(bytes).toString("base64") }, size: bytes.length, eof: true });
+    },
+    write: (path: string, data: string) => {
+      try {
+        const value = JSON.parse(data) as string | { $b?: string };
+        if (typeof value === "string") files.set(path, value);
+        else if (value && typeof value === "object" && typeof value.$b === "string")
+          files.set(path, Buffer.from(value.$b, "base64").toString("utf8"));
+        else return 1;
+        return 0;
+      } catch {
+        return 1;
+      }
+    },
+    remove: (path: string) => { files.delete(path); return 0; },
+    list: () => JSON.stringify({ entries: [], eof: true }),
+    stat: (path: string) => {
+      const source = files.get(path);
+      return source === undefined ? "{}" : JSON.stringify({ kind: "file", size: new TextEncoder().encode(source).length });
+    },
+    mkdir: () => 0,
+    rename: (from: string, to: string) => { const value = files.get(from); if (value === undefined) return 1; files.set(to, value); files.delete(from); return 0; },
+    usage: () => JSON.stringify({ usedBytes: 0, quotaBytes: 0 }),
+    lastError: () => "not found",
+  };
+  let presetSwitches = 0;
   g.wifi = {
-    status: () => JSON.stringify({ state: "connected", ssid: "Home-5G", strength: 3, address: "192.168.1.42", saved: [], error: "", scanning: false, networks: [] }),
+    status: () => JSON.stringify({ state: "connected", ssid: "Seeed-Demo", strength: 3, rssi: -52, address: "192.168.1.42", saved: [], error: "", scanning: false, networks: [] }),
     scan: () => false, setEnabled: () => true, connect: () => false,
+    nextPreset: () => { presetSwitches += 1; return true; },
   };
   let brightness = 80;
   g.device = {
@@ -148,6 +187,7 @@ function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armC
   return {
     rgb: () => rgb,
     brightness: () => brightness,
+    presetSwitches: () => presetSwitches,
     sent,
     emit,
     pump,
@@ -198,7 +238,7 @@ async function run(shots: readonly Shot[], options: PreviewOptions) {
     for (const segment of shot.tape)
       for (let i = 0; i < segment.frames; i++) step(segment.touch);
     for (let i = 0; i < 10; i++) step(null);
-    shot.verify?.(bridge.sent);
+    shot.verify?.(bridge.sent, bridge);
     const pixels = wasm.renderScaled(DENSITY);
     const path = join(options.out, `${options.prefix}${shot.name}.png`);
     writeFileSync(path, encodePNG(new Uint8Array(pixels), width * DENSITY, height * DENSITY));

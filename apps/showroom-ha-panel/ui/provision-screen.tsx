@@ -1,48 +1,91 @@
-import { For } from "solid-js";
+import { createSignal } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
+import type { PanelState } from "../model";
+import type { NetworkInfo } from "../native";
+import { canSwitchNetwork, formatRssi, requestNextPreset } from "../native";
 import type { NavEvent, ProvisionTopic } from "../navigation";
+import { haStatus } from "../status";
 import { theme } from "../theme";
 import { Icon, Pressable } from "./primitives";
 
-const STEPS = [
-  { title: "手机连接 Wi-Fi D1001-3F2A", detail: "热点名为占位，扫码功能尚未启用" },
-  { title: "浏览器打开配置页", detail: "配置网页将在后续版本提供" },
-  { title: "保存后设备自动连网", detail: "当前页面不会发起配网" },
-] as const;
+type SwitchResult = "idle" | "requested" | "none";
 
-export function ProvisionScreen(props: { topic: ProvisionTopic; onNav(event: NavEvent): void }) {
+const TECHNICIAN_TEXT = "网络由技术人员在设备上预设，展台现场无需配置。";
+
+export function ProvisionScreen(props: {
+  topic: ProvisionTopic;
+  network: NetworkInfo;
+  state: PanelState;
+  onNav(event: NavEvent): void;
+}) {
+  const [switched, setSwitched] = createSignal<SwitchResult>("idle");
+  const ha = () => haStatus(props.state);
+  const haTone = () => ha().tone === "connected" ? theme.green : ha().tone === "offline" ? theme.on : theme.disabledText;
+  const switchNetwork = () => setSwitched(requestNextPreset() ? "requested" : "none");
   return (
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: 400, height: 640, bgColor: theme.page }}>
       <Pressable box={{ left: 0, top: 0, width: 250, height: 52 }} onTap={() => props.onNav({ type: "back" })}>
         <Icon name="back-text" left={16} top={14} size={24} />
-        <Text class="absolute text-lg font-bold" style={{ insetL: 48, insetT: 15, width: 180, textColor: theme.text }}>用手机配置</Text>
+        <Text class="absolute text-lg font-bold" style={{ insetL: 48, insetT: 15, width: 180, textColor: theme.text }}>连接状态</Text>
       </Pressable>
-      <Text class="absolute text-sm" style={{ insetL: 20, insetT: 58, width: 360, height: 42, lineHeight: 21, textColor: theme.secondaryText }}>
-        {props.topic === "wifi" ? "Wi-Fi 密码较长，请在手机上填写。\n扫码配置尚未启用，以下内容为占位。" : "HA 地址和令牌较长，请在手机上填写。\n扫码配置尚未启用，以下内容为占位。"}
+      <Text class="absolute text-xs" style={{ insetL: 20, insetT: 58, width: 360, textColor: theme.secondaryText }}>
+        {props.topic === "wifi" ? "设备当前的 Wi-Fi 与 Home Assistant 连接。" : "Home Assistant 连接与设备当前的 Wi-Fi。"}
       </Text>
-      <View class="absolute" style={{ insetL: 86, insetT: 112, width: 228, height: 228, radius: 12, bgColor: theme.white }}>
-        <Icon name="qr-placeholder" left={14} top={14} size={200} />
+
+      <View class="absolute" style={{ insetL: 20, insetT: 88, width: 360, height: 168, radius: 12, bgColor: theme.card }}>
+        <View class="absolute" style={{ insetL: 16, insetT: 20, width: 10, height: 10, radius: 5, bgColor: props.network.connected ? theme.green : theme.disabledText }} />
+        <Text class="absolute text-sm font-bold" style={{ insetL: 36, insetT: 15, width: 120, textColor: theme.text }}>Wi-Fi</Text>
+        <Text class="absolute text-xs text-right" style={{ insetL: 224, insetT: 17, width: 120, textColor: theme.secondaryText }}>
+          {props.network.connected ? "已连接" : "未连接"}
+        </Text>
+        <View class="absolute" style={{ insetL: 16, insetT: 52, width: 328, height: 1, bgColor: theme.divider }} />
+        <Text class="absolute text-xs" style={{ insetL: 16, insetT: 66, width: 100, textColor: theme.secondaryText }}>当前网络</Text>
+        <Text class="absolute text-sm text-right" style={{ insetL: 140, insetT: 64, width: 204, textColor: theme.text }}>{props.network.ssid}</Text>
+        <Text class="absolute text-xs" style={{ insetL: 16, insetT: 100, width: 100, textColor: theme.secondaryText }}>IP 地址</Text>
+        <Text class="absolute text-sm text-right" style={{ insetL: 140, insetT: 98, width: 204, textColor: theme.text }}>{props.network.address}</Text>
+        <Text class="absolute text-xs" style={{ insetL: 16, insetT: 134, width: 100, textColor: theme.secondaryText }}>信号强度</Text>
+        <Text class="absolute text-sm text-right" style={{ insetL: 140, insetT: 132, width: 204, textColor: theme.text }}>{formatRssi(props.network.rssi)}</Text>
       </View>
-      <Text class="absolute text-2xs text-center" style={{ insetL: 20, insetT: 346, width: 360, textColor: theme.disabledText }}>
-        二维码与热点名均为占位，请勿扫码
-      </Text>
-      <For each={STEPS}>{(step, index) => (
-        <View class="absolute" style={{ insetL: 24, insetT: 374 + index() * 58, width: 352, height: 52 }}>
-          <View class="absolute" style={{ insetL: 0, insetT: 0, width: 24, height: 24, radius: 12, bgColor: theme.secondaryBackground }}>
-            <Text class="absolute text-xs font-bold text-center" style={{ insetL: 0, insetT: 5, width: 24, textColor: theme.primary }}>
-              {String(index() + 1)}
-            </Text>
-          </View>
-          <Text class="absolute text-sm" style={{ insetL: 36, insetT: 1, width: 310, textColor: theme.text }}>{step.title}</Text>
-          <Text class="absolute text-2xs" style={{ insetL: 36, insetT: 25, width: 310, textColor: theme.secondaryText }}>{step.detail}</Text>
-        </View>
-      )}</For>
+
+      <View class="absolute" style={{ insetL: 20, insetT: 272, width: 360, height: 112, radius: 12, bgColor: theme.card }}>
+        <View class="absolute" style={{ insetL: 16, insetT: 20, width: 10, height: 10, radius: 5, bgColor: haTone() }} />
+        <Text class="absolute text-sm font-bold" style={{ insetL: 36, insetT: 15, width: 180, textColor: theme.text }}>Home Assistant</Text>
+        <Text class="absolute text-xs text-right" style={{ insetL: 224, insetT: 17, width: 120, textColor: theme.secondaryText }}>{ha().label}</Text>
+        <View class="absolute" style={{ insetL: 16, insetT: 52, width: 328, height: 1, bgColor: theme.divider }} />
+        <Text class="absolute text-xs" style={{ insetL: 16, insetT: 66, width: 100, textColor: theme.secondaryText }}>连接状态</Text>
+        <Text class="absolute text-sm text-right" style={{ insetL: 140, insetT: 64, width: 204, textColor: theme.text }}>{ha().label}</Text>
+        <Text class="absolute text-2xs" style={{ insetL: 16, insetT: 92, width: 328, textColor: theme.disabledText }}>地址与令牌由技术人员写入设备。</Text>
+      </View>
+
+      {canSwitchNetwork() ? (
+        <>
+          <Pressable
+            box={{ left: 20, top: 412, width: 360, height: 48 }}
+            style={{ radius: 24, bgColor: theme.primary }}
+            onTap={switchNetwork}
+          >
+            <Text class="absolute text-sm font-bold text-center" style={{ insetL: 0, insetT: 14, width: 360, textColor: theme.white }}>切换网络</Text>
+          </Pressable>
+          <Text class="absolute text-2xs text-center" style={{ insetL: 20, insetT: 470, width: 360, textColor: theme.secondaryText }}>
+            {switched() === "requested"
+              ? "已请求切换，等待新网络。"
+              : switched() === "none"
+                ? "没有其他已配置的预设网络。"
+                : "设备将按预设顺序尝试下一个网络。"}
+          </Text>
+        </>
+      ) : (
+        <Text class="absolute text-sm" style={{ insetL: 20, insetT: 428, width: 360, height: 48, lineHeight: 24, textColor: theme.secondaryText }}>
+          {TECHNICIAN_TEXT}
+        </Text>
+      )}
+
       <Pressable
         box={{ left: 20, top: 572, width: 360, height: 48 }}
         style={{ radius: 24, bgColor: theme.secondaryBackground }}
         onTap={() => props.onNav({ type: "back" })}
       >
-        <Text class="absolute text-sm font-bold text-center" style={{ insetL: 0, insetT: 14, width: 360, textColor: theme.text }}>稍后设置</Text>
+        <Text class="absolute text-sm font-bold text-center" style={{ insetL: 0, insetT: 14, width: 360, textColor: theme.text }}>返回</Text>
       </Pressable>
     </View>
   );

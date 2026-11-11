@@ -1,8 +1,8 @@
 import { hsvToRgb } from "../apps/showroom-ha-panel/color";
-import { hueFromX, saturationFromX } from "../apps/showroom-ha-panel/dimmer";
+import { hueSaturationFromPoint } from "../apps/showroom-ha-panel/dimmer";
 import type { HaLightCommand } from "../apps/showroom-ha-panel/ha-request";
 import type { WorkerCommand } from "../apps/showroom-ha-panel/protocol";
-import { gestures, type Shot } from "./showroom-ha-panel-preview.ts";
+import { gestures, type NativeCalls, type Shot } from "./showroom-ha-panel-preview.ts";
 
 const { tap, hold, drag } = gestures;
 
@@ -24,6 +24,11 @@ function verifyAction(actionId: string, confirmed: boolean) {
 function verifyNoArm(commands: readonly WorkerCommand[]) {
   const matches = commands.filter(command => command.type === "action" && command.actionId.startsWith("arm-"));
   if (matches.length) throw new Error(`unconfigured arm action sent ${JSON.stringify(matches)}`);
+}
+
+function verifyOnePresetSwitch(_commands: readonly WorkerCommand[], native: NativeCalls) {
+  const count = native.presetSwitches();
+  if (count !== 1) throw new Error(`expected one next-preset request; got ${count}`);
 }
 
 function verifyLight(lightId: string, expected: HaLightCommand) {
@@ -55,28 +60,27 @@ export const SHOTS: ShotSet = {
     { name: "reachy-stop", tape: tap(327, 374), verify: verifyAction("reachy-stop", false) },
     { name: "arm-unconfigured", tape: [...tap(100, 450), ...tap(110, 330)], verify: verifyNoArm },
     { name: "lights", tape: tap(150, 610) },
-    { name: "lights-switch", tape: [...tap(150, 610), ...tap(290, 160)] },
-    { name: "lights-row", tape: [...tap(150, 610), ...tap(100, 160)] },
     { name: "sensors", tape: tap(250, 610) },
     { name: "sensor-detail", tape: [...tap(250, 610), ...tap(100, 160)] },
     { name: "dimmer", tape: hold(100, 140) },
-    { name: "dimmer-drag", tape: [...hold(100, 140), ...drag(200, 390, 200, 270)] },
-    { name: "dimmer-swipe", tape: [...hold(100, 140), ...drag(330, 450, 90, 450)] },
+    { name: "dimmer-drag", tape: [...hold(100, 140), ...tap(150, 520), ...drag(200, 400, 200, 220)] },
     {
       name: "dimmer-color",
-      tape: [...hold(100, 140), ...tap(328, 322), ...drag(100, 494, 230, 494), ...drag(300, 546, 157, 546)],
-      verify: verifyColor("remote", hueFromX(230, 84, 292), saturationFromX(157, 84, 292)),
+      tape: [...hold(100, 140), ...tap(150, 520), ...tap(250, 520), ...drag(200, 260, 165, 320)],
+      verify: verifyColor("remote",
+        hueSaturationFromPoint(165, 320, 200, 260, 116).hue,
+        hueSaturationFromPoint(165, 320, 200, 260, 116).saturation),
     },
     { name: "settings", tape: tap(350, 610) },
     { name: "settings-timeout", tape: [...tap(350, 610), ...tap(242, 199)] },
     { name: "settings-backlight", tape: [...tap(350, 610), ...drag(240, 100, 330, 100)] },
     { name: "provision", tape: [...tap(350, 610), ...tap(100, 296)] },
+    { name: "provision-switch", tape: [...tap(350, 610), ...tap(100, 296), ...tap(200, 436)], verify: verifyOnePresetSwitch },
   ],
   offline: [
     { name: "home", tape: [] },
     { name: "lights", tape: tap(150, 610) },
     { name: "sensors", tape: tap(250, 610) },
-    { name: "dimmer", tape: [...tap(150, 610), ...hold(100, 160)] },
     { name: "settings", tape: tap(350, 610) },
   ],
   noWeather: [
@@ -91,39 +95,38 @@ export const LANDSCAPE_SHOTS: ShotSet = {
   connected: [
     { name: "home", tape: [] },
     { name: "home-toggle", tape: tap(160, 140), verify: verifyLight("remote", { on: true }) },
-    { name: "reachy-retail", tape: tap(459, 106), verify: verifyAction("reachy-intro-retail", false) },
-    { name: "reachy-stop", tape: tap(559, 210), verify: verifyAction("reachy-stop", false) },
-    { name: "arm-unconfigured", tape: [...tap(450, 300), ...tap(400, 150)], verify: verifyNoArm },
+    { name: "reachy-retail", tape: tap(150, 325), verify: verifyAction("reachy-intro-retail", false) },
+    { name: "reachy-stop", tape: tap(350, 371), verify: verifyAction("reachy-stop", false) },
+    { name: "arm-unconfigured", tape: [...tap(500, 300), ...tap(400, 150)], verify: verifyNoArm },
     { name: "lights", tape: tap(44, 155) },
-    { name: "lights-switch", tape: [...tap(44, 155), ...tap(300, 155)] },
-    { name: "lights-row", tape: [...tap(44, 155), ...tap(150, 150)] },
     { name: "sensors", tape: tap(44, 230) },
     { name: "sensor-detail", tape: [...tap(44, 230), ...tap(150, 150)] },
     { name: "dimmer", tape: hold(160, 140) },
-    { name: "dimmer-drag", tape: [...hold(160, 140), ...drag(240, 340, 240, 200)] },
-    { name: "dimmer-swipe", tape: [...hold(160, 140), ...drag(500, 250, 100, 250)] },
+    { name: "dimmer-drag", tape: [...hold(160, 140), ...tap(280, 338), ...drag(320, 280, 320, 130)] },
     {
       name: "dimmer-color",
-      tape: [...hold(160, 140), ...tap(480, 230), ...drag(400, 290, 504, 290), ...drag(600, 338, 445, 338)],
-      verify: verifyColor("remote", hueFromX(504, 386, 236), saturationFromX(445, 386, 236)),
+      tape: [...hold(160, 140), ...tap(280, 338), ...tap(360, 338), ...drag(320, 196, 291, 246)],
+      verify: verifyColor("remote",
+        hueSaturationFromPoint(291, 246, 320, 196, 96).hue,
+        hueSaturationFromPoint(291, 246, 320, 196, 96).saturation),
     },
     { name: "settings", tape: tap(44, 315) },
     { name: "settings-timeout", tape: [...tap(44, 315), ...tap(170, 240)] },
     { name: "settings-backlight", tape: [...tap(44, 315), ...drag(240, 85, 330, 85)] },
     { name: "settings-rotate", tape: [...tap(44, 315), ...tap(500, 344)] },
     { name: "provision", tape: [...tap(44, 315), ...tap(450, 90)] },
+    { name: "provision-switch", tape: [...tap(44, 315), ...tap(450, 90), ...tap(164, 276)], verify: verifyOnePresetSwitch },
   ],
   offline: [
     { name: "home", tape: [] },
     { name: "lights", tape: tap(44, 155) },
     { name: "sensors", tape: tap(44, 230) },
-    { name: "dimmer", tape: [...tap(44, 155), ...hold(150, 150)] },
     { name: "settings", tape: tap(44, 315) },
   ],
   noWeather: [
     { name: "home", tape: [] },
   ],
   arm: [
-    { name: "arm-hold-confirm", tape: [...tap(450, 300), ...tap(400, 150), ...hold(400, 150)], verify: verifyAction("arm-gravity", true) },
+    { name: "arm-hold-confirm", tape: [...tap(500, 300), ...tap(400, 150), ...hold(400, 150)], verify: verifyAction("arm-gravity", true) },
   ],
 };
