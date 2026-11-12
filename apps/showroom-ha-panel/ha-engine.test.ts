@@ -306,16 +306,11 @@ describe("production HA engine", () => {
     expect(services.map(service => JSON.parse(service.request.body!))).toEqual([
       {
         entity_id: "script.keymesh_dispatch",
-        host: "hall-win-3bbkv8f",
-        task: "arm-gravity-start",
-        confirm: true,
+        variables: { host: "hall-win-3bbkv8f", confirm: true, task: "arm-gravity-start" },
       },
       {
         entity_id: "script.keymesh_dispatch",
-        host: "hall-win-3bbkv8f",
-        task: "arm-play",
-        action: "act_db914a65db",
-        confirm: true,
+        variables: { host: "hall-win-3bbkv8f", confirm: true, task: "arm-play", action: "act_db914a65db" },
       },
     ]);
     expect(events).toContainEqual({ type: "action-result", actionId: "arm-gravity", runId: 1, status: "accepted", error: "" });

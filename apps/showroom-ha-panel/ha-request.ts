@@ -124,19 +124,14 @@ export function createPressButtonRequest(config: HaConfig, entityId: string): Ht
 export function createArmScriptRequest(config: HaConfig, entityId: string, actionId: string): HttpRequest {
   if (entityId !== "script.keymesh_dispatch")
     throw new Error("arm actions require script.keymesh_dispatch");
-  const command = {
-    entity_id: entityId,
-    host: "hall-win-3bbkv8f",
-    confirm: true,
-  };
-  if (actionId === "arm-gravity")
-    return postRequest(config, "/api/services/script/turn_on", { ...command, task: "arm-gravity-start" });
-  if (actionId === "arm-playback")
-    return postRequest(config, "/api/services/script/turn_on", {
-      ...command,
-      task: "arm-play",
-      action: "act_db914a65db",
+  // script.turn_on accepts only entity_id and variables; the script fields go in variables.
+  const call = (variables: Record<string, unknown>) =>
+    postRequest(config, "/api/services/script/turn_on", {
+      entity_id: entityId,
+      variables: { host: "hall-win-3bbkv8f", confirm: true, ...variables },
     });
+  if (actionId === "arm-gravity") return call({ task: "arm-gravity-start" });
+  if (actionId === "arm-playback") return call({ task: "arm-play", action: "act_db914a65db" });
   throw new Error("unsupported arm action");
 }
 
