@@ -502,10 +502,14 @@ static void run_app(void *context) {
     ESP_ERROR_CHECK(pocket_runner_stats(host.runner, &stats));
     const int64_t now = esp_timer_get_time();
     const uint32_t frames = stats.frames - last.frames;
-    const size_t dma_free =
-        heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    const uint32_t dma_caps = MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL;
+    const size_t dma_largest = heap_caps_get_largest_free_block(dma_caps);
+    const size_t dma_free = heap_caps_get_free_size(dma_caps);
+    const size_t dma_minimum = heap_caps_get_minimum_free_size(dma_caps);
     const d1001_move_stats moves = d1001_move_tracker_read();
-    ESP_LOGI(TAG, "internal_dma_largest_free=%u bytes", (unsigned)dma_free);
+    ESP_LOGI(TAG, "internal_dma_largest_free=%u free=%u minimum=%u bytes",
+             (unsigned)dma_largest, (unsigned)dma_free,
+             (unsigned)dma_minimum);
     ESP_LOGI(TAG,
              "frames=%" PRIu32 " fps=%.1f skipped=%" PRIu32
              " errors=%" PRIu32 " max_frame_ms=%.2f",

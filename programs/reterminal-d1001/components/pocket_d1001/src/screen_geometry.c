@@ -19,7 +19,7 @@ uint32_t d1001_screen_raster_height(bool landscape) {
 }
 
 uint32_t d1001_screen_strip_rows(bool landscape) {
-  return landscape ? 20U : 40U;
+  return landscape ? 20U : 32U;
 }
 
 static float clamp(float value, float maximum) {
