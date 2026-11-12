@@ -109,6 +109,8 @@ static void test_rotation_geometry_and_wake(void) {
         128U * 1024U);
   CHECK(d1001_screen_raster_width(true) * d1001_screen_strip_rows(true) * 4U <=
         128U * 1024U);
+  CHECK(d1001_screen_raster_width(false) * d1001_screen_strip_rows(false) ==
+        d1001_screen_raster_width(true) * d1001_screen_strip_rows(true));
 
   float x = 0;
   float y = 0;
