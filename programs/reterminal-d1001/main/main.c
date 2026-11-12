@@ -458,6 +458,9 @@ static void run_app(void *context) {
         d1001_screen_set_landscape(d1001_screen_get(), false);
         select_package_internal(&host);
       }
+      /* stop_guest unbound data.fs; rebind it or the app loses its HA config. */
+      if ((host.package.facts.features & POCKET_IDF_FEATURE_FS) != 0U)
+        ESP_ERROR_CHECK(d1001_fs_init(host.package.facts.slot));
       /* Keep the last frame while the new runtime compiles and presents; a
        * black clear here reads as a flash between orientations. */
       create_display(&host);
