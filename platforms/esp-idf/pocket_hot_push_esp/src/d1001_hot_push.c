@@ -2,6 +2,7 @@
  * pocket_system/src/flash_store.c. */
 #include "d1001_hot_push.h"
 
+#include "d1001_hot_push_policy.h"
 #include "sdkconfig.h"
 
 #ifndef CONFIG_D1001_HOT_PUSH
@@ -334,23 +335,33 @@ static esp_err_t handle_push(httpd_req_t *request) {
   }
 
   const int64_t write_started = esp_timer_get_time();
-  status = write_changed_sectors(partition, image, request->content_len);
-  if (status != ESP_OK) {
-    ESP_LOGE(TAG, "apps delta write failed: %s", esp_err_to_name(status));
-    free(image);
-    return send_error(request, "500 Internal Server Error", "write_failed");
-  }
+  const esp_err_t write_status =
+      write_changed_sectors(partition, image, request->content_len);
   const uint32_t write_ms =
       (unsigned)(esp_timer_get_time() - write_started) / 1000U;
+  if (write_status != ESP_OK)
+    ESP_LOGE(TAG, "apps delta write failed: %s",
+             esp_err_to_name(write_status));
 
+  /* Even a failed/partial write needs a controlled restart: package selection
+   * validates apps and falls back to the embedded image. */
   const int64_t restart_started = esp_timer_get_time();
-  status = hot_push.restart(hot_push.context);
+  const esp_err_t restart_status = hot_push.restart(hot_push.context);
   const uint32_t restart_ms =
       (unsigned)(esp_timer_get_time() - restart_started) / 1000U;
-  if (status != ESP_OK) {
-    ESP_LOGE(TAG, "runtime restart failed: %s", esp_err_to_name(status));
+  const d1001_hot_push_outcome outcome = d1001_hot_push_outcome_for(
+      write_status == ESP_OK, restart_status == ESP_OK);
+  if (outcome != D1001_HOT_PUSH_OK) {
+    if (outcome == D1001_HOT_PUSH_WRITE_FAILED_UNRECOVERED) {
+      ESP_LOGE(TAG, "runtime recovery failed after write error: %s",
+               esp_err_to_name(restart_status));
+    } else if (outcome == D1001_HOT_PUSH_RESTART_FAILED) {
+      ESP_LOGE(TAG, "runtime restart failed: %s",
+               esp_err_to_name(restart_status));
+    }
     free(image);
-    return send_error(request, "500 Internal Server Error", "restart_failed");
+    return send_error(request, "500 Internal Server Error",
+                      d1001_hot_push_outcome_code(outcome));
   }
 
   sample_psram(&memory);

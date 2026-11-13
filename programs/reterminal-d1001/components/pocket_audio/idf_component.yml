@@ -1,0 +1,10 @@
+version: "0.1.0"
+description: D1001 audio.pcm mixer and QuickJS bindings
+license: MIT
+targets:
+  - esp32p4
+dependencies:
+  idf: ">=6.0,<6.3"
+  espressif/quickjs-ng:
+    version: "0.14.0"
+    public: true

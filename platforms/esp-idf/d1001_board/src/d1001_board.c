@@ -64,6 +64,11 @@ static esp_err_t init_power(void) {
                                   D1001_PCA9535_LCD_RESET,
                               true),
       TAG, "panel power");
+  /* The expander powers up with P13 high; keep the speaker amp quiet until
+   * pocket_audio enables it for the first playing stream. */
+  ESP_RETURN_ON_ERROR(
+      d1001_pca9535_set_level(D1001_PCA9535_PA_ENABLE, false), TAG,
+      "disable speaker amplifier");
   vTaskDelay(pdMS_TO_TICKS(50));
   const esp_ldo_channel_config_t config = {
       .chan_id = D1001_DSI_LDO_CHANNEL,
@@ -194,6 +199,10 @@ esp_err_t d1001_board_rgb_set_color(uint8_t red, uint8_t green, uint8_t blue) {
 esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue) {
   return d1001_board_rgb_set_color(red ? UINT8_MAX : 0U, green ? UINT8_MAX : 0U,
                                    blue ? UINT8_MAX : 0U);
+}
+
+esp_err_t d1001_board_pa_set(bool enable) {
+  return d1001_pca9535_set_level(D1001_PCA9535_PA_ENABLE, enable);
 }
 
 esp_err_t d1001_board_init(d1001_board_handles *handles) {

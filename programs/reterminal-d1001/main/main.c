@@ -16,9 +16,12 @@
 #include "esp_timer.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "display_move.h"
+#include "hot_state.h"
 #include "inputs.h"
+#include "pocket/audio.h"
 #include "pocket/d1001.h"
 #include "pocket/device.h"
 #include "pocket/display_esp_dpi.h"
@@ -41,8 +44,10 @@
 #define D1001_GUEST_HEAP (8U * 1024U * 1024U)
 #define D1001_GUEST_STACK (192U * 1024U)
 #define D1001_GUEST_STACK_LIMIT (144U * 1024U)
+#define D1001_HOT_OPERATION_TIMEOUT_MS 10000U
 
 static const char *TAG = "pocketjs_d1001";
+static portMUX_TYPE rotate_mux = portMUX_INITIALIZER_UNLOCKED;
 
 typedef struct {
   d1001_board_handles board;
@@ -65,18 +70,16 @@ typedef struct {
   uint32_t worker_generation;
   bool hot_started;
   TaskHandle_t app_task;
+  SemaphoreHandle_t hot_request_lock;
   SemaphoreHandle_t hot_done;
   volatile uint32_t hot_operation;
+  d1001_hot_phase hot_phase;
   esp_err_t hot_result;
   d1001_inputs inputs;
   d1001_package package;
 } d1001_host;
 
-static void require_status(int32_t status) {
-  assert(status == POCKET_STATUS_OK);
-}
-
-static void create_display(d1001_host *host) {
+static esp_err_t create_display(d1001_host *host) {
   const uint32_t width = d1001_screen_raster_width(host->landscape);
   const uint32_t height = d1001_screen_raster_height(host->landscape);
   const uint32_t strip_rows = d1001_screen_strip_rows(host->landscape);
@@ -100,15 +103,21 @@ static void create_display(d1001_host *host) {
       .move_copy = host->copy,
   };
   host->display = pocket_display_esp_dpi_create(&display_config);
-  assert(host->display != NULL);
-  assert(pocket_display_esp_dpi_buffer_bytes(host->display) ==
-         2U * host->strip_bytes);
-  assert(2U * host->strip_bytes <= 128U * 1024U);
+  if (host->display == NULL)
+    return ESP_ERR_NO_MEM;
+  if (pocket_display_esp_dpi_buffer_bytes(host->display) !=
+          2U * host->strip_bytes ||
+      2U * host->strip_bytes > 128U * 1024U) {
+    pocket_display_esp_dpi_destroy(host->display);
+    host->display = NULL;
+    return ESP_ERR_INVALID_SIZE;
+  }
   ESP_LOGI(TAG, "raster %ux%u, logical %ux%u at density 2, strips 2 x %u bytes",
            (unsigned)width, (unsigned)height,
            (unsigned)d1001_screen_logical_width(host->landscape),
            (unsigned)d1001_screen_logical_height(host->landscape),
            (unsigned)host->strip_bytes);
+  return ESP_OK;
 }
 
 static void start_display(d1001_host *host) {
@@ -125,7 +134,7 @@ static void start_display(d1001_host *host) {
   copy_config.backlog = 12;
   copy_config.dma_burst_size = 64;
   ESP_ERROR_CHECK(esp_async_memcpy_install_gdma_axi(&copy_config, &host->copy));
-  create_display(host);
+  ESP_ERROR_CHECK(create_display(host));
 }
 
 static bool network_online(void *context) {
@@ -161,16 +170,30 @@ static void before_tick(void *context) {
   d1001_host *host = context;
   if (host->worker_ui != NULL)
     assert(pocket_worker_ui_latch(host->worker_ui) == POCKET_WORKER_OK);
+  if ((host->package.facts.features & POCKET_IDF_FEATURE_AUDIO_PCM) != 0U)
+    pocket_audio_latch();
 }
 
 static void rotation_requested(void *context, bool landscape) {
   d1001_host *host = context;
+  taskENTER_CRITICAL(&rotate_mux);
   host->rotate_landscape = landscape;
   host->rotate_pending = true;
+  taskEXIT_CRITICAL(&rotate_mux);
   xTaskNotifyGive(host->app_task);
 }
 
-static void start_guest(d1001_host *host) {
+static void interrupt_guest(void *context) {
+  d1001_host *host = context;
+  if (host->guest != NULL)
+    pocket_guest_idf_interrupt(host->guest);
+}
+
+static esp_err_t start_guest(d1001_host *host) {
+  const uint32_t features = host->package.facts.features;
+  esp_err_t err = pocket_audio_setup(host->board.system_i2c);
+  if (err != ESP_OK)
+    return err;
   pocket_runtime_config config = {
       .struct_size = sizeof(config),
       .host_abi = pocket_profile.host_abi,
@@ -181,7 +204,8 @@ static void start_guest(d1001_host *host) {
   };
   memcpy(config.profile_hash, pocket_profile.profile_hash, 32);
   host->runtime = pocket_runtime_create(&config);
-  assert(host->runtime != NULL);
+  if (host->runtime == NULL)
+    return ESP_ERR_NO_MEM;
 
   const pocket_guest_idf_config guest_config = {
       .heap_limit = D1001_GUEST_HEAP,
@@ -189,24 +213,45 @@ static void start_guest(d1001_host *host) {
       .prefer_psram = true,
   };
   host->guest = pocket_guest_idf_create(&guest_config);
-  assert(host->guest != NULL);
-  require_status(pocket_runtime_set_guest(
-      host->runtime, pocket_guest_idf_vtable(), host->guest));
-
-  require_status(pocket_runtime_set_package_source(
-      host->runtime, pocket_memory_package_vtable(), &host->package.source));
-  ESP_ERROR_CHECK(d1001_inputs_init(&host->board, host->runtime, &host->inputs));
+  if (host->guest == NULL)
+    return ESP_ERR_NO_MEM;
+  if (pocket_runtime_set_guest(host->runtime, pocket_guest_idf_vtable(),
+                               host->guest) != POCKET_STATUS_OK)
+    return ESP_FAIL;
+  if (pocket_runtime_set_package_source(
+          host->runtime, pocket_memory_package_vtable(),
+          &host->package.source) != POCKET_STATUS_OK)
+    return ESP_FAIL;
+  err = d1001_inputs_init(&host->board, host->runtime, &host->inputs);
+  if (err != ESP_OK)
+    return err;
   d1001_screen_set_rotation_callback(host->inputs.screen, rotation_requested,
                                      host);
 
   JSContext *realm = pocket_guest_idf_context(host->guest);
-  const uint32_t features = host->package.facts.features;
-  if ((features & POCKET_IDF_FEATURE_FS) != 0U)
-    ESP_ERROR_CHECK(d1001_fs_install(realm));
-  if ((features & POCKET_IDF_FEATURE_DEVICE) != 0U)
-    ESP_ERROR_CHECK(pocket_device_install(realm));
-  ESP_ERROR_CHECK(d1001_wifi_install(realm));
-  ESP_ERROR_CHECK(d1001_panel_install(realm, &host->board));
+  if (realm == NULL)
+    return ESP_ERR_INVALID_STATE;
+  if ((features & POCKET_IDF_FEATURE_AUDIO_PCM) != 0U) {
+    err = pocket_audio_install(realm);
+    if (err != ESP_OK)
+      return err;
+  }
+  if ((features & POCKET_IDF_FEATURE_FS) != 0U) {
+    err = d1001_fs_install(realm);
+    if (err != ESP_OK)
+      return err;
+  }
+  if ((features & POCKET_IDF_FEATURE_DEVICE) != 0U) {
+    err = pocket_device_install(realm);
+    if (err != ESP_OK)
+      return err;
+  }
+  err = d1001_wifi_install(realm);
+  if (err != ESP_OK)
+    return err;
+  err = d1001_panel_install(realm, &host->board);
+  if (err != ESP_OK)
+    return err;
 
   const char *worker_source = NULL;
   size_t worker_source_size = 0;
@@ -236,10 +281,13 @@ static void start_guest(d1001_host *host) {
         .heap_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
         .task_stack_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
     };
-    ESP_ERROR_CHECK(pocket_worker_esp_start(&worker_config, &host->worker));
+    err = pocket_worker_esp_start(&worker_config, &host->worker);
+    if (err != ESP_OK)
+      return err;
     host->worker_ui = pocket_worker_ui_attach(
         realm, pocket_worker_esp_core(host->worker));
-    assert(host->worker_ui != NULL);
+    if (host->worker_ui == NULL)
+      return ESP_ERR_NO_MEM;
   }
 
   const pocket_ppa_config ppa_config = {
@@ -251,25 +299,35 @@ static void start_guest(d1001_host *host) {
       .mask_budget = host->strip_bytes / 2U,
   };
   for (size_t i = 0; i < 2U; ++i) {
-    ESP_ERROR_CHECK(pocketjs_esp32p4_ppa_create(&host->ppa[i]));
+    err = pocketjs_esp32p4_ppa_create(&host->ppa[i]);
+    if (err != ESP_OK)
+      return err;
     host->renderers[i] = pocket_render_esp_ppa_create(
         &ppa_config, pocketjs_esp32p4_ppa_status_ops(host->ppa[i]));
-    assert(host->renderers[i] != NULL);
+    if (host->renderers[i] == NULL)
+      return ESP_ERR_NO_MEM;
   }
-  ESP_ERROR_CHECK(pocketjs_esp32p4_ppa_lanes_create(
-      host->renderers[0], host->renderers[1], 1, 4, &host->lanes));
+  err = pocketjs_esp32p4_ppa_lanes_create(host->renderers[0],
+                                          host->renderers[1], 1, 4,
+                                          &host->lanes);
+  if (err != ESP_OK)
+    return err;
   const pocket_renderer_id renderer = pocket_runtime_add_renderer(
       host->runtime, pocketjs_esp32p4_ppa_lanes_vtable(), host->lanes);
-  assert(renderer != POCKET_RENDERER_INVALID);
+  if (renderer == POCKET_RENDERER_INVALID)
+    return ESP_FAIL;
   d1001_move_tracker_init();
-  require_status(pocket_runtime_add_display(
-      host->runtime, d1001_move_tracker_vtable(), host->display, renderer));
+  if (pocket_runtime_add_display(host->runtime,
+                                 d1001_move_tracker_vtable(), host->display,
+                                 renderer) != POCKET_STATUS_OK)
+    return ESP_FAIL;
 
   const int32_t boot = pocket_runtime_boot(host->runtime);
-  if (boot != POCKET_STATUS_OK)
+  if (boot != POCKET_STATUS_OK) {
     ESP_LOGE(TAG, "boot status=%" PRId32 ": %s", boot,
              pocket_guest_idf_error(host->guest));
-  require_status(boot);
+    return ESP_FAIL;
+  }
   if (host->worker != NULL)
     pocket_worker_esp_resume(host->worker);
 
@@ -279,9 +337,9 @@ static void start_guest(d1001_host *host) {
   runner_config.task_stack_caps = MALLOC_CAP_SPIRAM;
   runner_config.task_core = 0;
   runner_config.before_tick = before_tick;
+  runner_config.interrupt = interrupt_guest;
   runner_config.user_data = host;
-  ESP_ERROR_CHECK(
-      pocket_runner_start(host->runtime, &runner_config, &host->runner));
+  return pocket_runner_start(host->runtime, &runner_config, &host->runner);
 }
 
 static void stop_guest(d1001_host *host) {
@@ -299,6 +357,7 @@ static void stop_guest(d1001_host *host) {
       vTaskDelay(pdMS_TO_TICKS(10));
     host->worker = NULL;
   }
+  pocket_audio_teardown();
   if ((host->package.facts.features & POCKET_IDF_FEATURE_FS) != 0U)
     d1001_fs_teardown();
   d1001_panel_teardown();
@@ -331,18 +390,41 @@ static void select_package_internal(d1001_host *host);
 
 #if CONFIG_D1001_HOT_PUSH
 static esp_err_t run_hot_operation(d1001_host *host, uint32_t operation) {
-  if (host->app_task == NULL || host->hot_operation != 0U)
+  if (operation != 1U && operation != 2U)
+    return ESP_ERR_INVALID_ARG;
+  if (host->app_task == NULL || host->hot_request_lock == NULL)
     return ESP_ERR_INVALID_STATE;
-  host->hot_done = xSemaphoreCreateBinary();
-  if (host->hot_done == NULL)
-    return ESP_ERR_NO_MEM;
-  host->hot_result = ESP_OK;
-  host->hot_operation = operation;
-  xTaskNotifyGive(host->app_task);
-  xSemaphoreTake(host->hot_done, portMAX_DELAY);
-  vSemaphoreDelete(host->hot_done);
-  host->hot_done = NULL;
-  return host->hot_result;
+  if (xSemaphoreTake(host->hot_request_lock, portMAX_DELAY) != pdTRUE)
+    return ESP_ERR_INVALID_STATE;
+  esp_err_t result = ESP_ERR_INVALID_STATE;
+  /* A repeated stop is idempotent; the phase machine leaves an already
+   * stopped runtime alone. A timed-out completion semaphore is intentionally
+   * left for the app task to release; a later request cleans it up. */
+  if (host->hot_operation == 0U) {
+    if (host->hot_done != NULL) {
+      vSemaphoreDelete(host->hot_done);
+      host->hot_done = NULL;
+    }
+    host->hot_done = xSemaphoreCreateBinary();
+    if (host->hot_done == NULL) {
+      result = ESP_ERR_NO_MEM;
+    } else {
+      host->hot_result = ESP_OK;
+      host->hot_operation = operation;
+      xTaskNotifyGive(host->app_task);
+      if (xSemaphoreTake(host->hot_done,
+                         pdMS_TO_TICKS(D1001_HOT_OPERATION_TIMEOUT_MS)) ==
+          pdTRUE) {
+        vSemaphoreDelete(host->hot_done);
+        host->hot_done = NULL;
+        result = host->hot_result;
+      } else {
+        result = ESP_ERR_TIMEOUT;
+      }
+    }
+  }
+  xSemaphoreGive(host->hot_request_lock);
+  return result;
 }
 
 static esp_err_t stop_hot_push(void *context) {
@@ -423,16 +505,57 @@ static void select_package_internal(d1001_host *host) {
   vSemaphoreDelete(work.done);
 }
 
+/* Embedded fallback only has a portrait layout. Rotation and hot restart share
+ * this guard so a landscape UI never boots against the portrait package. */
+static void select_package_for_orientation(d1001_host *host) {
+  select_package_internal(host);
+  if (!d1001_should_force_portrait(host->landscape, host->package.external))
+    return;
+  ESP_LOGW(TAG, "landscape needs an installed package; staying portrait");
+  host->landscape = false;
+  d1001_screen_set_landscape(d1001_screen_get(), false);
+  select_package_internal(host);
+}
+
+#if CONFIG_D1001_HOT_PUSH
+static esp_err_t restart_runtime(d1001_host *host) {
+  if (host->runtime != NULL || host->runner != NULL || host->display != NULL)
+    stop_guest(host);
+  host->hot_phase =
+      d1001_hot_phase_apply(host->hot_phase, D1001_HOT_EVENT_RESTART_BEGIN);
+  select_package_for_orientation(host);
+  esp_err_t err = ESP_OK;
+  if ((host->package.facts.features & POCKET_IDF_FEATURE_FS) != 0U) {
+    err = d1001_fs_init(host->package.facts.slot);
+    if (err != ESP_OK)
+      return err;
+  }
+  if ((host->package.facts.features & POCKET_IDF_FEATURE_DEVICE) != 0U) {
+    err = pocket_device_setup();
+    if (err != ESP_OK)
+      return err;
+  }
+  err = create_display(host);
+  if (err != ESP_OK)
+    return err;
+  return start_guest(host);
+}
+#endif
+
 static void run_app(void *context) {
   static d1001_host host;
   host.app_task = xTaskGetCurrentTaskHandle();
+#if CONFIG_D1001_HOT_PUSH
+  host.hot_request_lock = xSemaphoreCreateMutex();
+  assert(host.hot_request_lock != NULL);
+#endif
   host.package = *(d1001_package *)context;
   start_display(&host);
   if ((host.package.facts.features & POCKET_IDF_FEATURE_DEVICE) != 0U)
     ESP_ERROR_CHECK(pocket_device_setup());
   d1001_wifi_start();
   start_worker_http(&host);
-  start_guest(&host);
+  ESP_ERROR_CHECK(start_guest(&host));
   ESP_LOGI(TAG, "app started");
 
   bool sample_pending = true;
@@ -440,58 +563,82 @@ static void run_app(void *context) {
   int64_t logged = esp_timer_get_time();
   for (;;) {
     (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));
-    if (host.rotate_pending) {
-      bool landscape = host.rotate_landscape;
-      host.rotate_pending = false;
+#if CONFIG_D1001_HOT_PUSH
+    if (host.hot_operation != 0U) {
+      const uint32_t operation = host.hot_operation;
+      esp_err_t result = ESP_OK;
+      if (operation == 1U) {
+        host.hot_phase =
+            d1001_hot_phase_apply(host.hot_phase, D1001_HOT_EVENT_STOP);
+        if (host.runtime != NULL || host.runner != NULL ||
+            host.display != NULL)
+          stop_guest(&host);
+        ESP_LOGI(TAG, "runtime stopped for hot push");
+      } else if (operation == 2U) {
+        result = restart_runtime(&host);
+        if (result == ESP_OK) {
+          host.hot_phase = d1001_hot_phase_apply(host.hot_phase,
+                                                 D1001_HOT_EVENT_RESTART_OK);
+          taskENTER_CRITICAL(&rotate_mux);
+          const bool rotate_waiting = host.rotate_pending;
+          taskEXIT_CRITICAL(&rotate_mux);
+          if (rotate_waiting)
+            xTaskNotifyGive(host.app_task);
+          last = (pocket_runner_stats_t){.struct_size = sizeof(last)};
+          logged = esp_timer_get_time();
+          sample_pending = true;
+          ESP_LOGI(TAG, "runtime restarted without chip reset");
+        } else {
+          host.hot_phase = d1001_hot_phase_apply(
+              host.hot_phase, D1001_HOT_EVENT_RESTART_FAIL);
+          stop_guest(&host);
+          ESP_LOGE(TAG, "runtime restart failed: %s",
+                   esp_err_to_name(result));
+        }
+      } else {
+        result = ESP_ERR_INVALID_ARG;
+      }
+      host.hot_result = result;
+      if (host.hot_done != NULL)
+        (void)xSemaphoreGive(host.hot_done);
+      /* Clear last: a timed-out waiter may still observe the completion. */
+      host.hot_operation = 0U;
+      continue;
+    }
+#endif
+    /* A hot-push write owns the stopped guest. Never start a runtime between
+     * stop and restart; a rotation requested now is serviced after restart. */
+    if (d1001_hot_phase_active(host.hot_phase))
+      continue;
+    taskENTER_CRITICAL(&rotate_mux);
+    const bool rotate_pending = host.rotate_pending;
+    bool landscape = host.rotate_landscape;
+    host.rotate_pending = false;
+    taskEXIT_CRITICAL(&rotate_mux);
+    if (rotate_pending) {
       stop_guest(&host);
       host.landscape = landscape;
       d1001_screen_set_landscape(d1001_screen_get(), landscape);
       /* Partition mmap/unmap disables flash caches, so it must run on an
        * internal-stack task rather than the PSRAM-backed runtime task. */
-      select_package_internal(&host);
-      if (landscape && !host.package.external) {
-        /* The embedded fallback is portrait-only. Refuse to boot a 640x400
-         * runtime against a 400x640 package; keep the panel usable instead. */
-        ESP_LOGW(TAG, "landscape needs an installed package; staying portrait");
-        landscape = false;
-        host.landscape = false;
-        d1001_screen_set_landscape(d1001_screen_get(), false);
-        select_package_internal(&host);
-      }
+      select_package_for_orientation(&host);
+      esp_err_t err = ESP_OK;
       /* stop_guest unbound data.fs; rebind it or the app loses its HA config. */
       if ((host.package.facts.features & POCKET_IDF_FEATURE_FS) != 0U)
-        ESP_ERROR_CHECK(d1001_fs_init(host.package.facts.slot));
-      /* Keep the last frame while the new runtime compiles and presents; a
-       * black clear here reads as a flash between orientations. */
-      create_display(&host);
-      start_guest(&host);
+        err = d1001_fs_init(host.package.facts.slot);
+      if (err == ESP_OK)
+        err = create_display(&host);
+      if (err == ESP_OK)
+        err = start_guest(&host);
+      if (err != ESP_OK) {
+        ESP_LOGE(TAG, "runtime rotation failed: %s", esp_err_to_name(err));
+        stop_guest(&host);
+        continue;
+      }
       last = (pocket_runner_stats_t){.struct_size = sizeof(last)};
       logged = esp_timer_get_time();
       sample_pending = true;
       ESP_LOGI(TAG, "runtime rotated without chip reset");
-      continue;
-    }
-    if (host.hot_operation != 0U) {
-      const uint32_t operation = host.hot_operation;
-      if (operation == 1U) {
-        stop_guest(&host);
-        ESP_LOGI(TAG, "runtime stopped for hot push");
-      } else if (operation == 2U) {
-        select_package_internal(&host);
-        if ((host.package.facts.features & POCKET_IDF_FEATURE_FS) != 0U)
-          ESP_ERROR_CHECK(d1001_fs_init(host.package.facts.slot));
-        if ((host.package.facts.features & POCKET_IDF_FEATURE_DEVICE) != 0U)
-          ESP_ERROR_CHECK(pocket_device_setup());
-        create_display(&host);
-        start_guest(&host);
-        last = (pocket_runner_stats_t){.struct_size = sizeof(last)};
-        logged = esp_timer_get_time();
-        sample_pending = true;
-        ESP_LOGI(TAG, "runtime restarted without chip reset");
-      }
-      host.hot_operation = 0U;
-      if (host.hot_done != NULL)
-        xSemaphoreGive(host.hot_done);
       continue;
     }
     start_hot_push(&host);

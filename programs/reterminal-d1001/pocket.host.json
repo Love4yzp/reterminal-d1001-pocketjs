@@ -14,6 +14,7 @@
     "primary": [800, 1280]
   },
   "capabilities": [
+    "audio.pcm",
     "data.fs",
     "input.buttons",
     "input.touch",

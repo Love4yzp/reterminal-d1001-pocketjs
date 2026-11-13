@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "src/d1001_hot_push.c"
+    SRCS "src/d1001_hot_push.c" "src/d1001_hot_push_policy.c"
     INCLUDE_DIRS "include"
     REQUIRES pocket_runtime
     PRIV_REQUIRES

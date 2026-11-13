@@ -11,6 +11,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "${pocketjs_components}/pocket_render_esp_ppa"
     "${pocketjs_components}/pocket_display_esp_dpi"
     "${d1001_root}/platforms/esp-idf/d1001_board"
+    "${d1001_root}/platforms/esp-idf/d1001_audio"
     "${d1001_root}/platforms/esp-idf/pocket_fs_esp"
     "${d1001_root}/platforms/esp-idf/pocket_wifi_esp"
     "${d1001_root}/platforms/esp-idf/pocket_hot_push_esp"
