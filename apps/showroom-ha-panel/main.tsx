@@ -64,6 +64,7 @@ import { NavBar } from "./ui/nav-bar";
 import { ProvisionScreen } from "./ui/provision-screen";
 import { SensorDetailScreen, SensorsScreen } from "./ui/sensors-screen";
 import { SettingsScreen } from "./ui/settings-screen";
+import { pumpUiFeedback, uiSoundReady } from "./ui-sound";
 
 function Panel() {
   const saved = decodeSession(takePanelState());
@@ -233,6 +234,7 @@ function Panel() {
   dispatch({ type: "clock", clockEpochSeconds: readRtcSeconds(), clockSynced: false });
   if (config.configError) console.error(`[ha-panel] HA config: ${config.configError}`);
   console.log("[ha-panel] dashboard: console, lights, sensors, dimmer, settings");
+  console.log(`[ha-panel] audio.pcm: ${uiSoundReady() ? "active" : "unavailable"}`);
   if (config.selftest && onboardLightId) {
     dispatch({ type: "set-brightness", lightId: onboardLightId, brightness: 160 });
     dispatch({ type: "set-color", lightId: onboardLightId, hue: 210, saturation: 68 });
@@ -241,6 +243,7 @@ function Panel() {
 
   onFrame(() => {
     frame += 1;
+    pumpUiFeedback();
     if (config.selftest && onboardLightId && frame === 60)
       dispatch({ type: "set-color", lightId: onboardLightId, hue: 0, saturation: 70 });
     for (const record of events.observe()) {

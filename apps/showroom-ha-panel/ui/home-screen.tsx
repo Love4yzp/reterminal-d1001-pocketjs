@@ -42,10 +42,10 @@ export function HomeScreen(props: HomeProps) {
       </Text>
       <Pressable
         box={PORTRAIT_HOME.language}
-        style={{ radius: 12, bgColor: theme.secondaryBackground }}
+        style={{ radius: 17, bgColor: theme.secondaryBackground }}
         onTap={props.onLanguageToggle}
       >
-        <Text class="absolute text-xs font-bold text-center" style={{ insetL: 0, insetT: 5, width: PORTRAIT_HOME.language.width, textColor: theme.text }}>
+        <Text class="absolute text-xs font-bold text-center" style={{ insetL: 0, insetT: 9, width: PORTRAIT_HOME.language.width, textColor: theme.text }}>
           {languageToggleLabel(props.language)}
         </Text>
       </Pressable>

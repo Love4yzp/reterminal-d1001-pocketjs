@@ -4,6 +4,7 @@ import { Image, View } from "@pocketjs/framework/solid/components";
 import type { NodeMirror } from "@pocketjs/framework/renderer";
 import type { LightTone } from "../lights";
 import { theme } from "../theme";
+import { emitUiFeedback } from "../ui-sound";
 import { ICONS, NUMERALS, type IconName } from "./art";
 
 export interface Box {
@@ -69,6 +70,8 @@ export function Numerals(props: { text: string; size: NumeralSize; left: number;
  */
 export function Pressable(props: {
   box: Box;
+  /** Extra movement allowed before a tap becomes a scroll. */
+  tapSlop?: number;
   style?: Record<string, number>;
   onTap?: () => void;
   onLongPress?: () => void;
@@ -77,8 +80,17 @@ export function Pressable(props: {
   let node: NodeMirror | undefined;
   createGesture({
     region: { node: () => node },
-    onTap: () => props.onTap?.(),
-    onLongPress: () => props.onLongPress?.(),
+    tapSlop: props.tapSlop ?? 20,
+    onTap: () => {
+      if (!props.onTap) return;
+      emitUiFeedback("tap");
+      props.onTap();
+    },
+    onLongPress: () => {
+      if (!props.onLongPress) return;
+      emitUiFeedback("tap");
+      props.onLongPress();
+    },
   });
   return (
     <View

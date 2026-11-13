@@ -17,7 +17,7 @@ export function screenOffLabel(
   return pick(language, option.label, option.labelEn);
 }
 
-export const DEFAULT_SCREEN_OFF_SECONDS = 60;
+export const DEFAULT_SCREEN_OFF_SECONDS = 0;
 /** The panel never dims itself fully dark from the slider. */
 export const MIN_BACKLIGHT = 5;
 

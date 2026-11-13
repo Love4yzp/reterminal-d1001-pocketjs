@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createInitialPanelState } from "./model";
 import { INITIAL_ROUTE } from "./navigation";
 import { decodeSession, encodeSession, restorePanelState, restoreSettings } from "./session";
-import { createSettings } from "./settings";
+import { createSettings, DEFAULT_SCREEN_OFF_SECONDS } from "./settings";
 
 describe("orientation session snapshot", () => {
   test("round-trips lights, the dimmer route and screen timeout", () => {
@@ -39,6 +39,6 @@ describe("orientation session snapshot", () => {
       settings: { screenOffSeconds: 45 },
     }));
     expect(saved!.lights.desk).toEqual({ on: true, brightness: 255, hue: 0, saturation: 100 });
-    expect(saved!.settings.screenOffSeconds).toBe(60);
+    expect(saved!.settings.screenOffSeconds).toBe(DEFAULT_SCREEN_OFF_SECONDS);
   });
 });

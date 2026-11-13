@@ -77,11 +77,11 @@ function StatusLine(props: LandscapeProps) {
       </Text>
       {ha().tone === "connected" ? null : <LoadingDots centerX={456} centerY={20} />}
       <Pressable
-        box={{ left: 490, top: 2, width: 56, height: 24 }}
-        style={{ radius: 12, bgColor: theme.secondaryBackground }}
+        box={{ left: 482, top: 0, width: 64, height: 32 }}
+        style={{ radius: 16, bgColor: theme.secondaryBackground }}
         onTap={props.onLanguageToggle}
       >
-        <Text class="absolute text-2xs font-bold text-center" style={{ insetL: 0, insetT: 6, width: 56, textColor: theme.text }}>
+        <Text class="absolute text-2xs font-bold text-center" style={{ insetL: 0, insetT: 9, width: 64, textColor: theme.text }}>
           {languageToggleLabel(props.language)}
         </Text>
       </Pressable>
@@ -185,11 +185,11 @@ function Settings(props: LandscapeProps) {
         {pick(props.language, "设置", "Settings")}
       </Text>
       <Pressable
-        box={{ left: 448, top: 14, width: 88, height: 32 }}
-        style={{ radius: 16, bgColor: theme.secondaryBackground }}
+        box={{ left: 448, top: 12, width: 88, height: 36 }}
+        style={{ radius: 18, bgColor: theme.secondaryBackground }}
         onTap={props.onLanguageToggle}
       >
-        <Text class="absolute text-xs font-bold text-center" style={{ insetL: 0, insetT: 8, width: 88, textColor: theme.text }}>
+        <Text class="absolute text-xs font-bold text-center" style={{ insetL: 0, insetT: 11, width: 88, textColor: theme.text }}>
           {languageToggleLabel(props.language)}
         </Text>
       </Pressable>

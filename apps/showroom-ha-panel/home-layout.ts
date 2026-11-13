@@ -15,7 +15,7 @@ export const PORTRAIT_HOME = {
   statusBarHeight: 28,
   clockTop: 34,
   dateTop: 92,
-  language: { left: 204, top: 88, width: 64, height: 24 },
+  language: { left: 200, top: 80, width: 72, height: 34 },
   weather: { left: 274, top: 30, width: 110, height: 68 },
   sensors: { left: 16, top: 118, width: 178, height: 78, gap: 12 },
   mainLight: { left: 16, top: 206, width: 368, height: 82 },

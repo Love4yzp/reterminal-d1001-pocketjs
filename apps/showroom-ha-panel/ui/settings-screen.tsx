@@ -40,20 +40,20 @@ export function SettingsScreen(props: SettingsProps) {
         {pick(props.language, "设置", "Settings")}
       </Text>
       <Pressable
-        box={{ left: 214, top: 12, width: 78, height: 28 }}
-        style={{ radius: 14, bgColor: theme.secondaryBackground }}
+        box={{ left: 214, top: 8, width: 78, height: 36 }}
+        style={{ radius: 18, bgColor: theme.secondaryBackground }}
         onTap={props.onLanguageToggle}
       >
-        <Text class="absolute text-xs text-center font-bold" style={{ insetL: 0, insetT: 7, width: 78, textColor: theme.text }}>
+        <Text class="absolute text-xs text-center font-bold" style={{ insetL: 0, insetT: 11, width: 78, textColor: theme.text }}>
           {languageToggleLabel(props.language)}
         </Text>
       </Pressable>
       <Pressable
-        box={{ left: 300, top: 12, width: 84, height: 28 }}
-        style={{ radius: 14, bgColor: theme.secondaryBackground }}
+        box={{ left: 300, top: 8, width: 84, height: 36 }}
+        style={{ radius: 18, bgColor: theme.secondaryBackground }}
         onTap={props.onRotate}
       >
-        <Text class="absolute text-xs text-center font-bold" style={{ insetL: 0, insetT: 7, width: 84, textColor: theme.text }}>
+        <Text class="absolute text-xs text-center font-bold" style={{ insetL: 0, insetT: 11, width: 84, textColor: theme.text }}>
           {pick(props.language, "横屏", "Landscape")}
         </Text>
       </Pressable>

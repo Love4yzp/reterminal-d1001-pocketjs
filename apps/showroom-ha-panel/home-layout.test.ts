@@ -56,6 +56,9 @@ describe("portrait home layout", () => {
     const second = portraitSensorBox(1);
     expect(first.left).toBe(16);
     expect(second.left + second.width).toBe(PORTRAIT_HOME.width - 16);
+    expect(PORTRAIT_HOME.language.width).toBeGreaterThanOrEqual(72);
+    expect(PORTRAIT_HOME.language.height).toBeGreaterThanOrEqual(34);
+    expect(PORTRAIT_HOME.language.left).toBeGreaterThanOrEqual(20 + 176 + 4);
     expect(PORTRAIT_HOME.language.left + PORTRAIT_HOME.language.width)
       .toBeLessThan(PORTRAIT_HOME.weather.left);
     expect(PORTRAIT_HOME.language.top + PORTRAIT_HOME.language.height).toBeLessThan(PORTRAIT_HOME.sensors.top);
