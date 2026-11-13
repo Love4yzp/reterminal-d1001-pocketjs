@@ -4,6 +4,13 @@ import { View } from "@pocketjs/framework/solid/components";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { worker } from "@pocketjs/framework/worker/channels";
 import {
+  createActionRunStates,
+  disconnectActionRuns,
+  finishActionRun,
+  startActionRun,
+  tickActionRuns,
+} from "./action-controller";
+import {
   actionConfigured,
   lightCommandForAction,
   lightStateCommand,
@@ -11,6 +18,7 @@ import {
 } from "./console";
 import { createLightAdapter, type LightAdapter } from "./devices";
 import type { DimmerMode } from "./dimmer";
+import { DEFAULT_LANGUAGE, toggleLanguage, type Language } from "./i18n";
 import type { HaLightCommand } from "./ha-request";
 import {
   changedLights,
@@ -60,11 +68,13 @@ import { SettingsScreen } from "./ui/settings-screen";
 function Panel() {
   const saved = decodeSession(takePanelState());
   const initialBacklight = readBacklight();
+  const initialLanguage = saved?.language ?? DEFAULT_LANGUAGE;
   const [state, setState] = createSignal<PanelState>(
     saved ? restorePanelState(createInitialPanelState(), saved) : createInitialPanelState(),
   );
   const [route, setRoute] = createSignal<Route>(saved?.route ?? INITIAL_ROUTE);
-  const [network, setNetwork] = createSignal(readNetwork());
+  const [language, setLanguage] = createSignal<Language>(initialLanguage);
+  const [network, setNetwork] = createSignal(readNetwork(initialLanguage));
   const [settings, setSettings] = createSignal(
     saved ? restoreSettings(createSettings(initialBacklight), saved) : createSettings(initialBacklight),
   );
@@ -73,7 +83,7 @@ function Panel() {
   const [dimmerMode, setDimmerMode] = createSignal<DimmerMode>("brightness");
   const config: PanelHaConfig = readHaConfig();
   const utcOffsetMinutes = readUtcOffsetMinutes();
-  const firmwareVersion = readFirmwareVersion();
+  const [firmwareVersion, setFirmwareVersion] = createSignal(readFirmwareVersion(initialLanguage));
   const landscape = readLandscape();
   const configured = config.baseUrl.length > 0 && config.token.length > 0 && !config.configError;
   const onboardLightId = SHOWROOM.lights.find(light => light.source === "onboard")?.key;
@@ -86,8 +96,7 @@ function Panel() {
   let frame = 0;
   const pendingHa: Record<LightId, { light: LightState; command: HaLightCommand; seq: number; sendAt: number }> = {};
   const haSequences: Record<LightId, number> = {};
-  const actionRuns: Record<string, number> = {};
-  const actionFeedbackUntil: Record<string, number> = {};
+  let actionRuns = createActionRunStates(SHOWROOM.actions.map(action => action.key));
   let selftestSent = false;
   let lastHaError = "";
 
@@ -156,21 +165,32 @@ function Panel() {
   const onHaAction = (actionId: string, confirmed: boolean) => {
     const definition = showroomAction(actionId);
     if (!definition || !configured || !state().haConnected || !isActionConfigured(actionId)) return;
-    delete actionFeedbackUntil[actionId];
-    const runId = (actionRuns[actionId] ?? 0) + 1;
-    actionRuns[actionId] = runId;
-    if (publishCommand({ type: "action", actionId, runId, confirmed }))
+    const started = startActionRun(actionRuns, actionId, frame);
+    if (!started) return;
+    actionRuns = started.state;
+    if (publishCommand({ type: "action", actionId, runId: started.runId, confirmed }))
       dispatch({ type: "action-result", actionId, status: "pending" });
     else {
-      dispatch({ type: "action-result", actionId, status: "failed", error: "HA command queue is full" });
-      if (definition.group === "arm") actionFeedbackUntil[actionId] = frame + 60;
+      const failed = finishActionRun(actionRuns, actionId, started.runId, "failed", frame);
+      actionRuns = failed.state;
+      if (failed.status !== null)
+        dispatch({ type: "action-result", actionId, status: "failed", error: "HA command queue is full" });
     }
   };
 
   const rotate = (landscape: boolean) => {
-    if (!savePanelState(encodeSession(state(), route(), settings())))
+    if (!savePanelState(encodeSession(state(), route(), settings(), language())))
       console.warn("[ha-panel] native session snapshot rejected the update");
     if (!requestLandscape(landscape)) console.warn("[ha-panel] rotation binding rejected the update");
+  };
+
+  const changeLanguage = () => {
+    const next = toggleLanguage(language());
+    setLanguage(next);
+    setNetwork(readNetwork(next));
+    setFirmwareVersion(readFirmwareVersion(next));
+    if (!savePanelState(encodeSession(state(), route(), settings(), next)))
+      console.warn("[ha-panel] native session snapshot rejected the language update");
   };
 
   const onSettings = (action: SettingsAction) => {
@@ -234,6 +254,10 @@ function Panel() {
         });
         if (!event.connected) {
           for (const lightId of Object.keys(pendingHa)) delete pendingHa[lightId];
+          const reset = disconnectActionRuns(actionRuns);
+          actionRuns = reset.state;
+          for (const actionId of reset.reset)
+            dispatch({ type: "action-result", actionId, status: "idle" }, true);
         }
         if (event.error !== lastHaError) {
           if (event.error) console.error(`[ha-panel] HA: ${event.error}`);
@@ -266,20 +290,19 @@ function Panel() {
           error: event.error,
         }, true);
       } else if (event.type === "action-result") {
-        if (actionRuns[event.actionId] === event.runId) {
-          dispatch({ type: "action-result", actionId: event.actionId, status: event.status, error: event.error }, true);
-          if (showroomAction(event.actionId)?.group === "arm") actionFeedbackUntil[event.actionId] = frame + 60;
-        }
+        const result = finishActionRun(actionRuns, event.actionId, event.runId, event.status, frame);
+        actionRuns = result.state;
+        if (result.status !== null)
+          dispatch({ type: "action-result", actionId: event.actionId, status: result.status, error: event.error }, true);
       } else if (event.type === "weather") {
         dispatch({ type: "weather", weather: event.weather }, true);
       }
     }
 
-    for (const [actionId, until] of Object.entries(actionFeedbackUntil)) {
-      if (frame < until) continue;
-      delete actionFeedbackUntil[actionId];
+    const ticks = tickActionRuns(actionRuns, frame);
+    actionRuns = ticks.state;
+    for (const actionId of ticks.expired)
       dispatch({ type: "action-result", actionId, status: "idle" }, true);
-    }
 
     for (const [lightId, pending] of Object.entries(pendingHa)) {
       if (!state().haConnected) {
@@ -307,10 +330,11 @@ function Panel() {
       });
       dispatch({ type: "sensor-tick", nowSeconds: now }, true);
     }
-    if (frame % 90 === 0) setNetwork(readNetwork());
+    if (frame % 90 === 0) setNetwork(readNetwork(language()));
   });
   const shared = () => ({
     state: state(),
+    language: language(),
     onNav,
   });
 
@@ -334,6 +358,7 @@ function Panel() {
           topic={current.topic}
           network={network()}
           state={state()}
+          language={language()}
           onNav={onNav}
         />
       );
@@ -345,11 +370,13 @@ function Panel() {
           state={state()}
           settings={settings()}
           network={network()}
+          language={language()}
           utcOffsetMinutes={utcOffsetMinutes}
-          firmwareVersion={firmwareVersion}
+          firmwareVersion={firmwareVersion()}
           onSettings={onSettings}
           onNav={onNav}
           onRotate={() => rotate(true)}
+          onLanguageToggle={changeLanguage}
         />
       );
     return (
@@ -359,6 +386,7 @@ function Panel() {
         utcOffsetMinutes={utcOffsetMinutes}
         onAction={dispatch}
         onHaAction={onHaAction}
+        onLanguageToggle={changeLanguage}
         actionConfigured={isActionConfigured}
       />
     );
@@ -371,16 +399,18 @@ function Panel() {
         route={route()}
         settings={settings()}
         network={network()}
+        language={language()}
         lightPage={lightPage()}
         sensorPage={sensorPage()}
         utcOffsetMinutes={utcOffsetMinutes}
-        firmwareVersion={firmwareVersion}
+        firmwareVersion={firmwareVersion()}
         onAction={dispatch}
         onSettings={onSettings}
         onNav={onNav}
         onHaAction={onHaAction}
         actionConfigured={isActionConfigured}
         onRotate={rotate}
+        onLanguageToggle={changeLanguage}
         dimmerMode={dimmerMode()}
         onDimmerMode={setDimmerMode}
       />
@@ -388,7 +418,7 @@ function Panel() {
   return (
     <View class="relative overflow-hidden" style={{ width: 400, height: 640, bgColor: theme.page }}>
       {screen()}
-      {route().kind === "tab" ? <NavBar active={activeTab(route())} onNav={onNav} /> : null}
+      {route().kind === "tab" ? <NavBar active={activeTab(route())} language={language()} onNav={onNav} /> : null}
     </View>
   );
 }

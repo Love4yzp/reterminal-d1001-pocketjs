@@ -1,10 +1,14 @@
+import { pick, type Language } from "./i18n";
+
 export type LightSource = "virtual" | "onboard" | "ha";
 export type SensorStatus = "pending" | "live" | "mock" | "offline" | "stale" | "unavailable";
 
 export interface ShowroomLight {
   key: string;
   name: string;
+  nameEn?: string;
   chip: string;
+  chipEn?: string;
   source: LightSource;
   entityId?: string;
   /** Compatibility slot for CONFIG_D1001_HA_LIGHT_ENTITY. */
@@ -16,6 +20,7 @@ export interface ShowroomLight {
 export interface ShowroomSensor {
   key: string;
   name: string;
+  nameEn?: string;
   entityId: string;
   unit: string;
   decimals: number;
@@ -25,6 +30,7 @@ export interface ShowroomSensor {
 export interface ShowroomAction {
   key: string;
   name: string;
+  nameEn?: string;
   group: "reachy" | "arm";
   /** Public example only; production commands require the local entityMap override. */
   entityId?: string;
@@ -76,53 +82,53 @@ export const SHOWROOM: ShowroomConfig = {
   },
   lights: [
     {
-      key: "desk", name: "书桌灯", chip: "书桌灯", source: "virtual",
+      key: "desk", name: "书桌灯", nameEn: "Desk Lamp", chip: "书桌灯", chipEn: "Desk", source: "virtual",
       initial: { on: true, brightness: 180, hue: 36, saturation: 70 },
     },
     {
-      key: "shelf", name: "书架灯", chip: "书架灯", source: "virtual",
+      key: "shelf", name: "书架灯", nameEn: "Shelf Lamp", chip: "书架灯", chipEn: "Shelf", source: "virtual",
       initial: { on: false, brightness: 160, hue: 37, saturation: 12 },
     },
     {
-      key: "onboard", name: "板载 RGB", chip: "板载", source: "onboard",
+      key: "onboard", name: "板载 RGB", nameEn: "Onboard RGB", chip: "板载", chipEn: "Onboard", source: "onboard",
       initial: { on: false, brightness: 128, hue: 199, saturation: 68 },
     },
     {
-      key: "remote", name: "展厅主灯", chip: "主灯", source: "ha", legacy: true,
+      key: "remote", name: "展厅主灯", nameEn: "Main Light", chip: "主灯", chipEn: "Main", source: "ha", legacy: true,
       initial: { on: false, brightness: 128, hue: 36, saturation: 70 },
     },
   ],
   sensors: [
     {
-      key: "temperature", name: "温度", entityId: "sensor.example_temperature",
+      key: "temperature", name: "温度", nameEn: "Temperature", entityId: "sensor.example_temperature",
       unit: "°C", decimals: 1, staleAfterSeconds: 90,
     },
     {
-      key: "humidity", name: "湿度", entityId: "sensor.example_humidity",
+      key: "humidity", name: "湿度", nameEn: "Humidity", entityId: "sensor.example_humidity",
       unit: "%", decimals: 0, staleAfterSeconds: 90,
     },
   ],
   actions: [
     {
-      key: "reachy-intro-retail", name: "零售讲解", group: "reachy",
+      key: "reachy-intro-retail", name: "零售讲解", nameEn: "Retail Demo", group: "reachy",
       entityId: "input_button.example_reachy_intro_retail",
     },
     {
-      key: "reachy-intro-space", name: "空间讲解", group: "reachy",
+      key: "reachy-intro-space", name: "空间讲解", nameEn: "Space Demo", group: "reachy",
       entityId: "input_button.example_reachy_intro_space",
     },
     {
-      key: "reachy-intro-emergency", name: "救灾讲解", group: "reachy",
+      key: "reachy-intro-emergency", name: "救灾讲解", nameEn: "Relief Demo", group: "reachy",
       entityId: "input_button.example_reachy_intro_emergency",
     },
-    { key: "reachy-stop", name: "停止", group: "reachy", entityId: "input_button.example_reachy_stop" },
-    { key: "reachy-wake", name: "唤醒", group: "reachy", entityId: "input_button.example_reachy_wake" },
+    { key: "reachy-stop", name: "停止", nameEn: "Stop", group: "reachy", entityId: "input_button.example_reachy_stop" },
+    { key: "reachy-wake", name: "唤醒", nameEn: "Wake", group: "reachy", entityId: "input_button.example_reachy_wake" },
     {
-      key: "reachy-lang-toggle", name: "中英切换", group: "reachy",
+      key: "reachy-lang-toggle", name: "中英切换", nameEn: "Reachy Lang", group: "reachy",
       entityId: "input_button.example_reachy_lang_toggle",
     },
-    { key: "arm-gravity", name: "重力补偿", group: "arm" },
-    { key: "arm-playback", name: "动作回放", group: "arm" },
+    { key: "arm-gravity", name: "机械臂可拖拽", nameEn: "Drag Arm", group: "arm" },
+    { key: "arm-playback", name: "机械臂跳舞", nameEn: "Arm Dance", group: "arm" },
   ],
 };
 
@@ -276,6 +282,19 @@ export function showroomAction(key: string, config: ShowroomConfig = SHOWROOM): 
   return config.actions.find(action => action.key === key);
 }
 
+export function sensorName(sensor: ShowroomSensor, language: Language = "zh"): string {
+  return pick(language, sensor.name, sensor.nameEn ?? sensor.name);
+}
+
+export function actionName(action: ShowroomAction, language: Language = "zh"): string {
+  return pick(language, action.name, action.nameEn ?? action.name);
+}
+
+/** The stop button carries STOP in both locales; every other button is its name alone. */
+export function actionButtonLabel(action: ShowroomAction, language: Language = "zh"): string {
+  return action.key === "reachy-stop" ? pick(language, "停止 STOP", "STOP") : actionName(action, language);
+}
+
 export function pageWindow<T>(items: readonly T[], requestedPage: number, pageSize: number) {
   const size = Math.max(1, Math.floor(pageSize));
   const pageCount = Math.max(1, Math.ceil(items.length / size));
@@ -300,23 +319,14 @@ export function formatSensorValue(sensor: ShowroomSensor, reading: SensorReading
   return reading.value;
 }
 
-export function sensorStatusText(reading: SensorReading, error = ""): string {
-  if (reading.status === "stale") return "过期";
-  if (error) return "更新失败";
+export function sensorStatusText(reading: SensorReading, error = "", language: Language = "zh"): string {
+  if (reading.status === "stale") return pick(language, "过期", "Stale");
+  if (error) return pick(language, "更新失败", "Update failed");
   switch (reading.status) {
     case "pending": return "";
-    case "mock": return "示例";
-    case "offline": return "离线";
-    case "unavailable": return "不可用";
-    case "live": return "在线";
-  }
-}
-
-export function actionStatusText(status: ActionRunStatus): string {
-  switch (status) {
-    case "pending": return "发送中";
-    case "accepted": return "已受理";
-    case "failed": return "未完成";
-    case "idle": return "";
+    case "mock": return pick(language, "示例", "Example");
+    case "offline": return pick(language, "离线", "Offline");
+    case "unavailable": return pick(language, "不可用", "Unavailable");
+    case "live": return pick(language, "在线", "Online");
   }
 }

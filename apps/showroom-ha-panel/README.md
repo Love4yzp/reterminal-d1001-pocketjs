@@ -2,7 +2,9 @@
 
 App id: `dev.pocket-nexus.d1001.showroom-ha-panel`.
 
-The density-2 app provides a 400x640 portrait console and a genuinely rearranged 640x400 landscape console. Home contains the main HA light, temperature/humidity/weather and six Reachy actions. Both orientations place the two arm actions directly on home; there is no arm detail route. The `灯光` tab opens the main light's dimmer directly; read-only environment pages and settings remain available. There are no scene cards, local scene presets, IMU cards or invented weather readings.
+The density-2 app provides a 400x640 portrait console and a genuinely rearranged 640x400 landscape console. Home shows temperature/humidity above the main HA light, weather and six Reachy actions. Both orientations place the two arm actions directly on home; there is no arm detail route. The `灯光` tab opens the main light's dimmer directly; read-only environment pages and settings remain available. There are no scene cards, local scene presets, IMU cards or invented weather readings.
+
+Every screen renders Simplified Chinese or English. A compact language pill sits beside the portrait clock and in the status line or settings row in landscape; the settings page carries the same control. `session.ts` persists the language with lights, route and screen timeout, so a portrait/landscape restart keeps the choice.
 
 ## Run and test
 
@@ -17,7 +19,7 @@ bun run pocket host export --config programs/reterminal-d1001/pocket.host.config
   --out .pocket-build/host-export/reterminal-d1001
 ```
 
-`model.ts` owns immutable entity, pending, error and connection state. `showroom.ts` validates stable display keys and the public example map. `console.ts` shares command coalescing and dimmer behavior. `ha-request.ts` builds requests, `ha-engine.ts` routes them, and `worker.ts` owns network I/O. `native.ts` reads the existing local/native configuration. `ui/` contains both orientations.
+`model.ts` owns immutable entity, pending, error and connection state. `showroom.ts` validates stable display keys and the public example map. `action-controller.ts` owns action run ids, the 90-frame accepted/failed window, the 15-second pending safety timeout and disconnect invalidation; `action-button-state.ts` maps those statuses to visual-only button colors. `console.ts` shares command coalescing and dimmer behavior. `ha-request.ts` builds requests, `ha-engine.ts` routes them, and `worker.ts` owns network I/O. `native.ts` reads the existing local/native configuration. `ui/` contains both orientations.
 
 ## Console behavior
 
@@ -34,9 +36,11 @@ The six Reachy slots are:
 - `reachy-lang-toggle`: 中英切换
 - `reachy-stop`: 停止 / STOP
 
-Each maps to a local `input_button` and calls `/api/services/input_button/press`. HTTP success means **已受理**, not that Reachy finished speaking or moving. The panel does not show Reachy Mini agent/result state; the other KeyMesh commands already drive its automatic motion.
+Each maps to a local `input_button` and calls `/api/services/input_button/press`. HTTP success means Home Assistant took the request; it does not mean Reachy finished speaking or moving. The panel does not show Reachy Mini agent/result state; the other KeyMesh commands already drive its automatic motion.
 
-Both home layouts directly show the two tap buttons, `arm-gravity` and `arm-playback`, with transient send feedback and no MQTT state display. Animated dots replace the buttons until their mappings and the HA connection are ready; no `未配置` label appears in the arm area. Landscape stacks playback above gravity; portrait places gravity beside playback. Both local action keys map to the shared `script.keymesh_dispatch` and call `/api/services/script/turn_on` with `host: hall-win-3bbkv8f` and `confirm: true`. Gravity uses `task: arm-gravity-start`; playback uses `task: arm-play` and `action: act_db914a65db` (机械臂跳舞2). Legacy arm `input_button` mappings still parse, but the worker rejects them instead of sending an unsafe command. No KeyMesh/MQTT writer exists in this app.
+Both home layouts directly show the two tap buttons, `arm-gravity` (机械臂可拖拽 / Drag Arm) and `arm-playback` (机械臂跳舞 / Arm Dance), with transient visual feedback and no MQTT state display. Animated dots replace the buttons until their mappings and the HA connection are ready; no `未配置` label appears in the arm area. Landscape stacks playback above gravity; portrait places gravity beside playback. Both local action keys map to the shared `script.keymesh_dispatch` and call `/api/services/script/turn_on` with `host: hall-win-3bbkv8f` and `confirm: true`. Gravity uses `task: arm-gravity-start`; playback uses `task: arm-play` and `action: act_db914a65db` (机械臂跳舞2). Legacy arm `input_button` mappings still parse, but the worker rejects them instead of sending an unsafe command. No KeyMesh/MQTT writer exists in this app.
+
+Quick and arm buttons show only their name. A pending request tints the button; accepted or failed requests keep a background and text highlight for 90 UI frames (3 s at `tickHz: 30`) and then return to `idle`. `机械臂可拖拽`, `机械臂跳舞` and every Reachy action use the same window; `STOP` has distinct blue pending, solid red accepted and grey failed states before returning to its dark-red idle state. No acceptance or send status word is drawn on any button. A disconnect resets every active run to `idle`, advances its run id and discards late results after reconnection. A pending request whose result never arrives is abandoned after 450 frames (15 s, longer than the worker's 10 s HTTP timeout).
 
 Live rollout follow-up: the current hall `script.keymesh_dispatch` template only forwards `text` and `start`; it must also accept and forward `action` and `confirm` before these arm requests can execute. No live HA configuration was changed.
 
@@ -62,9 +66,9 @@ Live environment sensors expire after their configured `staleAfterSeconds`, usin
 
 ## Touch and native behavior
 
-The app responds only to touch gestures: taps activate actions, long-press opens the main-light dimmer, and paging uses the on-screen touch controls. Arm buttons ignore further gestures while a request is pending and for the two-second result feedback. GPIO3/CIRCLE remains entirely native-owned for rotation, screen timeout/wake-swallow and restart arbitration; the app does not map it to panel activation.
+The app responds only to touch gestures: taps activate actions, long-press opens the main-light dimmer, and paging uses the on-screen touch controls. Arm buttons ignore further gestures while a request is pending; accepted and failed results clear after three seconds, and a lost pending result is abandoned after 15 seconds. GPIO3/CIRCLE remains entirely native-owned for rotation, screen timeout/wake-swallow and restart arbitration; the app does not map it to panel activation.
 
-The portrait settings `横屏` and landscape `返回竖屏` controls use the existing runtime restart and synchronized touch mapping. Session state preserves lights, the current route and screen timeout. Backlight, auto screen-off, RTC/SNTP, timezone and firmware-version behavior are unchanged. The Wi-Fi/HA pages are status-only and do not write credentials.
+The portrait settings `横屏` and landscape `返回竖屏` controls use the existing runtime restart and synchronized touch mapping. Session state preserves lights, the current route, language and screen timeout. Backlight, auto screen-off, RTC/SNTP, timezone and firmware-version behavior are unchanged. The Wi-Fi/HA pages are status-only and do not write credentials.
 
 ## Host preview and package checks
 
@@ -78,7 +82,7 @@ bun run showroom:preview                               # every portrait shot
 bun run showroom:preview --all                         # every shot in both orientations
 ```
 
-The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/showroom-ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/showroom-dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. The shot tape covers home, the direct dimmer, sensors, continuous dimming, light swiping, Reachy actions, disabled unconfigured arm buttons and transient arm send feedback, offline state, settings and the connection-status page with its preset switch. `dimmer-drag` drags the brightness pill, and `dimmer-color` drags the hue/saturation wheel in each orientation and checks that the last light command turns the light on with the RGB under the finger. Paging and per-entity `unavailable` have unit tests but no preview shot. Offline, no-weather and protected-arm variants carry filename prefixes.
+The WASM core comes from `--wasm=<path>` or `POCKETJS_WASM`; `bun third_party/pocketjs/tools/wasm.ts` builds it. Each run compiles the app once (about 13 s). `--no-build` reuses the package in `.pocket-build/preview/showroom-ha-panel` and renders in under a second for a smoke run. `--out=<dir>` chooses the screenshot directory; the default is a new ignored directory under `.pocket-build/validation/showroom-dashboard/`. Runs that cover both orientations write `portrait/` and `landscape/` subdirectories. The shot tape covers home, the direct dimmer, sensors, continuous dimming, light swiping, Reachy actions, disabled unconfigured arm buttons and transient arm feedback, offline state, settings and the connection-status page with its preset switch. English variants (`home-en`, `settings-en`, `sensors-en`, `sensor-detail-en`, `dimmer-en`, `provision-en`) exercise the language pill in both orientations. `dimmer-drag` drags the brightness pill, and `dimmer-color` drags the hue/saturation wheel in each orientation and checks that the last light command turns the light on with the RGB under the finger. Paging and per-entity `unavailable` have unit tests but no preview shot. Offline, no-weather and protected-arm variants carry filename prefixes.
 
 A direct compile and extent check uses:
 

@@ -1,9 +1,10 @@
 import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { timezoneLabel } from "../clock";
+import { languageToggleLabel, pick, type Language } from "../i18n";
 import type { NetworkInfo } from "../native";
 import type { NavEvent } from "../navigation";
-import { SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
+import { screenOffLabel, SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
 import { haStatus } from "../status";
 import type { PanelState } from "../model";
 import { theme } from "../theme";
@@ -14,50 +15,71 @@ interface SettingsProps {
   state: PanelState;
   settings: SettingsState;
   network: NetworkInfo;
+  language: Language;
   utcOffsetMinutes: number;
   firmwareVersion: string;
   onSettings(action: SettingsAction): void;
   onNav(event: NavEvent): void;
   onRotate(): void;
+  onLanguageToggle(): void;
 }
 
 function SectionLabel(props: { top: number; children: string }) {
   return (
-    <Text class="absolute text-xs" style={{ insetL: 20, insetT: props.top, width: 200, textColor: theme.secondaryText }}>
+    <Text class="absolute text-xs" style={{ insetL: 20, insetT: props.top, width: 240, textColor: theme.secondaryText }}>
       {props.children}
     </Text>
   );
 }
 
 export function SettingsScreen(props: SettingsProps) {
-  const ha = () => haStatus(props.state);
+  const ha = () => haStatus(props.state, props.language);
   return (
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: 400, height: 640 }}>
-      <Text class="absolute text-lg font-bold" style={{ insetL: 20, insetT: 14, width: 200, textColor: theme.text }}>设置</Text>
+      <Text class="absolute text-lg font-bold" style={{ insetL: 20, insetT: 14, width: 180, textColor: theme.text }}>
+        {pick(props.language, "设置", "Settings")}
+      </Text>
       <Pressable
-        box={{ left: 312, top: 12, width: 72, height: 28 }}
+        box={{ left: 214, top: 12, width: 78, height: 28 }}
+        style={{ radius: 14, bgColor: theme.secondaryBackground }}
+        onTap={props.onLanguageToggle}
+      >
+        <Text class="absolute text-xs text-center font-bold" style={{ insetL: 0, insetT: 7, width: 78, textColor: theme.text }}>
+          {languageToggleLabel(props.language)}
+        </Text>
+      </Pressable>
+      <Pressable
+        box={{ left: 300, top: 12, width: 84, height: 28 }}
         style={{ radius: 14, bgColor: theme.secondaryBackground }}
         onTap={props.onRotate}
       >
-        <Text class="absolute text-xs text-center font-bold" style={{ insetL: 0, insetT: 7, width: 72, textColor: theme.text }}>横屏</Text>
+        <Text class="absolute text-xs text-center font-bold" style={{ insetL: 0, insetT: 7, width: 84, textColor: theme.text }}>
+          {pick(props.language, "横屏", "Landscape")}
+        </Text>
       </Pressable>
-      <SectionLabel top={48}>屏幕</SectionLabel>
+      <SectionLabel top={48}>{pick(props.language, "屏幕", "Display")}</SectionLabel>
       <View class="absolute" style={{ insetL: 16, insetT: 74, width: 368, height: 160, radius: 12, bgColor: theme.card }}>
-        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 18, width: 60, textColor: theme.text }}>亮度</Text>
+        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 18, width: 88, textColor: theme.text }}>
+          {pick(props.language, "亮度", "Brightness")}
+        </Text>
         {props.settings.backlight === null ? (
-          <Text class="absolute text-xs text-right" style={{ insetL: 90, insetT: 20, width: 250, textColor: theme.disabledText }}>不可用</Text>
+          <Text class="absolute text-xs text-right" style={{ insetL: 104, insetT: 20, width: 236, textColor: theme.disabledText }}>
+            {pick(props.language, "不可用", "Unavailable")}
+          </Text>
         ) : (
           <BacklightSlider
-            left={74}
+            left={100}
             top={11}
-            screenLeft={90}
-            width={264}
+            screenLeft={116}
+            width={238}
             value={props.settings.backlight}
             onChange={percent => props.onSettings({ type: "backlight", percent })}
           />
         )}
         <Divider left={14} top={52} width={340} />
-        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 70, width: 120, textColor: theme.text }}>自动息屏</Text>
+        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 70, width: 140, textColor: theme.text }}>
+          {pick(props.language, "自动息屏", "Auto sleep")}
+        </Text>
         <View class="absolute" style={{ insetL: 14, insetT: 104, width: 340, height: 42, radius: 10, bgColor: theme.secondaryBackground }}>
           <For each={SCREEN_OFF_OPTIONS}>{(option, index) => {
             const selected = () => props.settings.screenOffSeconds === option.seconds;
@@ -71,7 +93,7 @@ export function SettingsScreen(props: SettingsProps) {
                   class={selected() ? "absolute text-xs text-center font-bold" : "absolute text-xs text-center"}
                   style={{ insetL: 0, insetT: 10, width: 82, textColor: selected() ? theme.white : theme.secondaryText }}
                 >
-                  {option.label}
+                  {screenOffLabel(option, props.language)}
                 </Text>
               </Pressable>
             );
@@ -79,7 +101,7 @@ export function SettingsScreen(props: SettingsProps) {
         </View>
       </View>
 
-      <SectionLabel top={244}>连接</SectionLabel>
+      <SectionLabel top={244}>{pick(props.language, "连接", "Connection")}</SectionLabel>
       <View class="absolute" style={{ insetL: 16, insetT: 270, width: 368, height: 104, radius: 12, bgColor: theme.card }}>
         <Pressable box={{ left: 0, top: 0, width: 368, height: 52 }} onTap={() => props.onNav({ type: "open-provision", topic: "wifi" })}>
           <Icon name="wifi-secondary" left={14} top={16} size={20} />
@@ -92,7 +114,7 @@ export function SettingsScreen(props: SettingsProps) {
         <Divider left={14} top={52} width={340} />
         <Pressable box={{ left: 0, top: 52, width: 368, height: 52 }} onTap={() => props.onNav({ type: "open-provision", topic: "ha" })}>
           <Icon name="home-secondary" left={12} top={14} size={24} />
-          <Text class="absolute text-sm" style={{ insetL: 46, insetT: 17, width: 130, textColor: theme.text }}>Home Assistant</Text>
+          <Text class="absolute text-sm" style={{ insetL: 46, insetT: 17, width: 160, textColor: theme.text }}>Home Assistant</Text>
           <View
             class="absolute"
             style={{
@@ -104,26 +126,30 @@ export function SettingsScreen(props: SettingsProps) {
               bgColor: ha().tone === "connected" ? theme.green : ha().tone === "offline" ? theme.on : theme.disabledText,
             }}
           />
-          <Text class="absolute text-xs text-right" style={{ insetL: 252, insetT: 19, width: 72, textColor: theme.secondaryText }}>
+          <Text class="absolute text-xs text-right" style={{ insetL: 252, insetT: 19, width: 76, textColor: theme.secondaryText }}>
             {ha().label}
           </Text>
           <Icon name="chevron-secondary" left={338} top={18} size={16} />
         </Pressable>
       </View>
 
-      <SectionLabel top={384}>时间</SectionLabel>
+      <SectionLabel top={384}>{pick(props.language, "时间", "Time")}</SectionLabel>
       <View class="absolute" style={{ insetL: 16, insetT: 410, width: 368, height: 52, radius: 12, bgColor: theme.card }}>
-        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 17, width: 90, textColor: theme.text }}>时区</Text>
+        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 17, width: 100, textColor: theme.text }}>
+          {pick(props.language, "时区", "Time zone")}
+        </Text>
         <Text class="absolute text-xs text-right" style={{ insetL: 140, insetT: 19, width: 200, textColor: theme.secondaryText }}>
-          {timezoneLabel(props.utcOffsetMinutes)}
+          {timezoneLabel(props.utcOffsetMinutes, props.language)}
         </Text>
       </View>
 
-      <SectionLabel top={472}>关于</SectionLabel>
+      <SectionLabel top={472}>{pick(props.language, "关于", "About")}</SectionLabel>
       <View class="absolute" style={{ insetL: 16, insetT: 498, width: 368, height: 52, radius: 12, bgColor: theme.card }}>
-        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 17, width: 90, textColor: theme.text }}>设备地址</Text>
+        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 17, width: 100, textColor: theme.text }}>
+          {pick(props.language, "设备地址", "Device address")}
+        </Text>
         <Text class="absolute text-2xs text-right" style={{ insetL: 112, insetT: 18, width: 228, textColor: theme.secondaryText }}>
-          {`${props.network.address}  固件 ${props.firmwareVersion}`}
+          {`${props.network.address}  ${pick(props.language, "固件", "Firmware")} ${props.firmwareVersion}`}
         </Text>
       </View>
     </View>

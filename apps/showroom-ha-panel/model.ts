@@ -27,8 +27,11 @@ export interface LightState {
 
 export interface LightPresentation {
   name: string;
+  nameEn: string;
   chip: string;
+  chipEn: string;
   tag: string;
+  tagEn: string;
 }
 
 /** A Home Assistant weather entity as read from the instance; never invented. */
@@ -102,8 +105,11 @@ export function createInitialPanelState(config: ShowroomConfig = SHOWROOM): Pane
     lightKinds[light.key] = light.source;
     lightInfo[light.key] = {
       name: light.name,
+      nameEn: light.nameEn ?? light.name,
       chip: light.chip,
+      chipEn: light.chipEn ?? light.chip,
       tag: light.source === "ha" ? "Home Assistant" : light.source === "onboard" ? "板载 RGB" : "虚拟设备",
+      tagEn: light.source === "ha" ? "Home Assistant" : light.source === "onboard" ? "Onboard RGB" : "Virtual",
     };
     lightAvailability[light.key] = light.source !== "ha" ? "available" : "offline";
     lightPending[light.key] = false;

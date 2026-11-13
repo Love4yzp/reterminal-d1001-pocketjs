@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { LightId } from "./model";
-import { activeTab, INITIAL_ROUTE, navigate, nextLight, rowIntent, tileIntent, type Route } from "./navigation";
+import { activeTab, INITIAL_ROUTE, navigate, nextLight, rowIntent, tabLabel, TABS, tileIntent, type Route } from "./navigation";
 
 const ALL: LightId[] = ["desk", "shelf", "onboard", "remote"];
 const OFFLINE: LightId[] = ["desk", "shelf", "onboard"];
@@ -28,6 +28,11 @@ describe("tab navigation", () => {
 
   test("back on a tab stays put", () => {
     expect(navigate(INITIAL_ROUTE, { type: "back" })).toBe(INITIAL_ROUTE);
+  });
+
+  test("labels every tab in Chinese and English", () => {
+    expect(TABS.map(tab => tabLabel(tab))).toEqual(["首页", "灯光", "环境", "设置"]);
+    expect(TABS.map(tab => tabLabel(tab, "en"))).toEqual(["Home", "Lights", "Sensors", "Settings"]);
   });
 });
 

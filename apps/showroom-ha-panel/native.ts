@@ -1,6 +1,7 @@
 import { deviceStatus, setBrightness } from "@pocketjs/framework/device";
 import { wifiStatus, type WifiStatus } from "@pocketjs/framework/wifi";
 import { readLocalHaConfig } from "./ha-local";
+import { pick, type Language } from "./i18n";
 import type { PanelHaConfig } from "./protocol";
 import type { ScreenOffNative } from "./settings";
 
@@ -21,6 +22,14 @@ export type ClockSyncState = "offline" | "pending" | "synchronized" | "error";
 
 export const NOT_CONNECTED_TEXT = "未连接";
 export const UNKNOWN_TEXT = "未知";
+
+export function notConnectedText(language: Language = "zh"): string {
+  return pick(language, NOT_CONNECTED_TEXT, "Not connected");
+}
+
+export function unknownText(language: Language = "zh"): string {
+  return pick(language, UNKNOWN_TEXT, "Unknown");
+}
 
 function native(): D1001Native | undefined {
   return (globalThis as typeof globalThis & { d1001?: D1001Native }).d1001;
@@ -80,12 +89,12 @@ export function setNativeRgb(color: readonly [number, number, number]): boolean 
 }
 
 /** The running ESP-IDF image version, or 未知 when unavailable. */
-export function readFirmwareVersion(): string {
+export function readFirmwareVersion(language: Language = "zh"): string {
   try {
     const version = native()?.firmwareVersion();
-    return typeof version === "string" && version.length > 0 ? version : UNKNOWN_TEXT;
+    return typeof version === "string" && version.length > 0 ? version : unknownText(language);
   } catch {
-    return UNKNOWN_TEXT;
+    return unknownText(language);
   }
 }
 
@@ -101,13 +110,14 @@ export interface NetworkInfo {
   rssi: number | null;
 }
 
-export function readNetwork(): NetworkInfo {
+export function readNetwork(language: Language = "zh"): NetworkInfo {
   const status = wifiStatus() as (WifiStatus & { rssi?: number }) | null;
   const connected = status?.state === "connected" && status.ssid.length > 0;
+  const fallback = notConnectedText(language);
   return {
     connected,
-    ssid: connected ? status!.ssid : NOT_CONNECTED_TEXT,
-    address: connected && status!.address ? status!.address : NOT_CONNECTED_TEXT,
+    ssid: connected ? status!.ssid : fallback,
+    address: connected && status!.address ? status!.address : fallback,
     strength: connected ? Math.max(0, Math.min(3, Math.round(status!.strength))) : 0,
     rssi: connected && typeof status!.rssi === "number" && Number.isFinite(status!.rssi)
       ? Math.round(status!.rssi)
@@ -115,8 +125,8 @@ export function readNetwork(): NetworkInfo {
   };
 }
 
-export function formatRssi(rssi: number | null): string {
-  return rssi === null ? UNKNOWN_TEXT : `${rssi} dBm`;
+export function formatRssi(rssi: number | null, language: Language = "zh"): string {
+  return rssi === null ? unknownText(language) : `${rssi} dBm`;
 }
 
 /** Older firmware images do not bind the optional next-preset op. */

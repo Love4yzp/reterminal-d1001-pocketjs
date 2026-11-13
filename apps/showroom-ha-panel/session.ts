@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE, isLanguage, type Language } from "./i18n";
 import { LIGHT_IDS, type LightId, type LightState, type PanelState } from "./model";
 import { INITIAL_ROUTE, type ProvisionTopic, type Route, type Tab } from "./navigation";
 import { SHOWROOM_SENSOR_IDS } from "./showroom";
@@ -13,6 +14,7 @@ export interface SavedSession {
   lights: Partial<Record<LightId, LightState>>;
   route: Route;
   settings: Pick<SettingsState, "screenOffSeconds">;
+  language: Language;
 }
 
 const TABS: readonly Tab[] = ["home", "lights", "sensors", "settings"];
@@ -77,12 +79,18 @@ function readScreenOff(value: unknown): number {
     : DEFAULT_SCREEN_OFF_SECONDS;
 }
 
-export function encodeSession(state: PanelState, route: Route, settings: SettingsState): string {
+export function encodeSession(
+  state: PanelState,
+  route: Route,
+  settings: SettingsState,
+  language: Language = DEFAULT_LANGUAGE,
+): string {
   return JSON.stringify({
     version: 1,
     lights: state.lights,
     route,
     settings: { screenOffSeconds: settings.screenOffSeconds },
+    language,
   });
 }
 
@@ -108,6 +116,7 @@ export function decodeSession(text: string): SavedSession | null {
     lights,
     route: readRoute(parsed.route),
     settings: { screenOffSeconds: readScreenOff(rawSettings.screenOffSeconds) },
+    language: isLanguage(parsed.language) ? parsed.language : DEFAULT_LANGUAGE,
   };
 }
 

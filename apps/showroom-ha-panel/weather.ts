@@ -1,3 +1,4 @@
+import { pick, type Language } from "./i18n";
 import type { Weather } from "./model";
 
 export type WeatherIcon =
@@ -5,22 +6,22 @@ export type WeatherIcon =
   | "weather-rainy" | "weather-snowy" | "weather-storm";
 
 // HA weather conditions: https://developers.home-assistant.io/docs/core/entity/weather/#recommended-values-for-state-and-condition
-const CONDITIONS: Record<string, { label: string; icon: WeatherIcon }> = {
-  "sunny": { label: "晴", icon: "weather-sunny" },
-  "clear-night": { label: "晴", icon: "weather-night" },
-  "partlycloudy": { label: "多云", icon: "weather-partly" },
-  "cloudy": { label: "阴", icon: "weather-cloudy" },
-  "fog": { label: "雾", icon: "weather-cloudy" },
-  "windy": { label: "大风", icon: "weather-cloudy" },
-  "windy-variant": { label: "大风", icon: "weather-cloudy" },
-  "exceptional": { label: "异常天气", icon: "weather-cloudy" },
-  "rainy": { label: "雨", icon: "weather-rainy" },
-  "pouring": { label: "暴雨", icon: "weather-rainy" },
-  "snowy": { label: "雪", icon: "weather-snowy" },
-  "snowy-rainy": { label: "雨夹雪", icon: "weather-snowy" },
-  "hail": { label: "冰雹", icon: "weather-snowy" },
-  "lightning": { label: "雷电", icon: "weather-storm" },
-  "lightning-rainy": { label: "雷阵雨", icon: "weather-storm" },
+const CONDITIONS: Record<string, { label: string; labelEn: string; icon: WeatherIcon }> = {
+  "sunny": { label: "晴", labelEn: "Sunny", icon: "weather-sunny" },
+  "clear-night": { label: "晴", labelEn: "Clear", icon: "weather-night" },
+  "partlycloudy": { label: "多云", labelEn: "Partly cloudy", icon: "weather-partly" },
+  "cloudy": { label: "阴", labelEn: "Cloudy", icon: "weather-cloudy" },
+  "fog": { label: "雾", labelEn: "Fog", icon: "weather-cloudy" },
+  "windy": { label: "大风", labelEn: "Windy", icon: "weather-cloudy" },
+  "windy-variant": { label: "大风", labelEn: "Windy", icon: "weather-cloudy" },
+  "exceptional": { label: "异常天气", labelEn: "Severe", icon: "weather-cloudy" },
+  "rainy": { label: "雨", labelEn: "Rain", icon: "weather-rainy" },
+  "pouring": { label: "暴雨", labelEn: "Downpour", icon: "weather-rainy" },
+  "snowy": { label: "雪", labelEn: "Snow", icon: "weather-snowy" },
+  "snowy-rainy": { label: "雨夹雪", labelEn: "Sleet", icon: "weather-snowy" },
+  "hail": { label: "冰雹", labelEn: "Hail", icon: "weather-snowy" },
+  "lightning": { label: "雷电", labelEn: "Thunder", icon: "weather-storm" },
+  "lightning-rainy": { label: "雷阵雨", labelEn: "Thunderstorm", icon: "weather-storm" },
 };
 
 /**
@@ -53,8 +54,9 @@ export function parseWeatherEntity(body: string): Weather | null {
   };
 }
 
-export function weatherLabel(weather: Weather): string {
-  return CONDITIONS[weather.condition]?.label ?? "";
+export function weatherLabel(weather: Weather, language: Language = "zh"): string {
+  const condition = CONDITIONS[weather.condition];
+  return condition ? pick(language, condition.label, condition.labelEn) : "";
 }
 
 export function weatherIcon(weather: Weather): WeatherIcon {
@@ -69,4 +71,4 @@ export function weatherTemperature(weather: Weather): string {
 }
 
 /** Every label the panel can draw, for the font subset. */
-export const WEATHER_LABELS = [...new Set(Object.values(CONDITIONS).map(condition => condition.label))];
+export const WEATHER_LABELS = [...new Set(Object.values(CONDITIONS).flatMap(condition => [condition.label, condition.labelEn]))];

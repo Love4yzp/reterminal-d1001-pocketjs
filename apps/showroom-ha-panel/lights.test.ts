@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { lightColor, lightStatusText, lightTone } from "./lights";
+import { lightColor, lightInfo, lightStatusText, lightTone } from "./lights";
 import { createInitialPanelState, reducePanel } from "./model";
 
 describe("light presentation", () => {
@@ -9,6 +9,10 @@ describe("light presentation", () => {
     expect(lightStatusText(state, "desk")).toBe("开 80%");
     expect(lightStatusText(state, "shelf")).toBe("关");
     expect(lightStatusText(state, "remote")).toBe("");
+    expect(lightStatusText(state, "desk", "en")).toBe("On 80%");
+    expect(lightStatusText(state, "shelf", "en")).toBe("Off");
+    expect(lightInfo(state, "remote", "en").name).toBe("Main Light");
+    expect(lightInfo(state, "remote").name).toBe("展厅主灯");
   });
 
   test("light color carries hue and saturation in ABGR", () => {

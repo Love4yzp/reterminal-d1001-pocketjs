@@ -50,25 +50,31 @@ function verifyColor(lightId: string, hue: number, saturation: number) {
 export const SHOTS: ShotSet = {
   connected: [
     { name: "home", tape: [] },
-    { name: "home-toggle", tape: tap(100, 140), verify: verifyLight("remote", { on: true }) },
-    { name: "reachy-retail", tape: tap(75, 322), verify: verifyAction("reachy-intro-retail", false) },
-    { name: "reachy-stop", tape: tap(327, 374), verify: verifyAction("reachy-stop", false) },
+    { name: "home-en", tape: tap(236, 100) },
+    { name: "home-toggle", tape: tap(100, 240), verify: verifyLight("remote", { on: true }) },
+    { name: "reachy-retail", tape: tap(75, 352), verify: verifyAction("reachy-intro-retail", false) },
+    { name: "reachy-stop", tape: tap(327, 416), verify: verifyAction("reachy-stop", false) },
     { name: "lights", tape: tap(150, 610) },
     { name: "sensors", tape: tap(250, 610) },
+    { name: "sensors-en", tape: [...tap(236, 100), ...tap(250, 610)] },
     { name: "sensor-detail", tape: [...tap(250, 610), ...tap(100, 160)] },
-    { name: "dimmer", tape: hold(100, 140) },
-    { name: "dimmer-drag", tape: [...hold(100, 140), ...tap(150, 520), ...drag(200, 400, 200, 220)] },
+    { name: "sensor-detail-en", tape: [...tap(236, 100), ...tap(250, 610), ...tap(100, 160)] },
+    { name: "dimmer", tape: hold(100, 240) },
+    { name: "dimmer-en", tape: [...tap(236, 100), ...hold(100, 240)] },
+    { name: "dimmer-drag", tape: [...hold(100, 240), ...tap(150, 520), ...drag(200, 400, 200, 220)] },
     {
       name: "dimmer-color",
-      tape: [...hold(100, 140), ...tap(150, 520), ...tap(250, 520), ...drag(200, 260, 165, 320)],
+      tape: [...hold(100, 240), ...tap(150, 520), ...tap(250, 520), ...drag(200, 260, 165, 320)],
       verify: verifyColor("remote",
         hueSaturationFromPoint(165, 320, 200, 260, 116).hue,
         hueSaturationFromPoint(165, 320, 200, 260, 116).saturation),
     },
     { name: "settings", tape: tap(350, 610) },
+    { name: "settings-en", tape: [...tap(350, 610), ...tap(253, 26)] },
     { name: "settings-timeout", tape: [...tap(350, 610), ...tap(242, 199)] },
     { name: "settings-backlight", tape: [...tap(350, 610), ...drag(240, 100, 330, 100)] },
     { name: "provision", tape: [...tap(350, 610), ...tap(100, 296)] },
+    { name: "provision-en", tape: [...tap(236, 100), ...tap(350, 610), ...tap(100, 296)] },
     { name: "provision-switch", tape: [...tap(350, 610), ...tap(100, 296), ...tap(200, 436)], verify: verifyOnePresetSwitch },
   ],
   offline: [
@@ -81,20 +87,24 @@ export const SHOTS: ShotSet = {
     { name: "home", tape: [] },
   ],
   arm: [
-    { name: "arm-hold-confirm", tape: [...tap(100, 450), ...tap(110, 330), ...hold(110, 330)], verify: verifyAction("arm-gravity", true) },
+    { name: "arm-hold-confirm", tape: tap(106, 508), verify: verifyAction("arm-gravity", true) },
   ],
 };
 
 export const LANDSCAPE_SHOTS: ShotSet = {
   connected: [
     { name: "home", tape: [] },
+    { name: "home-en", tape: tap(606, 14) },
     { name: "home-toggle", tape: tap(160, 140), verify: verifyLight("remote", { on: true }) },
     { name: "reachy-retail", tape: tap(150, 325), verify: verifyAction("reachy-intro-retail", false) },
     { name: "reachy-stop", tape: tap(350, 371), verify: verifyAction("reachy-stop", false) },
     { name: "lights", tape: tap(44, 155) },
     { name: "sensors", tape: tap(44, 230) },
+    { name: "sensors-en", tape: [...tap(606, 14), ...tap(44, 230)] },
     { name: "sensor-detail", tape: [...tap(44, 230), ...tap(150, 150)] },
+    { name: "sensor-detail-en", tape: [...tap(606, 14), ...tap(44, 230), ...tap(150, 150)] },
     { name: "dimmer", tape: hold(160, 140) },
+    { name: "dimmer-en", tape: [...tap(606, 14), ...hold(160, 140)] },
     { name: "dimmer-drag", tape: [...hold(160, 140), ...tap(280, 338), ...drag(320, 280, 320, 130)] },
     {
       name: "dimmer-color",
@@ -104,10 +114,12 @@ export const LANDSCAPE_SHOTS: ShotSet = {
         hueSaturationFromPoint(291, 246, 320, 196, 96).saturation),
     },
     { name: "settings", tape: tap(44, 315) },
+    { name: "settings-en", tape: [...tap(44, 315), ...tap(580, 30)] },
     { name: "settings-timeout", tape: [...tap(44, 315), ...tap(170, 240)] },
     { name: "settings-backlight", tape: [...tap(44, 315), ...drag(240, 85, 330, 85)] },
     { name: "settings-rotate", tape: [...tap(44, 315), ...tap(500, 344)] },
     { name: "provision", tape: [...tap(44, 315), ...tap(450, 90)] },
+    { name: "provision-en", tape: [...tap(606, 14), ...tap(44, 315), ...tap(450, 90)] },
     { name: "provision-switch", tape: [...tap(44, 315), ...tap(450, 90), ...tap(164, 276)], verify: verifyOnePresetSwitch },
   ],
   offline: [
@@ -120,6 +132,6 @@ export const LANDSCAPE_SHOTS: ShotSet = {
     { name: "home", tape: [] },
   ],
   arm: [
-    { name: "arm-hold-confirm", tape: [...tap(500, 300), ...tap(400, 150), ...hold(400, 150)], verify: verifyAction("arm-gravity", true) },
+    { name: "arm-hold-confirm", tape: tap(516, 344), verify: verifyAction("arm-gravity", true) },
   ],
 };

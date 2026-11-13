@@ -1,12 +1,21 @@
 // Settings page state. The backlight goes through the framework device
 // binding; auto screen-off goes through the native input state machine.
 
-export const SCREEN_OFF_OPTIONS: readonly { seconds: number; label: string }[] = [
-  { seconds: 30, label: "30 秒" },
-  { seconds: 60, label: "1 分钟" },
-  { seconds: 300, label: "5 分钟" },
-  { seconds: 0, label: "从不" },
+import { pick, type Language } from "./i18n";
+
+export const SCREEN_OFF_OPTIONS: readonly { seconds: number; label: string; labelEn: string }[] = [
+  { seconds: 30, label: "30 秒", labelEn: "30 sec" },
+  { seconds: 60, label: "1 分钟", labelEn: "1 min" },
+  { seconds: 300, label: "5 分钟", labelEn: "5 min" },
+  { seconds: 0, label: "从不", labelEn: "Never" },
 ];
+
+export function screenOffLabel(
+  option: Pick<(typeof SCREEN_OFF_OPTIONS)[number], "label" | "labelEn">,
+  language: Language = "zh",
+): string {
+  return pick(language, option.label, option.labelEn);
+}
 
 export const DEFAULT_SCREEN_OFF_SECONDS = 60;
 /** The panel never dims itself fully dark from the slider. */

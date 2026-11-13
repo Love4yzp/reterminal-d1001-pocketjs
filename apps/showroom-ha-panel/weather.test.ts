@@ -10,6 +10,7 @@ describe("HA weather entity", () => {
     const weather = parseWeatherEntity(entity("partlycloudy"))!;
     expect(weather).toEqual({ entityId: "weather.forecast_home", condition: "partlycloudy", temperature: 18.4, unit: "°C" });
     expect(weatherLabel(weather)).toBe("多云");
+    expect(weatherLabel(weather, "en")).toBe("Partly cloudy");
     expect(weatherIcon(weather)).toBe("weather-partly");
     expect(weatherTemperature(weather)).toBe("18°");
   });

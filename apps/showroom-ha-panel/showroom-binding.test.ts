@@ -84,7 +84,8 @@ describe("ignored showroom entity binding", () => {
 
   test("binds both arm modes to the shared KeyMesh script without a fake default", () => {
     const armActions = SHOWROOM.actions.filter(action => action.group === "arm");
-    expect(armActions.map(action => action.name)).toEqual(["重力补偿", "动作回放"]);
+    expect(armActions.map(action => action.name)).toEqual(["机械臂可拖拽", "机械臂跳舞"]);
+    expect(armActions.map(action => action.nameEn)).toEqual(["Drag Arm", "Arm Dance"]);
     for (const action of armActions) {
       expect(action.entityId).toBeUndefined();
       expect(SHOWROOM_ENTITY_MAP_EXAMPLE.actions[action.key]).toBeUndefined();

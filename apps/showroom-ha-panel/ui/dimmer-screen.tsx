@@ -1,5 +1,6 @@
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { brightnessFromPercent, percentFromBrightness, type DimmerMode } from "../dimmer";
+import { pick, type Language } from "../i18n";
 import { lightColor, lightInfo, lightStatusText } from "../lights";
 import {
   isLightAvailable,
@@ -14,6 +15,7 @@ import { Icon, Numerals, Pressable } from "./primitives";
 
 interface DimmerProps {
   state: PanelState;
+  language: Language;
   lightId: LightId;
   mode: DimmerMode;
   onMode(mode: DimmerMode): void;
@@ -54,11 +56,11 @@ export function DimmerScreen(props: DimmerProps) {
       >
         <Icon name="back-text" left={16} top={14} size={24} />
         <Text class="absolute text-lg font-bold" style={{ insetL: 48, insetT: 15, width: 182, textColor: theme.text }}>
-          {lightInfo(props.state, props.lightId).name}
+          {lightInfo(props.state, props.lightId, props.language).name}
         </Text>
       </Pressable>
       <Text class="absolute text-xs text-right" style={{ insetL: 240, insetT: 19, width: 144, textColor: enabled() ? theme.secondaryText : theme.disabledText }}>
-        {lightStatusText(props.state, props.lightId)}
+        {lightStatusText(props.state, props.lightId, props.language)}
       </Text>
 
       <Numerals text={`${percent()}%`} size={56} left={200} top={74} center />
@@ -76,7 +78,9 @@ export function DimmerScreen(props: DimmerProps) {
             enabled={enabled()}
             onChange={setBrightness}
           />
-          <Text class="absolute text-2xs text-center" style={{ insetL: 20, insetT: 456, width: 360, textColor: theme.disabledText }}>上下拖动调亮度</Text>
+          <Text class="absolute text-2xs text-center" style={{ insetL: 20, insetT: 456, width: 360, textColor: theme.disabledText }}>
+            {pick(props.language, "上下拖动调亮度", "Drag up/down for brightness")}
+          </Text>
         </>
       ) : (
         <>
@@ -89,7 +93,9 @@ export function DimmerScreen(props: DimmerProps) {
             enabled={enabled()}
             onChange={setColor}
           />
-          <Text class="absolute text-2xs text-center" style={{ insetL: 20, insetT: 396, width: 360, textColor: theme.disabledText }}>拖动色盘选颜色</Text>
+          <Text class="absolute text-2xs text-center" style={{ insetL: 20, insetT: 396, width: 360, textColor: theme.disabledText }}>
+            {pick(props.language, "拖动色盘选颜色", "Drag the wheel to pick a color")}
+          </Text>
         </>
       )}
 
@@ -98,7 +104,7 @@ export function DimmerScreen(props: DimmerProps) {
         top={492}
         size={56}
         icon={light().on ? "power-page" : "power-secondary"}
-        label={light().on ? "关灯" : "开灯"}
+        label={light().on ? pick(props.language, "关灯", "Off") : pick(props.language, "开灯", "On")}
         background={light().on ? theme.on : theme.secondaryBackground}
         labelColor={light().on ? theme.on : theme.secondaryText}
         enabled={enabled()}
@@ -109,7 +115,7 @@ export function DimmerScreen(props: DimmerProps) {
         top={492}
         size={56}
         icon={props.mode === "brightness" ? "color-primary" : "bulb-primary"}
-        label={props.mode === "brightness" ? "颜色" : "亮度"}
+        label={props.mode === "brightness" ? pick(props.language, "颜色", "Color") : pick(props.language, "亮度", "Bright")}
         background={props.mode === "brightness" ? theme.secondaryBackground : theme.primaryChip}
         labelColor={props.mode === "brightness" ? theme.secondaryText : theme.primary}
         enabled={enabled()}

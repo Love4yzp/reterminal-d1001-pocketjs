@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  actionStatusText,
+  actionButtonLabel,
+  actionName,
   formatSensorValue,
   pageWindow,
+  sensorName,
   sensorStatusText,
   SHOWROOM,
+  showroomAction,
+  showroomSensor,
   slidingWindow,
   validateShowroomConfig,
   type SensorReading,
@@ -101,12 +105,18 @@ describe("sensor and action presentation", () => {
     expect(sensorStatusText(reading(20, "stale"))).toBe("过期");
     expect(sensorStatusText(reading(null, "unavailable"))).toBe("不可用");
     expect(sensorStatusText(reading(20))).toBe("在线");
+    expect(sensorStatusText(reading(20, "live"), "", "en")).toBe("Online");
+    expect(sensorStatusText(reading(20, "stale"), "", "en")).toBe("Stale");
+    expect(sensorStatusText(reading(20, "live"), "HTTP 500", "en")).toBe("Update failed");
   });
 
-  test("describes service acceptance rather than execution completion", () => {
-    expect(actionStatusText("pending")).toBe("发送中");
-    expect(actionStatusText("accepted")).toBe("已受理");
-    expect(actionStatusText("failed")).toBe("未完成");
-    expect(actionStatusText("idle")).toBe("");
+  test("names sensors and actions in Chinese and English", () => {
+    expect(sensorName(showroomSensor("temperature")!)).toBe("温度");
+    expect(sensorName(showroomSensor("temperature")!, "en")).toBe("Temperature");
+    expect(actionName(showroomAction("arm-gravity")!, "en")).toBe("Drag Arm");
+    expect(actionName(showroomAction("arm-playback")!, "en")).toBe("Arm Dance");
+    expect(actionButtonLabel(showroomAction("reachy-stop")!, "en")).toBe("STOP");
+    expect(actionButtonLabel(showroomAction("reachy-lang-toggle")!, "en")).toBe("Reachy Lang");
   });
+
 });

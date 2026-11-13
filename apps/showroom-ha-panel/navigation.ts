@@ -1,14 +1,19 @@
+import { pick, type Language } from "./i18n";
 import { LIGHT_IDS, type LightId, type PanelAction } from "./model";
 
 export type Tab = "home" | "lights" | "sensors" | "settings";
 export type ProvisionTopic = "wifi" | "ha";
 
-export const TABS: readonly { id: Tab; label: string }[] = [
-  { id: "home", label: "首页" },
-  { id: "lights", label: "灯光" },
-  { id: "sensors", label: "环境" },
-  { id: "settings", label: "设置" },
+export const TABS: readonly { id: Tab; label: string; labelEn: string }[] = [
+  { id: "home", label: "首页", labelEn: "Home" },
+  { id: "lights", label: "灯光", labelEn: "Lights" },
+  { id: "sensors", label: "环境", labelEn: "Sensors" },
+  { id: "settings", label: "设置", labelEn: "Settings" },
 ];
+
+export function tabLabel(tab: Pick<(typeof TABS)[number], "label" | "labelEn">, language: Language = "zh"): string {
+  return pick(language, tab.label, tab.labelEn);
+}
 
 /** Detail pages overlay their source tab; paging stays outside the persisted route. */
 export type Route =

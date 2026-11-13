@@ -6,6 +6,7 @@ import {
   createSettings,
   DEFAULT_SCREEN_OFF_SECONDS,
   reduceSettings,
+  screenOffLabel,
   SCREEN_OFF_OPTIONS,
 } from "./settings";
 
@@ -31,8 +32,9 @@ describe("settings state", () => {
     expect(backlightFromX(400, 20, 200)).toBe(100);
   });
 
-  test("offers the four design timeouts and accepts only those", () => {
+  test("offers the four design timeouts in both languages and accepts only those", () => {
     expect(SCREEN_OFF_OPTIONS.map(option => option.label)).toEqual(["30 秒", "1 分钟", "5 分钟", "从不"]);
+    expect(SCREEN_OFF_OPTIONS.map(option => screenOffLabel(option, "en"))).toEqual(["30 sec", "1 min", "5 min", "Never"]);
     const state = createSettings(50);
     expect(reduceSettings(state, { type: "screen-off", seconds: 0 }).screenOffSeconds).toBe(0);
     expect(reduceSettings(state, { type: "screen-off", seconds: 45 })).toBe(state);

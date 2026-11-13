@@ -64,6 +64,7 @@ describe("firmware version", () => {
   test("keeps empty, missing and failing bindings visibly unknown", () => {
     delete globalWithNative.d1001;
     expect(readFirmwareVersion()).toBe(UNKNOWN_TEXT);
+    expect(readFirmwareVersion("en")).toBe("Unknown");
     globalWithNative.d1001 = { firmwareVersion: () => "" };
     expect(readFirmwareVersion()).toBe(UNKNOWN_TEXT);
     globalWithNative.d1001 = { firmwareVersion: () => { throw new Error("unavailable"); } };
@@ -123,11 +124,18 @@ describe("station network status", () => {
     installWifi({ state: "connected", ssid: "SEEED-COM", strength: 2, address: "10.0.0.6" });
     expect(readNetwork().rssi).toBeNull();
     expect(formatRssi(null)).toBe(UNKNOWN_TEXT);
+    expect(formatRssi(null, "en")).toBe("Unknown");
     installWifi({ state: "idle", ssid: "", strength: 0, address: "" });
     expect(readNetwork()).toMatchObject({
       connected: false,
       ssid: NOT_CONNECTED_TEXT,
       address: NOT_CONNECTED_TEXT,
+      rssi: null,
+    });
+    expect(readNetwork("en")).toMatchObject({
+      connected: false,
+      ssid: "Not connected",
+      address: "Not connected",
       rssi: null,
     });
   });
