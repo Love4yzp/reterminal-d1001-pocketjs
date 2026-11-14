@@ -1,173 +1,85 @@
 # PocketJS for reTerminal D1001
 
-PocketJS firmware, board support, and forkable HMI application baselines for the Seeed reTerminal D1001 (ESP32-P4 + 8" 800×1280 JD9365 MIPI-DSI capacitive touch display).
+ESP-IDF firmware, board support, and forkable TypeScript/SolidJS HMI apps for the Seeed reTerminal D1001 (ESP32-P4 + 8" 800×1280 JD9365 MIPI-DSI capacitive touch display).
 
 ## Why PocketJS on reTerminal D1001
 
-Device teams and system integrators (SIs) building small-to-medium screen products in modest volumes—such as energy storage cabinets, EV chargers, industrial/building panels, and equipment consoles—need a responsive, modern touch HMI without hiring dedicated LVGL/Qt GUI engineers or maintaining a heavy Android/Linux BSP.
+Building touch HMIs for industrial panels, energy storage cabinets, or EV chargers usually forces a tradeoff between writing C/C++ LVGL/Qt boilerplate or maintaining an Android/Linux + WebView stack. This repository adapts [PocketJS](https://github.com/pocket-nexus/pocketjs) to the D1001 hardware with a strict boundary between native ESP-IDF firmware and portable TypeScript apps:
 
-This repository brings [PocketJS](https://github.com/pocket-nexus/pocketjs) (`third_party/pocketjs`, read-only submodule) to the reTerminal D1001 with a strict separation between native ESP-IDF firmware and portable TypeScript/SolidJS guest apps:
+- **TypeScript + SolidJS UI, native ESP32-P4 rendering**: Author screens and state in `@pocketjs/framework` + `solid-js` (`400×640` portrait / `640×400` landscape logical viewports) while native dual-lane PPA and GDMA retained-move scrolling render density-2 RGB565 graphics at 800×1280 without LVGL.
+- **No Linux or WebView overhead**: Guest bytecode runs directly on `quickjs-ng 0.14.0` over ESP-IDF, keeping deterministic cold boot and bounded internal DMA display staging (two buffers totaling at most 128 KiB).
+- **Desktop WASM preview & ~3s delta hot-push**: Verify layouts and touch flows in the local WASM preview harness (`bun run ops:preview`, `bun run preview`, `bun run showroom:preview`), then push app-only PKAP v1 delta updates over USB or Wi-Fi in ~3 seconds (`bun run app:push`) without rebuilding firmware.
+- **Firmware-owned hardware & safety boundary**: Native ESP-IDF code owns I2C buses, PCA9535, backlight, physical `CIRCLE` button arbitration (rotate / wake / screen power / 3 s restart), touch wake-swallow, Wi-Fi preset rotation, and per-slot `data.fs` isolation. Packages are validated against [`programs/reterminal-d1001/pocket.host.json`](programs/reterminal-d1001/pocket.host.json); an empty or invalid `apps` slot falls back to the embedded app (`apps/worker-http`).
 
-- **Native 800×1280 rendering without LVGL or Qt boilerplate**: Author screens and state in declarative TypeScript (`@pocketjs/framework` + `solid-js`) while native ESP32-P4 dual-lane PPA and GDMA retained-move scrolling render crisp density-2 RGB565 graphics (`400×640` portrait / `640×400` landscape logical viewports, presented at DPI scale 1) with no LVGL dependency.
-- **Deterministic cold boot & low memory footprint vs. Web/WebView**: Guest apps execute directly on `quickjs-ng 0.14.0` inside the ESP-IDF host runtime instead of an Android/Linux OS + browser WebView stack—delivering deterministic startup and bounded internal DMA usage (two staging buffers totaling at most 128 KiB).
-- **~3-second delta hot-push & desktop screenshot preview**: Verify multi-screen layouts and touch flows locally in the desktop WASM preview harness (`bun run preview`, `bun run showroom:preview`), then push app-only PKAP v1 delta updates over USB or Wi-Fi in ~3 seconds (`bun run app:push`) without rebuilding or reflashing firmware.
-- **Firmware-owned safety, input & network boundary**: Native ESP-IDF code owns I2C buses, PCA9535, backlight, physical `CIRCLE` button arbitration (rotate / wake / screen power / 3 s restart), touch wake-swallow, Wi-Fi preset rotation/backoff, and per-slot `data.fs` isolation. Packages are admitted as PKAP v1 images against [`programs/reterminal-d1001/pocket.host.json`](programs/reterminal-d1001/pocket.host.json); an empty, damaged, or incompatible `apps` slot automatically falls back to the embedded app (`apps/worker-http`). A guest app hang or crash cannot break hardware controls or brick the device.
-- **Forkable, multi-screen HMI baselines**: Rather than toy single-screen snippets, [`apps/field-ops-panel`](apps/field-ops-panel), [`apps/ha-panel`](apps/ha-panel), and [`apps/showroom-ha-panel`](apps/showroom-ha-panel) provide tested, themeable, multi-screen baselines (portrait and rearranged landscape layouts, host mocks, font subsetting, and screenshot previews) ready to fork and adapt.
+## Quick Start
 
-## Repository layout & architecture
+### 1. Desktop WASM preview (no hardware required)
 
-| App | Role | Highlights |
-|---|---|---|
-| [`apps/field-ops-panel`](apps/field-ops-panel) | Forkable industrial HMI baseline | Multi-profile (`ess` / `charger` / `lorawan`), live theme hot-swap (`cobalt` / `emerald` / `amber`), commit→readback receipts, offline cache lockout, `VirtualList` alarms + RGB/`audio.pcm` feedback |
-| [`apps/ha-panel`](apps/ha-panel) | Forkable panel baseline | Home, light-list, dimmer, and settings screens; virtual/onboard/HA adapters, local mock server, portrait & landscape previews |
-| [`apps/showroom-ha-panel`](apps/showroom-ha-panel) | Bilingual HMI console baseline | Independent app (`dev.pocket-nexus.d1001.showroom-ha-panel`) with CN/EN UI, tap audio (`audio.pcm`), slot-local `data.fs` config, color-wheel dimmer, and HA telemetry/action controls |
-| [`apps/worker-http`](apps/worker-http) | Embedded fallback app | Worker HTTP polling example embedded in the factory firmware (`source=embedded` fallback) |
-| [`apps/input-test`](apps/input-test) | Input & scroll self-test | Multi-zone touch calibration, GPIO3 `CIRCLE` press counter, 80-row GDMA retained-move virtual list |
-| [`apps/system-test`](apps/system-test) | System services self-test | `data.fs` persistence (`counter.json`), RGB LED cycles, backlight dimming, and Wi-Fi scan |
-| [`apps/hello-d1001`](apps/hello-d1001) | Minimal dev-loop check | Minimal package for verifying `~3s` `app:push` cycles (edit `block.svg` for bytecode-unchanged asset iteration) |
-
-Native platform components live under [`platforms/esp-idf`](platforms/esp-idf) (`d1001_board`, `d1001_audio`, `pocket_fs_esp`, `pocket_http_esp`, `pocket_wifi_esp`, `pocket_worker_esp`, `pocket_hot_push_esp`) and the ESP32-P4 host program lives under [`programs/reterminal-d1001`](programs/reterminal-d1001). The board component owns the I2C buses, PCA9535, panel power/reset, DPI panel, and backlight; it has no LVGL dependency and creates no tasks.
-
-### Layering & BSP-first strategy
-
-As enforced in [`AGENTS.md`](AGENTS.md), the codebase separates hardware ownership from application iteration:
-
-1. **Firmware & BSP layer** (`platforms/esp-idf/*`, `programs/reterminal-d1001`): Hardware drivers, input arbitration, Wi-Fi preset management, storage, and native capabilities are implemented, hardware-validated, and registered in [`programs/reterminal-d1001/pocket.host.json`](programs/reterminal-d1001/pocket.host.json) first.
-2. **Guest application layer** (`apps/*`): Applications run in an isolated QuickJS realm, declare required capabilities in `pocket.app.json`, and consume only registered host capabilities and status APIs—they never hold Wi-Fi credentials or touch raw hardware buses.
-3. **Device data boundary**: Deployment credentials and per-device entity maps live in `storage` (`data.fs` per-slot isolation) or git-ignored `sdkconfig.local`, never inside committed app packages.
-
-### Host capabilities (current vs. expanding)
-
-- **Currently registered in [`pocket.host.json`](programs/reterminal-d1001/pocket.host.json)**: `audio.pcm` (ES8311 speaker output), `data.fs`, `input.buttons`, `input.touch`, `net.http`, `runtime.worker`, `system.device`, `system.wifi`, `text.glyphs.baked`.
-- **Hardware BSP expansion in progress (not yet registered in `pocket.host.json`)**: ES7210 dual-mic capture (`audio.capture`), SC2356 MIPI-CSI camera (`camera.qr` / `camera.photo`), LSM6DS3TR 6-axis IMU (`motion` input and tamper/tap-wake event sensing), and Mini-PCIe 4G LTE cellular connectivity for Wi-Fi-free field deployments.
-
-## Requirements
-
-- Bun 1.4.4 through `mise`
-- Rust 1.98.1 with `riscv32imafc-unknown-none-elf`
-- ESP-IDF 6.2 at commit `188e3e55bb20505b5fa9dc49ee390bf42c58b4ee`, with the `esp32p4` tools installed
-
-## Build
+Requires Bun `1.4.4` (via `mise`); see [the build guide](docs/build-and-deploy.md#toolchain-requirements) for the full firmware toolchain.
 
 ```sh
 git submodule update --init third_party/pocketjs
 bun install
-bun run pocket host export --config programs/reterminal-d1001/pocket.host.config.ts --out .pocket-build/programs/reterminal-d1001/profile
-. ~/esp/esp-idf-6.2/export.sh
-idf.py -C programs/reterminal-d1001 set-target esp32p4
-idf.py -C programs/reterminal-d1001 build
-```
 
-An existing `programs/reterminal-d1001/sdkconfig` is loaded after `SDKCONFIG_DEFAULTS` and overrides values from `sdkconfig.local`. After changing local settings, move the existing file aside before rebuilding, for example `mv programs/reterminal-d1001/sdkconfig .pocket-build/sdkconfig.previous`. Both locations are ignored by Git.
-
-The embedded application is `apps/worker-http`; `apps/system-test`, `apps/input-test` and `apps/hello-d1001` remain system, input and minimal development-loop examples. The selected app is compiled with `pocketjs_compile_app`. `partitions.csv` assigns 5 MiB to `factory` and 7 MiB to `apps` at 0x510000. `storage` remains at 0xc10000 with size 0x3f0000.
-
-## Partition migration
-
-An existing device with an older layout requires a complete partition-table and factory-firmware flash, not an app-only push:
-
-```sh
-. ~/esp/esp-idf-6.2/export.sh
-idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 flash
-```
-
-This writes the bootloader, partition table and factory image without `erase_flash`; it does not write `storage` or the C6. The old package is not at the new `apps` offset, so PKAP rejection and a logged fallback to the embedded app are expected before installing an app again with `bun run app:push apps/ha-panel`.
-
-## Flash and monitor
-
-Identify the chip before writing flash, then use the confirmed serial port:
-
-```sh
-esptool --port /dev/ttyACM0 chip_id
-esptool --port /dev/ttyACM0 flash_id
-idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 flash monitor
-```
-
-Runtime logs report the largest internal DMA heap block and runner frame statistics every five seconds. Display logs identify portrait 800x1280/400x640 or landscape 1280x800/640x400 raster/logical dimensions and two staging buffers totaling at most 128 KiB. `high_res_even_pairs_different` counts unequal horizontally adjacent pixels, proving native-resolution rendering instead of 2x2 replication. Move counters include pixel volume and aggregate/max duration for scroll profiling.
-
-## App development loop (M2)
-
-With the ESP-IDF environment exported, compile and push an app without rebuilding or reflashing the firmware:
-
-```sh
-. ~/esp/esp-idf-6.2/export.sh
-time bun run app:push apps/hello-d1001
-```
-
-`app:push` compiles against this program's host config, wraps the package in a PKAP v1 header and writes only the `apps` partition through esptool. `tools/partitions.ts` derives its offset and capacity from `partitions.csv`. The tool overlaps the esptool connection with compilation, uses the previous image for sector-delta writes and hard-resets the P4. It does not call `idf.py`. `D1001_PORT` overrides the default `/dev/ttyACM0`. Resource changes are often under 3 seconds, but density-2 font baking has produced 3.1-second pushes; expect about 3.2–3.3 seconds for text/code changes in smaller apps.
-
-Each contiguous changed region is independently completed and hash-checked, with the PKAP header region written last. This scopes compressed-write state and verification to one region. A final whole-image MD5 check skips writing when everything matches; if the cached previous image does not match the partition, the whole image is restored through one ordinary esptool write.
-
-At boot the firmware memory-maps the `apps` partition and admits the first package with `pocket_idf_package_open`. Logs identify `source=apps` with the package slot, size and hash. An empty, damaged or incompatible slot falls back to the embedded app with `source=embedded` and a reason. Edit `apps/hello-d1001/block.svg` for a color-only iteration; its resource changes leave the app bytecode unchanged.
-
-## Input and scroll self-test (M3)
-
-Push `apps/input-test` to exercise the touch panel, side button and retained-move list:
-
-```sh
-bun run app:push apps/input-test
-```
-
-The app counts contact hits in four corners and the centre, counts GPIO3/CIRCLE presses and automatically scrolls an 80-row virtual list in both directions. The native input task still delivers raw debounced CIRCLE press/release state to this app while independently arbitrating screen power: a single release below 600 ms rotates after a 350 ms double-click window, two short releases toggle screen power, one second gives wake feedback, and three seconds logs a reason and restarts. Releasing before three seconds cancels without a short/double action. Touch wakes and is swallowed until release when the screen was off. Rotation restarts only the runtime with a new layout and synchronized touch coordinates; the panel snapshots lights, route and screen timeout into native RAM and consumes it in the new realm, and landscape settings return to portrait. Landscape admission copies the installed package to PSRAM, rewrites its plan viewport to 640x400 and leaves the flash package untouched. The full-width rectangular list uses the stock GDMA retained-move path; narrow partial-width lists use slower PPA staging bands. Firmware logs include raw, mirrored physical and orientation-aware logical touch coordinates, runner statistics, DMA heap and display-move counters/timings. Calibration follows Seeed's `swap_xy=0, mirror_x=1, mirror_y=1`, followed by orientation-aware logical mapping; see [`platforms/esp-idf/d1001_board/README.md`](platforms/esp-idf/d1001_board/README.md). Physical touch and button hits require validation by a user with the device. Run [`tools/d1001-input-acceptance.sh`](tools/d1001-input-acceptance.sh) for the guided timeout, wake, button, rotation and touch acceptance sequence.
-
-## System services self-test (M4)
-
-```sh
-bun run app:push apps/system-test
-```
-
-The app reads `counter.json` through `data.fs`, increments and writes it on every boot, cycles seven color combinations through the standard `led-r`/`led-g`/`led-b` switches, demonstrates backlight 100→25→100 percent and requests a Wi-Fi scan without joining a network. The FAT `storage` partition mounts at `/pocket`; the driver never formats it automatically, so a new partition requires explicit provisioning before use. Board logs report the requested RGB states and LEDC duties; a user must check that all seven physical LED colors match the on-screen labels.
-
-No credentials are committed. `sdkconfig.local` is ignored for local configuration. Station presets are an ordered Kconfig list: `CONFIG_D1001_WIFI_SSID`/`CONFIG_D1001_WIFI_PASSWORD` is entry 1, the original single-network setting, and `CONFIG_D1001_WIFI_SSID_2`/`CONFIG_D1001_WIFI_PASSWORD_2` is entry 2, empty by default. The station joins the first configured entry. When another preset is configured, three conditions rotate to it and reset the backoff: three consecutive `NO_AP_FOUND` or authentication failures; three associated disconnects within 120 seconds; or a connected RSSI that stays below `CONFIG_D1001_WIFI_WEAK_RSSI` (default -82 dBm) for 60 continuous seconds. A weak-link rotation blocks another weak-link rotation for five minutes to avoid ping-pong, while the other preset's join failures still fall back after three attempts. Other disconnects reconnect with exponential backoff from 1 to 30 seconds. The C6 coprocessor is 2.4 GHz only, so presets must name 2.4 GHz networks. Wi-Fi configuration uses RAM storage. An empty first SSID and an empty second SSID preserve scan/status and the C6's existing connection behavior. Logs include only the SSID, IP address, RSSI and disconnect reason, never the password.
-
-The guest `wifi.status()` JSON reports the current state, SSID, IPv4 address, RSSI in dBm and 0-3 strength bars. `wifi.nextPreset()` asks the radio to join the next configured preset, returns `false` when no other preset is configured, and is part of the already-declared `system.wifi` capability, so `pocket.host.json` does not change. Hosted host 3.0.10 is back-compatible with 2.x coprocessors under the upstream migration table. The firmware reads and logs the existing C6 version; an unverified newer major version stops Wi-Fi before `esp_wifi_init`. No Hosted OTA path is called.
-
-## Worker HTTP
-
-```sh
-bun run app:push apps/worker-http
-```
-
-The app starts a worker with one `http` node, GETs Home Assistant at `http://192.168.77.126:8123/` and retries every five seconds until the STA is online. HTTP status, body bytes and errors are sent to the UI through the `progress` channel and printed to serial.
-
-## HA panel
-
-```sh
-bun test apps/ha-panel tools/partitions.test.ts
-bun run app:push apps/ha-panel --wifi <device-ip>
-```
-
-The panel provides home, light-list, dimmer and settings screens with virtual, onboard and HA light adapters. Live HA weather appears when an entity is available; there are no IMU or demonstration-weather cards. HA is disabled without local configuration. See [`apps/ha-panel/README.md`](apps/ha-panel/README.md) for Kconfig settings, RTC/SNTP, host previews and the authenticated local mock server.
-
-## Showroom HA panel
-
-`apps/showroom-ha-panel` is a separate baseline app with app id `dev.pocket-nexus.d1001.showroom-ha-panel`. It builds on the generic panel's light, dimmer and settings foundations while adding bilingual CN/EN UI switching, tap audio feedback (`audio.pcm`), slot-local `data.fs` provisioning (`tools/showroom-ha-panel-provision.ts`), an RGB/HS color-wheel dimmer, environment readings, weather, and Home Assistant service action triggers with transient run feedback. Its source, tests, fonts, mock server and preview harness are independent of `apps/ha-panel`.
-
-```sh
-bun test apps/showroom-ha-panel tools/partitions.test.ts
-bun run showroom:fonts --check
+# Render portrait & landscape screenshots in the local WASM host
+bun run ops:preview --smoke
+bun run preview --smoke
 bun run showroom:preview --smoke
-bun run app:push apps/showroom-ha-panel
 ```
 
-The committed app has no live HA credentials. See [`apps/showroom-ha-panel/README.md`](apps/showroom-ha-panel/README.md) for its public entity-map format, local configuration seam, safety behavior and full validation commands.
+### 2. Push an app or flash firmware on D1001
 
-## Development Wi-Fi hot push
-
-The authenticated HTTP endpoint is compiled out by default. To enable it locally, put this in the ignored `programs/reterminal-d1001/sdkconfig.local`:
-
-```ini
-CONFIG_D1001_HOT_PUSH=y
-CONFIG_D1001_HOT_PUSH_TOKEN="replace-with-local-token"
-```
-
-Build with both files, then use the same token in the host environment:
+With ESP-IDF `6.2` exported (for `esptool` and `idf.py`):
 
 ```sh
-export SDKCONFIG_DEFAULTS="$PWD/programs/reterminal-d1001/sdkconfig.defaults;$PWD/programs/reterminal-d1001/sdkconfig.local"
-idf.py -C programs/reterminal-d1001 set-target esp32p4
-idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 build flash
-D1001_WIFI_TOKEN=replace-with-local-token bun run app:push apps/worker-http --wifi <device-ip>
+. ~/esp/esp-idf-6.2/export.sh
+
+# App-only PKAP v1 delta push (~3 s, no firmware rebuild)
+bun run app:push apps/field-ops-panel
+bun run app:push apps/ha-panel --wifi <device-ip>   # requires dev hot-push build
 ```
 
-The endpoint is `POST /push` on port 8080. It buffers the complete image in PSRAM and validates the PKAP image and package before stopping the runtime or touching flash. The runtime `apps` partition size is the image limit; logs report PSRAM total, free space before/after allocation, minimum free space and peak total usage. Only changed 4 KiB sectors are erased and written, with the header sector written last. Incomplete uploads leave the installed package untouched. Unauthorized requests return 401 with `Connection: close` and explicitly close the session. A successful push restarts only the runtime; it does not reset the P4 or write the C6. The response reports the package size/hash and confirms the runtime restart. Device logs break down receive, validation, flash and restart timings. The station disables Wi-Fi power save; the default TCP window is 16 KiB and the TCP receive mailbox remains at its default size.
+For first-time setup, firmware changes, or migrating from an older partition layout, export the host profile and build/flash the ESP32-P4 firmware:
+
+```sh
+bun run pocket host export \
+  --config programs/reterminal-d1001/pocket.host.config.ts \
+  --out .pocket-build/programs/reterminal-d1001/profile
+idf.py -C programs/reterminal-d1001 set-target esp32p4
+idf.py -C programs/reterminal-d1001 -p /dev/ttyACM0 build flash monitor
+```
+
+See [Build, Flash, and Hot-Push Guide](docs/build-and-deploy.md) for partition migration, `sdkconfig.local` override order, and Wi-Fi `POST /push` setup.
+
+## Applications & Repository Layout
+
+### Apps (`apps/`)
+
+| App | Role | Docs & Preview |
+|---|---|---|
+| [`apps/field-ops-panel`](apps/field-ops-panel) | Forkable industrial HMI baseline (`ess` / `charger` / `lorawan` profiles, live themes, commit→readback receipts, offline lockout, alarm `VirtualList`) | [`README`](apps/field-ops-panel/README.md) · `bun run ops:preview` |
+| [`apps/ha-panel`](apps/ha-panel) | Forkable Home Assistant panel (portrait/landscape layouts, virtual/onboard/HA lights, dimmer, RTC/SNTP settings) | [`README`](apps/ha-panel/README.md) · `bun run preview` |
+| [`apps/showroom-ha-panel`](apps/showroom-ha-panel) | Bilingual CN/EN HA showroom console (`audio.pcm` tap sound, slot-local `data.fs` provisioning, color-wheel dimmer, action triggers) | [`README`](apps/showroom-ha-panel/README.md) · `bun run showroom:preview` |
+| [`apps/worker-http`](apps/worker-http) | Embedded factory fallback app (`source=embedded`): background HTTP polling via `runtime.worker` | [`README`](apps/worker-http/README.md) |
+| [`apps/input-test`](apps/input-test) | Touch calibration, GPIO3 `CIRCLE` press counter, and 80-row GDMA retained-move scroll test | — |
+| [`apps/system-test`](apps/system-test) | `data.fs` persistence (`counter.json`), 7-color RGB LED cycle, backlight dimming, and Wi-Fi scan | — |
+| [`apps/hello-d1001`](apps/hello-d1001) | Minimal package for verifying `~3s` `app:push` cycles (`block.svg` resource-only edits) | — |
+
+### Platform & Tooling
+
+- [`programs/reterminal-d1001`](programs/reterminal-d1001) — ESP32-P4 host program, [`partitions.csv`](programs/reterminal-d1001/partitions.csv), and [`pocket.host.json`](programs/reterminal-d1001/pocket.host.json)
+- [`platforms/esp-idf`](platforms/esp-idf) — Native ESP-IDF components (`d1001_board`, `d1001_audio`, `pocket_fs_esp`, `pocket_http_esp`, `pocket_wifi_esp`, `pocket_worker_esp`, `pocket_hot_push_esp`)
+- [`tools`](tools) — `app:push`, partition helpers, WASM preview harnesses, mock servers, and provisioning scripts
+- [`third_party/pocketjs`](third_party/pocketjs) — Pinned, read-only PocketJS submodule
+
+### Host Capabilities
+
+- **Registered in [`pocket.host.json`](programs/reterminal-d1001/pocket.host.json)**: `audio.pcm` (ES8311 speaker output), `data.fs`, `input.buttons`, `input.touch`, `net.http`, `runtime.worker`, `system.device`, `system.wifi`, `text.glyphs.baked`.
+- **Hardware BSP expansion in progress (not yet registered)**: ES7210 dual-mic capture, SC2356 MIPI-CSI camera, LSM6DS3TR 6-axis IMU, and Mini-PCIe 4G LTE.
+
+## Documentation
+
+- [`docs/architecture-and-firmware.md`](docs/architecture-and-firmware.md) — Layering boundaries, host capability boundary, PPA/GDMA rendering, GPIO3 button & wake arbitration, FAT storage, and Wi-Fi preset rotation policy.
+- [`docs/build-and-deploy.md`](docs/build-and-deploy.md) — Toolchain setup, `sdkconfig` override precedence, partition migration, serial diagnostics, and USB / Wi-Fi PKAP v1 delta hot-push internals.
+- [`platforms/esp-idf/d1001_board/README.md`](platforms/esp-idf/d1001_board/README.md) — Board bring-up, I2C/PCA9535 ownership, and touch calibration.
+- [`AGENTS.md`](AGENTS.md) — Repository boundaries and per-change validation checklist.
