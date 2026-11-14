@@ -23,7 +23,10 @@ function BatteryGlyph(props: { power: PowerInfo; left: number; top: number }) {
   const bodyHeight = 10;
   const innerMax = 14;
   const percent = () => props.power.batteryPercent ?? 0;
-  const fillWidth = () => (props.power.available ? Math.max(2, Math.round((innerMax * percent()) / 100)) : 0);
+  const fillWidth = () => {
+    if (!props.power.available || percent() <= 0) return 0;
+    return Math.max(2, Math.round((innerMax * percent()) / 100));
+  };
   const accent = () => powerAccent(props.power);
   return (
     <View class="absolute" style={{ insetL: props.left, insetT: props.top, width: bodyWidth + 3, height: bodyHeight }}>
@@ -76,7 +79,6 @@ export function PowerBadge(props: {
   box: LayoutBox;
   compact?: boolean;
 }) {
-  if (!props.power.available) return null;
   const accent = () => powerAccent(props.power);
   if (props.compact) {
     return (
@@ -94,7 +96,7 @@ export function PowerBadge(props: {
         <BatteryGlyph power={props.power} left={8} top={7} />
         <Text
           class="absolute text-xs font-bold text-right"
-          style={{ insetL: 31, insetT: 4, width: props.box.width - 37, textColor: theme.text }}
+          style={{ insetL: 31, insetT: 4, width: props.box.width - 37, textColor: props.power.available ? theme.text : theme.disabledText }}
         >
           {formatBatteryPercent(props.power)}
         </Text>
@@ -122,19 +124,21 @@ export function PowerBadge(props: {
       <BatteryGlyph power={props.power} left={14} top={14} />
       <Text
         class="absolute text-sm font-bold"
-        style={{ insetL: 42, insetT: 10, width: 64, textColor: theme.text }}
+        style={{ insetL: 42, insetT: 10, width: 64, textColor: props.power.available ? theme.text : theme.disabledText }}
       >
         {formatBatteryPercent(props.power)}
       </Text>
       <Text
         class="absolute text-2xs text-right"
-        style={{ insetL: 106, insetT: 12, width: props.box.width - 120, textColor: props.power.usbPresent ? accent() : theme.secondaryText }}
+        style={{ insetL: 106, insetT: 12, width: props.box.width - 120, textColor: !props.power.available ? theme.disabledText : props.power.usbPresent ? accent() : theme.secondaryText }}
       >
-        {props.power.usbPresent ? "USB 5V" : pick(props.language, "电池", "Battery")}
+        {!props.power.available
+          ? pick(props.language, "未读取", "No data")
+          : props.power.usbPresent ? "USB 5V" : pick(props.language, "电池", "Battery")}
       </Text>
       <Text
         class="absolute text-2xs"
-        style={{ insetL: 14, insetT: 36, width: props.box.width - 28, textColor: theme.secondaryText }}
+        style={{ insetL: 14, insetT: 36, width: props.box.width - 28, textColor: !props.power.available ? theme.disabledText : accent() === theme.text ? theme.secondaryText : accent() }}
       >
         {powerStatusLabel(props.power, props.language)}
       </Text>

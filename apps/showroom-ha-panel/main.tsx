@@ -30,6 +30,8 @@ import {
   type PanelState,
 } from "./model";
 import {
+  powerLogLine,
+  powerLogSignature,
   readBacklight,
   readFirmwareVersion,
   readHaConfig,
@@ -77,7 +79,9 @@ function Panel() {
   const [route, setRoute] = createSignal<Route>(saved?.route ?? INITIAL_ROUTE);
   const [language, setLanguage] = createSignal<Language>(initialLanguage);
   const [network, setNetwork] = createSignal(readNetwork(initialLanguage));
-  const [power, setPower] = createSignal(readPower());
+  const initialPower = readPower();
+  const [power, setPower] = createSignal(initialPower);
+  let loggedPower = powerLogSignature(initialPower);
   const [settings, setSettings] = createSignal(
     saved ? restoreSettings(createSettings(initialBacklight), saved) : createSettings(initialBacklight),
   );
@@ -237,6 +241,7 @@ function Panel() {
   if (config.configError) console.error(`[ha-panel] HA config: ${config.configError}`);
   console.log("[ha-panel] dashboard: console, lights, sensors, dimmer, settings");
   console.log(`[ha-panel] audio.pcm: ${uiSoundReady() ? "active" : "unavailable"}`);
+  console.log(`[showroom] power: ${powerLogLine(initialPower)}`);
   if (config.selftest && onboardLightId) {
     dispatch({ type: "set-brightness", lightId: onboardLightId, brightness: 160 });
     dispatch({ type: "set-color", lightId: onboardLightId, hue: 210, saturation: 68 });
@@ -336,7 +341,15 @@ function Panel() {
       dispatch({ type: "sensor-tick", nowSeconds: now }, true);
     }
     if (frame % 90 === 0) setNetwork(readNetwork(language()));
-    if (frame % 150 === 0) setPower(readPower());
+    if (frame % 150 === 0) {
+      const nextPower = readPower();
+      const signature = powerLogSignature(nextPower);
+      if (signature !== loggedPower) {
+        loggedPower = signature;
+        console.log(`[showroom] power: ${powerLogLine(nextPower)}`);
+      }
+      setPower(nextPower);
+    }
   });
   const shared = () => ({
     state: state(),

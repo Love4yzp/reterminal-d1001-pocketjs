@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { PORTRAIT_HOME, portraitActionBox, portraitSensorBox } from "./home-layout";
+import { LANDSCAPE_HOME_POWER, PORTRAIT_HOME, portraitActionBox, portraitSensorBox } from "./home-layout";
 import { SHOWROOM } from "./showroom";
 
 describe("portrait home layout", () => {
@@ -65,5 +65,14 @@ describe("portrait home layout", () => {
     expect(PORTRAIT_HOME.power.left).toBeGreaterThan(20 + 159 + 4);
     expect(PORTRAIT_HOME.power.left + PORTRAIT_HOME.power.width).toBeLessThan(PORTRAIT_HOME.weather.left);
     expect(PORTRAIT_HOME.power.top + PORTRAIT_HOME.power.height).toBeLessThan(PORTRAIT_HOME.language.top);
+  });
+});
+
+describe("landscape home layout", () => {
+  test("keeps the power badge clear of weather, clock and the main-light card", () => {
+    expect(LANDSCAPE_HOME_POWER.left).toBeGreaterThan(200 + 120);
+    expect(LANDSCAPE_HOME_POWER.top).toBeGreaterThan(30);
+    expect(LANDSCAPE_HOME_POWER.left + LANDSCAPE_HOME_POWER.width).toBe(552 - 16);
+    expect(LANDSCAPE_HOME_POWER.top + LANDSCAPE_HOME_POWER.height).toBeLessThan(112);
   });
 });

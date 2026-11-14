@@ -147,6 +147,23 @@ export function formatBatteryPercent(power: PowerInfo): string {
   return power.available && power.batteryPercent !== null ? `${power.batteryPercent}%` : "--%";
 }
 
+/** Battery voltage with two decimals, or "--" when the firmware has no reading. */
+export function formatBatteryVoltage(power: PowerInfo): string {
+  return power.available && power.batteryMv !== null
+    ? `${(power.batteryMv / 1000).toFixed(2)}V`
+    : "--";
+}
+
+/** Settings-row detail: battery voltage plus the USB rail when it is present. */
+export function powerVoltageLabel(power: PowerInfo, language: Language = "zh"): string {
+  if (!power.available)
+    return pick(language, "固件未提供电量数据", "Firmware exposes no battery data");
+  const battery = `${pick(language, "电池", "Battery")} ${formatBatteryVoltage(power)}`;
+  if (!power.usbPresent) return `${battery} · ${pick(language, "USB 未接入", "USB absent")}`;
+  const usb = power.usbMv === null ? "--" : `${(power.usbMv / 1000).toFixed(2)}V`;
+  return `${battery} · USB ${usb}`;
+}
+
 export function powerShortLabel(power: PowerInfo, language: Language = "zh"): string {
   if (!power.available) return unknownText(language);
   switch (power.chargeState) {
@@ -182,6 +199,26 @@ export function powerStatusLabel(power: PowerInfo, language: Language = "zh"): s
 export function powerDetailLabel(power: PowerInfo, language: Language = "zh"): string {
   if (!power.available) return pick(language, "不可用", "Unavailable");
   return `${formatBatteryPercent(power)} · ${powerStatusLabel(power, language)}`;
+}
+
+/** One serial-friendly line for cross-checking readPower() from the JS layer. */
+export function powerLogLine(power: PowerInfo): string {
+  if (!power.available) return "available=false";
+  return [
+    "available=true",
+    `battery=${power.batteryPercent ?? "--"}%`,
+    `batteryMv=${power.batteryMv ?? "--"}`,
+    `usb=${power.usbPresent ? "present" : "absent"}`,
+    `usbMv=${power.usbMv ?? "--"}`,
+    `charge=${power.chargeState}`,
+  ].join(" ");
+}
+
+/** Log on visible state changes, not on raw ADC jitter that does not alter the badge. */
+export function powerLogSignature(power: PowerInfo): string {
+  return power.available
+    ? `${power.batteryPercent}|${power.usbPresent}|${power.chargeState}`
+    : "unavailable";
 }
 
 export function readHaConfig(): PanelHaConfig {

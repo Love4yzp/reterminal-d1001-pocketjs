@@ -73,10 +73,11 @@ interface PreviewOptions {
   landscape: boolean;
   out: string;
   armConfigured?: boolean;
+  powerUnavailable?: boolean;
 }
 
 /** Fixtures for the device namespaces the panel reads. */
-function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armConfigured" | "landscape">) {
+function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armConfigured" | "landscape" | "powerUnavailable">) {
   const g = globalThis as any;
   let rgb = [0, 0, 0];
   let session = "";
@@ -95,9 +96,11 @@ function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armC
     utcOffsetMinutes: () => 480,
     syncClock: () => "synchronized",
     readPower: () => JSON.stringify(
-      options.haConfigured
-        ? { available: true, batteryMv: 3960, batteryPercent: 84, usbMv: 5012, usbPresent: true, chargePinLow: true, chargeState: "charging" }
-        : { available: true, batteryMv: 3840, batteryPercent: 62, usbMv: 0, usbPresent: false, chargePinLow: false, chargeState: "usb_absent" },
+      options.powerUnavailable
+        ? { available: false }
+        : options.haConfigured
+          ? { available: true, batteryMv: 3960, batteryPercent: 84, usbMv: 5012, usbPresent: true, chargePinLow: true, chargeState: "charging" }
+          : { available: true, batteryMv: 3840, batteryPercent: 62, usbMv: 0, usbPresent: false, chargePinLow: false, chargeState: "usb_absent" },
     ),
     setRgb: (r: number, gr: number, b: number) => { rgb = [r, gr, b]; return true; },
     firmwareVersion: () => "host-preview",
@@ -263,12 +266,13 @@ const drag = (x0: number, y0: number, x1: number, y1: number, frames = 10) => [
 ];
 export const gestures = { tap, hold, drag };
 
-type ShotSet = { connected: Shot[]; offline: Shot[]; noWeather: Shot[]; arm: Shot[] };
+type ShotSet = { connected: Shot[]; offline: Shot[]; noWeather: Shot[]; arm: Shot[]; noPower: Shot[] };
 const VARIANTS = [
   { key: "connected", haConfigured: true, weather: true, prefix: "", armConfigured: false },
   { key: "offline", haConfigured: false, weather: false, prefix: "offline-", armConfigured: false },
   { key: "noWeather", haConfigured: true, weather: false, prefix: "no-weather-", armConfigured: false },
   { key: "arm", haConfigured: true, weather: true, prefix: "armed-", armConfigured: true },
+  { key: "noPower", haConfigured: true, weather: true, prefix: "no-power-", armConfigured: false, powerUnavailable: true },
 ] as const;
 
 async function renderSet(set: ShotSet, landscape: boolean, out: string, only?: ReadonlySet<string>) {

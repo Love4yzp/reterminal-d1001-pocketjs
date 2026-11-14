@@ -11,6 +11,7 @@ import {
   formatBatteryPercent,
   formatRssi,
   powerStatusLabel,
+  powerVoltageLabel,
   requestNextPreset,
   type NetworkInfo,
   type PowerInfo,
@@ -234,14 +235,17 @@ function Settings(props: LandscapeProps) {
       </View>
 
       <View class="absolute" style={{ insetL: 16, insetT: 320, width: 256, height: 52, radius: 12, bgColor: theme.card }}>
-        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 10, width: 126, textColor: theme.text }}>
+        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 6, width: 126, textColor: theme.text }}>
           {pick(props.language, "电源与电池", "Power & Battery")}
         </Text>
-        <Text class="absolute text-xs font-bold text-right" style={{ insetL: 146, insetT: 9, width: 96, textColor: props.power.available ? theme.text : theme.disabledText }}>
+        <Text class="absolute text-xs font-bold text-right" style={{ insetL: 146, insetT: 5, width: 96, textColor: props.power.available ? theme.text : theme.disabledText }}>
           {formatBatteryPercent(props.power)}
         </Text>
-        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 28, width: 228, textColor: props.power.available ? theme.secondaryText : theme.disabledText }}>
+        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 20, width: 228, textColor: props.power.available ? theme.secondaryText : theme.disabledText }}>
           {powerStatusLabel(props.power, props.language)}
+        </Text>
+        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 35, width: 228, textColor: props.power.available ? theme.secondaryText : theme.disabledText }}>
+          {powerVoltageLabel(props.power, props.language)}
         </Text>
       </View>
 

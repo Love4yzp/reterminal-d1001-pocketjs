@@ -3,11 +3,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   canSwitchNetwork,
   formatBatteryPercent,
+  formatBatteryVoltage,
   formatRssi,
   NOT_CONNECTED_TEXT,
   powerDetailLabel,
+  powerLogLine,
+  powerLogSignature,
   powerShortLabel,
   powerStatusLabel,
+  powerVoltageLabel,
   readFirmwareVersion,
   readHaConfig,
   readLandscape,
@@ -138,8 +142,15 @@ describe("power telemetry binding", () => {
       chargeState: "charging",
     });
     expect(formatBatteryPercent(charging)).toBe("84%");
+    expect(formatBatteryVoltage(charging)).toBe("3.96V");
     expect(powerShortLabel(charging, "zh")).toBe("USB 充电");
     expect(powerDetailLabel(charging, "en")).toBe("84% · USB Charging");
+    expect(powerVoltageLabel(charging, "zh")).toBe("电池 3.96V · USB 5.01V");
+    expect(powerVoltageLabel(charging, "en")).toBe("Battery 3.96V · USB 5.01V");
+    expect(powerLogLine(charging)).toBe(
+      "available=true battery=84% batteryMv=3960 usb=present usbMv=5012 charge=charging",
+    );
+    expect(powerLogSignature(charging)).toBe("84|true|charging");
 
     globalWithNative.d1001 = {
       firmwareVersion: () => "test",
@@ -158,13 +169,38 @@ describe("power telemetry binding", () => {
     expect(idle.usbPresent).toBe(true);
     expect(powerStatusLabel(idle, "zh")).toBe("USB 已接入（未在充电）");
     expect(powerStatusLabel(idle, "en")).toBe("USB Connected (Idle)");
+    expect(powerVoltageLabel(idle, "zh")).toBe("电池 4.12V · USB 4.99V");
+    expect(powerLogSignature(idle)).toBe("100|true|usb_idle");
+
+    globalWithNative.d1001 = {
+      firmwareVersion: () => "test",
+      readPower: () => JSON.stringify({
+        available: true,
+        batteryMv: 3840,
+        batteryPercent: 62,
+        usbMv: 0,
+        usbPresent: false,
+        chargePinLow: false,
+        chargeState: "usb_absent",
+      }),
+    };
+    const battery = readPower();
+    expect(powerVoltageLabel(battery, "zh")).toBe("电池 3.84V · USB 未接入");
+    expect(powerLogLine(battery)).toBe(
+      "available=true battery=62% batteryMv=3840 usb=absent usbMv=0 charge=usb_absent",
+    );
   });
 
   test("falls back safely when the binding is missing, throws or fails", () => {
     delete globalWithNative.d1001;
     expect(readPower().available).toBe(false);
     expect(formatBatteryPercent(readPower())).toBe("--%");
+    expect(formatBatteryVoltage(readPower())).toBe("--");
     expect(powerDetailLabel(readPower(), "zh")).toBe("不可用");
+    expect(powerVoltageLabel(readPower(), "zh")).toBe("固件未提供电量数据");
+    expect(powerVoltageLabel(readPower(), "en")).toBe("Firmware exposes no battery data");
+    expect(powerLogLine(readPower())).toBe("available=false");
+    expect(powerLogSignature(readPower())).toBe("unavailable");
 
     globalWithNative.d1001 = {
       firmwareVersion: () => "test",

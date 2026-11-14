@@ -2,7 +2,7 @@ import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { timezoneLabel } from "../clock";
 import { languageToggleLabel, pick, type Language } from "../i18n";
-import { powerDetailLabel, type NetworkInfo, type PowerInfo } from "../native";
+import { powerDetailLabel, powerVoltageLabel, type NetworkInfo, type PowerInfo } from "../native";
 import type { NavEvent } from "../navigation";
 import { screenOffLabel, SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
 import { haStatus } from "../status";
@@ -136,11 +136,14 @@ export function SettingsScreen(props: SettingsProps) {
 
       <SectionLabel top={380}>{pick(props.language, "电源", "Power")}</SectionLabel>
       <View class="absolute" style={{ insetL: 16, insetT: 402, width: 368, height: 46, radius: 12, bgColor: theme.card }}>
-        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 15, width: 112, textColor: theme.text }}>
+        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 7, width: 112, textColor: theme.text }}>
           {pick(props.language, "电源与电池", "Power & Battery")}
         </Text>
-        <Text class="absolute text-xs text-right" style={{ insetL: 128, insetT: 16, width: 226, textColor: props.power.available ? theme.secondaryText : theme.disabledText }}>
+        <Text class="absolute text-xs text-right" style={{ insetL: 128, insetT: 8, width: 226, textColor: props.power.available ? theme.secondaryText : theme.disabledText }}>
           {powerDetailLabel(props.power, props.language)}
+        </Text>
+        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 27, width: 340, textColor: props.power.available ? theme.secondaryText : theme.disabledText }}>
+          {powerVoltageLabel(props.power, props.language)}
         </Text>
       </View>
 

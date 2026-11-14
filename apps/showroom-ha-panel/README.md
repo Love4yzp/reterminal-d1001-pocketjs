@@ -46,6 +46,10 @@ Live rollout follow-up: the current hall `script.keymesh_dispatch` template only
 
 The virtual desk/shelf lamps and onboard RGB remain in the model for the mock and self-test paths, but this console exposes only the showroom main light's dimmer. They are not local scenes and do not appear as fake HA actions on home.
 
+## Power telemetry
+
+`native.ts` reads the firmware `d1001.readPower()` binding every 150 UI frames (5 s at 30 Hz). Home shows battery percentage, the battery glyph fill, USB 5V presence and the charging, idle, battery-only or inconsistent state. Settings adds the measured battery and USB voltages (`3.96V`) for hardware calibration. When the firmware returns `available: false`, the badge and settings row remain visible with `--%`, `Unavailable` and `Firmware exposes no battery data` instead of disappearing. The app logs `[showroom] power: ...` on the first read and whenever the percentage, USB presence or charge state changes, so a serial capture can compare the JS reading with the firmware `Power ...` line.
+
 ## Slot-local configuration
 
 The committed package contains no HA URL, token or local entity bindings. At startup it reads `ha-panel.json` only from this app slot's `data.fs`, which is backed by the D1001 internal `storage` partition. It does not fall back to firmware Kconfig credentials or a build-time source override. A missing or invalid file disables HA without exposing its contents.

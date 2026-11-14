@@ -11,6 +11,7 @@ interface ShotSet {
   offline: Shot[];
   noWeather: Shot[];
   arm: Shot[];
+  noPower: Shot[];
 }
 
 function verifyAction(actionId: string, confirmed: boolean) {
@@ -89,6 +90,12 @@ export const SHOTS: ShotSet = {
   arm: [
     { name: "arm-hold-confirm", tape: tap(106, 508), verify: verifyAction("arm-gravity", true) },
   ],
+  noPower: [
+    { name: "home", tape: [] },
+    { name: "home-en", tape: tap(236, 100) },
+    { name: "settings", tape: tap(350, 610) },
+    { name: "settings-en", tape: [...tap(350, 610), ...tap(253, 26)] },
+  ],
 };
 
 export const LANDSCAPE_SHOTS: ShotSet = {
@@ -133,5 +140,11 @@ export const LANDSCAPE_SHOTS: ShotSet = {
   ],
   arm: [
     { name: "arm-hold-confirm", tape: tap(516, 344), verify: verifyAction("arm-gravity", true) },
+  ],
+  noPower: [
+    { name: "home", tape: [] },
+    { name: "home-en", tape: tap(606, 14) },
+    { name: "settings", tape: tap(44, 315) },
+    { name: "settings-en", tape: [...tap(44, 315), ...tap(580, 30)] },
   ],
 };
