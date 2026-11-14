@@ -31,6 +31,7 @@ static const char *TAG = "d1001_panel";
 #define D1001_IMU_RETRY_US INT64_C(3000000)
 #define D1001_POWER_RETRY_US INT64_C(3000000)
 #define D1001_POWER_CACHE_US INT64_C(2000000)
+#define D1001_POWER_LOG_PERCENT_DELTA 1
 
 static struct {
   const d1001_board_handles *board;
@@ -44,9 +45,14 @@ static struct {
   bool power_ready;
   bool power_cleanup_pending;
   bool power_has_snapshot;
+  bool power_init_logged;
+  bool power_sample_logged;
   int64_t power_retry_after_us;
   int64_t power_sampled_us;
   esp_err_t power_error;
+  uint8_t power_logged_percent;
+  bool power_logged_usb_present;
+  d1001_power_charge_state_t power_logged_charge_state;
   d1001_power_snapshot_t power_snapshot;
   bool sntp_active;
   atomic_bool sntp_synced;
@@ -115,7 +121,12 @@ static esp_err_t power_ensure(void) {
   const esp_err_t result = d1001_power_init(&config);
   if (result == ESP_OK) {
     panel.power_ready = true;
+    panel.power_error = ESP_OK;
     panel.power_retry_after_us = 0;
+    if (!panel.power_init_logged) {
+      panel.power_init_logged = true;
+      ESP_LOGI(TAG, "Power monitor initialized");
+    }
     return ESP_OK;
   }
   /* d1001_power requires deinit after any failed init before retrying. */
@@ -138,6 +149,26 @@ static const char *charge_state_name(d1001_power_charge_state_t state) {
   default:
     return "unknown";
   }
+}
+
+static void power_log_sample(const d1001_power_snapshot_t *snapshot) {
+  const int percent_delta =
+      abs((int)snapshot->battery_percent - (int)panel.power_logged_percent);
+  if (panel.power_sample_logged &&
+      snapshot->usb_present == panel.power_logged_usb_present &&
+      snapshot->charge_state == panel.power_logged_charge_state &&
+      percent_delta < D1001_POWER_LOG_PERCENT_DELTA)
+    return;
+  panel.power_sample_logged = true;
+  panel.power_logged_percent = snapshot->battery_percent;
+  panel.power_logged_usb_present = snapshot->usb_present;
+  panel.power_logged_charge_state = snapshot->charge_state;
+  ESP_LOGI(TAG,
+           "Power batteryMv=%" PRIu32 " batteryPercent=%u usbMv=%" PRIu32
+           " usbPresent=%s chargeState=%s",
+           snapshot->battery_mv, (unsigned)snapshot->battery_percent,
+           snapshot->usb_mv, snapshot->usb_present ? "true" : "false",
+           charge_state_name(snapshot->charge_state));
 }
 
 static void on_sntp_sync(struct timeval *now) {
@@ -257,6 +288,8 @@ static JSValue read_power(JSContext *realm) {
     }
     power_log_error(result);
   }
+  if (result == ESP_OK)
+    power_log_sample(&snapshot);
 
   char json[256];
   int written;
