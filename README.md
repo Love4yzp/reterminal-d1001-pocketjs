@@ -10,6 +10,24 @@
 
 A TypeScript/SolidJS app runtime and ESP-IDF board platform for the Seeed reTerminal D1001 (ESP32-P4 + 8" 800×1280 JD9365 MIPI-DSI touchscreen). Build responsive, native-feeling touch apps—from custom dashboards and kiosks to interactive tools and ambient displays—without writing LVGL/Qt boilerplate or carrying a Linux/WebView stack.
 
+## Showcase
+
+All screenshots below are **rendered directly by the repository's built-in WASM host**, exercising the exact same `@pocketjs/framework` + `solid-js` UI pipeline that runs on the ESP32-P4 hardware across both `400×640` portrait and `640×400` landscape logical viewports (`800×1280` / `1280×800` physical panel).
+
+### Portrait (`400×640` logical canvas)
+
+| [`apps/ha-panel`](apps/ha-panel) — Smart Home Dashboard | [`apps/showroom-ha-panel`](apps/showroom-ha-panel) — RGB Color Wheel | [`apps/field-ops-panel`](apps/field-ops-panel) — ESS Microgrid Ops |
+| :---: | :---: | :---: |
+| ![ha-panel portrait home](docs/assets/showcase/ha-panel-portrait-home.png) | ![showroom-ha-panel portrait color wheel](docs/assets/showcase/showroom-portrait-dimmer.png) | ![field-ops-panel portrait ESS overview](docs/assets/showcase/field-ops-portrait-ess.png) |
+| Lighting cards with active dimmer bar, scene presets & bottom tab bar. | Interactive HSV color wheel, brightness toggle & hold-to-dim control. | SoC gauge, DC bus / cell telemetry, unacked alarm banner & quick actions. |
+
+### Landscape (`640×400` logical canvas)
+
+| [`apps/showroom-ha-panel`](apps/showroom-ha-panel) — Bilingual Home (EN) | [`apps/showroom-ha-panel`](apps/showroom-ha-panel) — System Settings | [`apps/field-ops-panel`](apps/field-ops-panel) — LoRaWAN Gateway |
+| :---: | :---: | :---: |
+| ![showroom-ha-panel landscape home EN](docs/assets/showcase/showroom-landscape-home-en.png) | ![showroom-ha-panel landscape settings](docs/assets/showcase/showroom-landscape-settings.png) | ![field-ops-panel landscape LoRaWAN](docs/assets/showcase/field-ops-landscape-lorawan.png) |
+| Live CN/EN toggle, battery & USB 5V status, sensor cards & quick actions. | Backlight slider, auto-sleep timer, Wi-Fi/HA status & orientation switch. | Online node ratio, T1000-E tracker count, gateway RSSI & active SOS alert. |
+
 ## Why PocketJS on D1001
 
 - **TypeScript + SolidJS UI, native ESP32-P4 rendering**: Author screens and state in `@pocketjs/framework` + `solid-js` (`400×640` portrait / `640×400` landscape logical viewports) while native dual-lane PPA and GDMA retained-move scrolling drive the 800×1280 RGB565 panel directly—no LVGL dependency.

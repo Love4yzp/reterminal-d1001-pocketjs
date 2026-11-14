@@ -10,6 +10,24 @@
 
 面向 Seeed reTerminal D1001（ESP32-P4 + 8 英寸 800×1280 JD9365 MIPI-DSI 触摸屏）的 PocketJS 应用运行时与 ESP-IDF 板级平台。用 TypeScript + SolidJS 开发流畅的原生级触屏应用——无论信息看板、交互工具、桌面终端还是设备界面，都无需手写 LVGL/Qt 样板，也没有 Linux/WebView 包袱。
 
+## 界面展示（Showcase）
+
+以下界面截图均由**仓库内置 WASM 宿主直接渲染**，复用与 ESP32-P4 真机一致的 `@pocketjs/framework` + `solid-js` 渲染管线，分别对应竖屏 `400×640` 与横屏 `640×400` 逻辑画布（物理屏幕分辨率 `800×1280` / `1280×800`）。
+
+### 竖屏界面（`400×640` 逻辑画布）
+
+| [`apps/ha-panel`](apps/ha-panel) — 智能家居仪表盘 | [`apps/showroom-ha-panel`](apps/showroom-ha-panel) — RGB 色轮调光 | [`apps/field-ops-panel`](apps/field-ops-panel) — 储能微网看板 |
+| :---: | :---: | :---: |
+| ![ha-panel 竖屏首页](docs/assets/showcase/ha-panel-portrait-home.png) | ![showroom-ha-panel 竖屏色轮](docs/assets/showcase/showroom-portrait-dimmer.png) | ![field-ops-panel 竖屏储能概览](docs/assets/showcase/field-ops-portrait-ess.png) |
+| 灯光卡片与亮度进度条、场景快捷触发及底部导航栏。 | 交互式 HSV 色盘、开关与长按调光控制界面。 | SoC 电量条、直流母线/电芯遥测、未确认告警横幅与快捷动作。 |
+
+### 横屏界面（`640×400` 逻辑画布）
+
+| [`apps/showroom-ha-panel`](apps/showroom-ha-panel) — 双语展厅首页（EN） | [`apps/showroom-ha-panel`](apps/showroom-ha-panel) — 系统设置页 | [`apps/field-ops-panel`](apps/field-ops-panel) — LoRaWAN 巡检看板 |
+| :---: | :---: | :---: |
+| ![showroom-ha-panel 横屏英文首页](docs/assets/showcase/showroom-landscape-home-en.png) | ![showroom-ha-panel 横屏设置页](docs/assets/showcase/showroom-landscape-settings.png) | ![field-ops-panel 横屏 LoRaWAN 概览](docs/assets/showcase/field-ops-landscape-lorawan.png) |
+| 中英即时切换、电池与 USB 5V 供电状态、传感器卡片与快捷指令。 | 背光滑动条、自动息屏计时、Wi-Fi/HA 状态、电量与横竖屏切换。 | 节点在线率、T1000-E 追踪器数量、网关 RSSI 与待处理 SOS 告警。 |
+
 ## 为什么在 D1001 上用 PocketJS
 
 - **TypeScript + SolidJS 写界面，ESP32-P4 原生渲染**：使用 `@pocketjs/framework` + `solid-js` 编写页面与状态（逻辑视口为竖屏 `400×640` / 横屏 `640×400`），底层由 ESP32-P4 双路 PPA 与 GDMA retained-move 滚动直接驱动 800×1280 RGB565 屏幕，零 LVGL 依赖。
