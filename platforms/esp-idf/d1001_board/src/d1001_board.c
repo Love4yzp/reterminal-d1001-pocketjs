@@ -248,6 +248,10 @@ esp_err_t d1001_board_pa_set(bool enable) {
   return d1001_pca9535_set_level(D1001_PCA9535_PA_ENABLE, enable);
 }
 
+esp_err_t d1001_board_battery_adc_set_enable(bool high) {
+  return d1001_pca9535_set_level(D1001_PCA9535_BAT_ADC_ENABLE, high);
+}
+
 esp_err_t d1001_board_camera_set_power(bool high) {
   return d1001_pca9535_set_level(D1001_PCA9535_CAMERA_POWER, high);
 }

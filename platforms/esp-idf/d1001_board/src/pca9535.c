@@ -7,11 +7,12 @@
 #define PCA9535_OUTPUT_REG 0x02U
 #define PCA9535_DIRECTION_REG 0x06U
 #define PCA9535_DEFAULT_DIRECTION 0xfaffU
-/* Preserve every existing output except the three camera control lines.
- * P13 (speaker amplifier) also stays low from the first output write. */
-#define PCA9535_DEFAULT_OUTPUT \
-  (0xf3ffU & ~(D1001_PCA9535_CAMERA_POWER | D1001_PCA9535_CAMERA_PWDN | \
-               D1001_PCA9535_CAMERA_RESET))
+/* Preserve every existing output except the three camera control lines and
+ * the switched battery ADC divider gate (P06). P13 (speaker amplifier) also
+ * stays low from the first output write. */
+#define PCA9535_DEFAULT_OUTPUT                                                 \
+  (0xf3ffU & ~(D1001_PCA9535_CAMERA_POWER | D1001_PCA9535_CAMERA_PWDN |        \
+               D1001_PCA9535_CAMERA_RESET | D1001_PCA9535_BAT_ADC_ENABLE))
 #define PCA9535_TIMEOUT_MS 1000
 
 static const char *TAG = "d1001_pca9535";

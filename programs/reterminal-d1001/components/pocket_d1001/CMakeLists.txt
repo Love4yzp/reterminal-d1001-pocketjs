@@ -10,6 +10,7 @@ idf_component_register(
     REQUIRES d1001_board espressif__quickjs-ng pocket_runtime
     PRIV_REQUIRES
         d1001_imu
+        d1001_power
         driver
         esp_app_format
         esp_netif

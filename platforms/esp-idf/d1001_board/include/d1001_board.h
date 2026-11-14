@@ -37,6 +37,8 @@ esp_err_t d1001_board_rgb_set(bool red, bool green, bool blue);
 esp_err_t d1001_board_rgb_set_color(uint8_t red, uint8_t green, uint8_t blue);
 /** ES8311 speaker amplifier enable on PCA9535 P13 (active high). */
 esp_err_t d1001_board_pa_set(bool enable);
+/** Battery voltage divider enable on PCA9535 P06 (active high). */
+esp_err_t d1001_board_battery_adc_set_enable(bool high);
 /** Camera rail/signal lines on PCA9535 P01 (power), P03 (pwdn) and P09 (reset). */
 esp_err_t d1001_board_camera_set_power(bool high);
 esp_err_t d1001_board_camera_set_pwdn(bool high);

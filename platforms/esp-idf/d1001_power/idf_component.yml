@@ -1,0 +1,7 @@
+version: "0.1.0"
+description: Independent synchronous reTerminal D1001 power sensing
+license: Apache-2.0
+targets:
+  - esp32p4
+dependencies:
+  idf: ">=6.2,<6.3"

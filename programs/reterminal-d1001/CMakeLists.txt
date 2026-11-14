@@ -14,6 +14,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "${d1001_root}/platforms/esp-idf/d1001_audio"
     "${d1001_root}/platforms/esp-idf/d1001_camera"
     "${d1001_root}/platforms/esp-idf/d1001_imu"
+    "${d1001_root}/platforms/esp-idf/d1001_power"
     "${d1001_root}/platforms/esp-idf/pocket_fs_esp"
     "${d1001_root}/platforms/esp-idf/pocket_wifi_esp"
     "${d1001_root}/platforms/esp-idf/pocket_hot_push_esp"

@@ -2,6 +2,7 @@
  * with an explicit RTC write after synchronization. */
 #include "pocket/d1001.h"
 
+#include <inttypes.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -13,6 +14,7 @@
 
 #include "d1001_drivers.h"
 #include "d1001_imu.h"
+#include "d1001_power.h"
 #include "d1001_wifi.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -27,6 +29,8 @@
 
 static const char *TAG = "d1001_panel";
 #define D1001_IMU_RETRY_US INT64_C(3000000)
+#define D1001_POWER_RETRY_US INT64_C(3000000)
+#define D1001_POWER_CACHE_US INT64_C(2000000)
 
 static struct {
   const d1001_board_handles *board;
@@ -37,6 +41,13 @@ static struct {
   esp_err_t imu_error;
   int64_t imu_retry_after_us;
   esp_err_t imu_open_error;
+  bool power_ready;
+  bool power_cleanup_pending;
+  bool power_has_snapshot;
+  int64_t power_retry_after_us;
+  int64_t power_sampled_us;
+  esp_err_t power_error;
+  d1001_power_snapshot_t power_snapshot;
   bool sntp_active;
   atomic_bool sntp_synced;
 } panel;
@@ -70,6 +81,63 @@ static void imu_log_error(esp_err_t result) {
   if (result != ESP_OK && result != panel.imu_error)
     ESP_LOGW(TAG, "IMU unavailable: %s", esp_err_to_name(result));
   panel.imu_error = result;
+}
+
+static esp_err_t power_set_bat_adc_enable(void *context, bool enable) {
+  (void)context;
+  return d1001_board_battery_adc_set_enable(enable);
+}
+
+static void power_log_error(esp_err_t result) {
+  if (result != ESP_OK && result != panel.power_error)
+    ESP_LOGW(TAG, "Power monitor unavailable: %s", esp_err_to_name(result));
+  panel.power_error = result;
+}
+
+static esp_err_t power_ensure(void) {
+  if (panel.power_ready)
+    return ESP_OK;
+  if (panel.board == NULL)
+    return ESP_ERR_INVALID_STATE;
+  const int64_t now = esp_timer_get_time();
+  if (now < panel.power_retry_after_us)
+    return panel.power_error != ESP_OK ? panel.power_error : ESP_ERR_INVALID_STATE;
+  if (panel.power_cleanup_pending) {
+    const esp_err_t cleanup_err = d1001_power_deinit();
+    if (cleanup_err != ESP_OK) {
+      panel.power_retry_after_us = esp_timer_get_time() + D1001_POWER_RETRY_US;
+      return cleanup_err;
+    }
+    panel.power_cleanup_pending = false;
+  }
+  d1001_power_config_t config = D1001_POWER_CONFIG_DEFAULT();
+  config.set_bat_adc_enable = power_set_bat_adc_enable;
+  const esp_err_t result = d1001_power_init(&config);
+  if (result == ESP_OK) {
+    panel.power_ready = true;
+    panel.power_retry_after_us = 0;
+    return ESP_OK;
+  }
+  /* d1001_power requires deinit after any failed init before retrying. */
+  const esp_err_t cleanup_err = d1001_power_deinit();
+  panel.power_cleanup_pending = (cleanup_err != ESP_OK);
+  panel.power_retry_after_us = esp_timer_get_time() + D1001_POWER_RETRY_US;
+  return cleanup_err != ESP_OK ? cleanup_err : result;
+}
+
+static const char *charge_state_name(d1001_power_charge_state_t state) {
+  switch (state) {
+  case D1001_POWER_USB_ABSENT:
+    return "usb_absent";
+  case D1001_POWER_CHARGING:
+    return "charging";
+  case D1001_POWER_USB_IDLE:
+    return "usb_idle";
+  case D1001_POWER_INCONSISTENT:
+    return "inconsistent";
+  default:
+    return "unknown";
+  }
 }
 
 static void on_sntp_sync(struct timeval *now) {
@@ -164,6 +232,52 @@ static JSValue read_sensors(JSContext *realm) {
   return JS_NewString(realm, json);
 }
 
+static JSValue read_power(JSContext *realm) {
+  d1001_power_snapshot_t snapshot = {0};
+  esp_err_t result = ESP_OK;
+  const int64_t now = esp_timer_get_time();
+  if (panel.power_has_snapshot &&
+      (now - panel.power_sampled_us) < D1001_POWER_CACHE_US) {
+    snapshot = panel.power_snapshot;
+  } else {
+    result = power_ensure();
+    if (result == ESP_OK)
+      result = d1001_power_read(&snapshot);
+    if (result == ESP_OK) {
+      panel.power_snapshot = snapshot;
+      panel.power_sampled_us = esp_timer_get_time();
+      panel.power_has_snapshot = true;
+    } else {
+      panel.power_has_snapshot = false;
+      if (panel.power_ready && result != ESP_ERR_INVALID_RESPONSE) {
+        panel.power_ready = false;
+        panel.power_cleanup_pending = true;
+        panel.power_retry_after_us = esp_timer_get_time() + D1001_POWER_RETRY_US;
+      }
+    }
+    power_log_error(result);
+  }
+
+  char json[256];
+  int written;
+  if (result != ESP_OK) {
+    written = snprintf(json, sizeof json, "{\"available\":false}");
+  } else {
+    written = snprintf(
+        json, sizeof json,
+        "{\"available\":true,\"batteryMv\":%" PRIu32 ",\"batteryPercent\":%u,"
+        "\"usbMv\":%" PRIu32 ",\"usbPresent\":%s,\"chargePinLow\":%s,"
+        "\"chargeState\":\"%s\"}",
+        snapshot.battery_mv, (unsigned)snapshot.battery_percent,
+        snapshot.usb_mv, snapshot.usb_present ? "true" : "false",
+        snapshot.charge_pin_low ? "true" : "false",
+        charge_state_name(snapshot.charge_state));
+  }
+  if (written < 0 || (size_t)written >= sizeof json)
+    return JS_ThrowInternalError(realm, "power JSON overflow");
+  return JS_NewString(realm, json);
+}
+
 static JSValue set_rgb(JSContext *realm, int argc, JSValueConst *argv) {
   int32_t color[3];
   for (size_t i = 0; i < 3U; ++i) {
@@ -234,6 +348,7 @@ enum {
   OP_UTC_OFFSET_MINUTES,
   OP_SYNC_CLOCK,
   OP_READ_SENSORS,
+  OP_READ_POWER,
   OP_SET_RGB,
   OP_HA_CONFIG,
   OP_FIRMWARE_VERSION,
@@ -256,6 +371,8 @@ static JSValue operation(JSContext *realm, JSValueConst this_value, int argc,
     return sync_clock(realm);
   case OP_READ_SENSORS:
     return read_sensors(realm);
+  case OP_READ_POWER:
+    return read_power(realm);
   case OP_SET_RGB:
     return set_rgb(realm, argc, argv);
   case OP_HA_CONFIG:
@@ -314,6 +431,7 @@ esp_err_t d1001_panel_install(JSContext *realm, const d1001_board_handles *board
   add(realm, object, "utcOffsetMinutes", OP_UTC_OFFSET_MINUTES);
   add(realm, object, "syncClock", OP_SYNC_CLOCK);
   add(realm, object, "readSensors", OP_READ_SENSORS);
+  add(realm, object, "readPower", OP_READ_POWER);
   add(realm, object, "setRgb", OP_SET_RGB);
   add(realm, object, "haConfig", OP_HA_CONFIG);
   add(realm, object, "firmwareVersion", OP_FIRMWARE_VERSION);
@@ -340,6 +458,11 @@ void d1001_panel_teardown(void) {
     const esp_err_t result = d1001_imu_close(&panel.imu);
     if (result != ESP_OK)
       ESP_LOGW(TAG, "IMU close failed: %s", esp_err_to_name(result));
+  }
+  if (panel.power_ready || panel.power_cleanup_pending) {
+    const esp_err_t result = d1001_power_deinit();
+    if (result != ESP_OK)
+      ESP_LOGW(TAG, "Power monitor deinit failed: %s", esp_err_to_name(result));
   }
   memset(&panel, 0, sizeof panel);
 }
