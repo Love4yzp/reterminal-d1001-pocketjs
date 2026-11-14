@@ -1,7 +1,10 @@
 idf_component_register(
     SRCS "main.c" "packages.c" "inputs.c" "display_move.c" "worker_package.c"
     REQUIRES
+        d1001_audio
         d1001_board
+        d1001_camera
+        d1001_imu
         esp_driver_dma
         esp_partition
         esp_driver_ppa

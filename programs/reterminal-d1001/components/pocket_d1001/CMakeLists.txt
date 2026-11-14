@@ -1,7 +1,6 @@
 idf_component_register(
     SRCS
         "src/d1001_panel.c"
-        "src/imu_lsm6ds3.c"
         "src/rtc_pcf8563.c"
         "src/screen.c"
         "src/screen_geometry.c"
@@ -10,6 +9,7 @@ idf_component_register(
     PRIV_INCLUDE_DIRS "src"
     REQUIRES d1001_board espressif__quickjs-ng pocket_runtime
     PRIV_REQUIRES
+        d1001_imu
         driver
         esp_app_format
         esp_netif

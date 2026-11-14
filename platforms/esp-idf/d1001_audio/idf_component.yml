@@ -1,5 +1,5 @@
 version: "0.1.0"
-description: ES8311 and I2S0 output for Seeed reTerminal D1001
+description: ES8311 output and ES7210 input for Seeed reTerminal D1001
 license: MIT AND Apache-2.0
 targets:
   - esp32p4

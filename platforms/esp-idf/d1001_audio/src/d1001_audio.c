@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "d1001_audio_input.h"
 #include "d1001_board.h"
 #include "driver/i2s_std.h"
 #include "esp_check.h"
@@ -249,6 +250,7 @@ esp_err_t d1001_audio_set_active(bool active) {
 }
 
 void d1001_audio_deinit(void) {
+  d1001_audio_input_close();
   ready = false;
   if (codec != NULL) {
     (void)codec_update(ES8311_REG_DAC_31, ES8311_MUTE_BITS, ES8311_MUTE_BITS);

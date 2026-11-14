@@ -12,6 +12,7 @@
 #include <time.h>
 
 #include "d1001_drivers.h"
+#include "d1001_imu.h"
 #include "d1001_wifi.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -28,7 +29,8 @@ static const char *TAG = "d1001_panel";
 static struct {
   const d1001_board_handles *board;
   i2c_master_dev_handle_t rtc;
-  i2c_master_dev_handle_t imu;
+  d1001_imu imu;
+  bool imu_open;
   esp_err_t rtc_error;
   esp_err_t imu_error;
   bool imu_failed;
@@ -43,14 +45,17 @@ static void rtc_log_error(esp_err_t result) {
 }
 
 static esp_err_t imu_ensure(void) {
-  if (panel.imu != NULL)
+  if (panel.imu_open)
     return ESP_OK;
   if (panel.imu_failed)
     return ESP_ERR_INVALID_STATE;
   if (panel.board == NULL)
     return ESP_ERR_INVALID_STATE;
-  const esp_err_t result = d1001_imu_open(panel.board->system_i2c, &panel.imu);
-  if (result != ESP_OK)
+  const esp_err_t result =
+      d1001_imu_open(panel.board->system_i2c, NULL, &panel.imu);
+  if (result == ESP_OK)
+    panel.imu_open = true;
+  else
     panel.imu_failed = true;
   return result;
 }
@@ -130,7 +135,7 @@ static JSValue read_sensors(JSContext *realm) {
   d1001_imu_sample sample;
   esp_err_t result = imu_ensure();
   if (result == ESP_OK)
-    result = d1001_imu_read(panel.imu, &sample);
+    result = d1001_imu_read_sample(&panel.imu, &sample);
   imu_log_error(result);
 
   char json[256];
@@ -143,9 +148,10 @@ static JSValue read_sensors(JSContext *realm) {
         "{\"available\":true,\"acceleration\":{\"x\":%.4f,\"y\":%.4f,\"z\":%.4f},"
         "\"angularRate\":{\"x\":%.4f,\"y\":%.4f,\"z\":%.4f},"
         "\"chipCelsius\":%.3f}",
-        sample.acceleration.x, sample.acceleration.y, sample.acceleration.z,
-        sample.angular_rate.x, sample.angular_rate.y, sample.angular_rate.z,
-        sample.chip_celsius);
+        sample.acceleration_mps2.x, sample.acceleration_mps2.y,
+        sample.acceleration_mps2.z, sample.angular_rate_dps.x,
+        sample.angular_rate_dps.y, sample.angular_rate_dps.z,
+        sample.temperature_c);
   }
   if (written < 0 || (size_t)written >= sizeof json)
     return JS_ThrowInternalError(realm, "sensor JSON overflow");
@@ -324,7 +330,7 @@ void d1001_panel_teardown(void) {
     if (result != ESP_OK)
       ESP_LOGW(TAG, "RTC close failed: %s", esp_err_to_name(result));
   }
-  if (panel.imu != NULL) {
+  if (panel.imu_open) {
     const esp_err_t result = d1001_imu_close(&panel.imu);
     if (result != ESP_OK)
       ESP_LOGW(TAG, "IMU close failed: %s", esp_err_to_name(result));

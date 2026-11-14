@@ -205,6 +205,18 @@ esp_err_t d1001_board_pa_set(bool enable) {
   return d1001_pca9535_set_level(D1001_PCA9535_PA_ENABLE, enable);
 }
 
+esp_err_t d1001_board_camera_set_power(bool high) {
+  return d1001_pca9535_set_level(D1001_PCA9535_CAMERA_POWER, high);
+}
+
+esp_err_t d1001_board_camera_set_pwdn(bool high) {
+  return d1001_pca9535_set_level(D1001_PCA9535_CAMERA_PWDN, high);
+}
+
+esp_err_t d1001_board_camera_set_reset(bool high) {
+  return d1001_pca9535_set_level(D1001_PCA9535_CAMERA_RESET, high);
+}
+
 esp_err_t d1001_board_init(d1001_board_handles *handles) {
   ESP_RETURN_ON_FALSE(handles != NULL, ESP_ERR_INVALID_ARG, TAG, "missing output");
   *handles = (d1001_board_handles){0};

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "src/d1001_audio.c"
+    SRCS "src/d1001_audio.c" "src/d1001_audio_input.c"
     INCLUDE_DIRS "include"
     REQUIRES d1001_board esp_driver_i2s
     PRIV_REQUIRES driver log freertos
