@@ -4,7 +4,7 @@ This document covers toolchain requirements, ESP-IDF firmware builds, partition 
 
 ## Toolchain requirements
 
-- **Bun**: `1.4.4` via `mise`
+- **Bun**: `>= 1.4.4` ([bun.sh](https://bun.sh/))
 - **Rust**: `1.98.1` with target `riscv32imafc-unknown-none-elf`
 - **ESP-IDF**: `6.2` at commit `188e3e55bb20505b5fa9dc49ee390bf42c58b4ee`, with `esp32p4` tools installed
 
