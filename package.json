@@ -15,7 +15,10 @@
     "preview": "bun tools/ha-panel-preview.ts",
     "showroom:fonts": "bun apps/showroom-ha-panel/fonts/tool.ts",
     "showroom:preview": "bun tools/showroom-ha-panel-preview.ts",
-    "showroom:mock-ha": "bun tools/mock-showroom-ha.ts"
+    "showroom:mock-ha": "bun tools/mock-showroom-ha.ts",
+    "ops:fonts": "bun apps/field-ops-panel/fonts/tool.ts",
+    "ops:preview": "bun tools/field-ops-preview.ts",
+    "ops:mock": "bun tools/mock-field-ops.ts"
   },
   "dependencies": {
     "@pocketjs/framework": "workspace:*",

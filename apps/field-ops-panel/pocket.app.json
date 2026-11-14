@@ -1,0 +1,36 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-nexus.d1001.field-ops-panel",
+  "title": "D1001 Field Ops Console",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": ["data.fs", "input.buttons", "input.touch", "runtime.worker", "net.http", "text.glyphs.baked", "system.device", "system.wifi"],
+      "enhances": ["audio.pcm"]
+    }
+  },
+  "app": {
+    "entry": "main.tsx",
+    "output": "field-ops-panel",
+    "framework": "solid",
+    "tickHz": 30,
+    "viewport": {
+      "fixed": {
+        "logical": [[400, 640], [640, 400]],
+        "presentation": "native"
+      }
+    }
+  },
+  "domains": {
+    "worker": {
+      "entry": "worker.ts",
+      "nodes": [{ "name": "http", "kind": "http" }],
+      "channels": [
+        { "name": "ops-config", "kind": "snapshot", "direction": "ui-to-worker", "recordBytes": 512, "capacity": 1 },
+        { "name": "ops-commands", "kind": "ring", "direction": "ui-to-worker", "recordBytes": 512, "capacity": 8 },
+        { "name": "ops-events", "kind": "ring", "direction": "worker-to-ui", "recordBytes": 1024, "capacity": 8 }
+      ]
+    }
+  }
+}
