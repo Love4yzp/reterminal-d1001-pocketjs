@@ -1,12 +1,49 @@
 # PocketJS for reTerminal D1001
 
-PocketJS firmware for the Seeed reTerminal D1001: ESP32-P4 and an 800x1280 JD9365 MIPI-DSI panel. Portrait applications use a 400x640 logical viewport and an 800x1280 RGB565 raster; landscape uses 640x400 logical and a 1280x800 raster. Both render at density 2, presented at DPI scale 1.
+PocketJS firmware, board support, and forkable HMI application baselines for the Seeed reTerminal D1001 (ESP32-P4 + 8" 800×1280 JD9365 MIPI-DSI capacitive touch display).
 
-The board component owns the I2C buses, PCA9535, panel power/reset, DPI panel and backlight. It has no LVGL dependency and creates no tasks. PocketJS is a read-only submodule; QuickJS guests use quickjs-ng 0.14.0.
+## Why PocketJS on reTerminal D1001
+
+Device teams and system integrators (SIs) building small-to-medium screen products in modest volumes—such as energy storage cabinets, EV chargers, industrial/building panels, and equipment consoles—need a responsive, modern touch HMI without hiring dedicated LVGL/Qt GUI engineers or maintaining a heavy Android/Linux BSP.
+
+This repository brings [PocketJS](https://github.com/pocket-nexus/pocketjs) (`third_party/pocketjs`, read-only submodule) to the reTerminal D1001 with a strict separation between native ESP-IDF firmware and portable TypeScript/SolidJS guest apps:
+
+- **Native 800×1280 rendering without LVGL or Qt boilerplate**: Author screens and state in declarative TypeScript (`@pocketjs/framework` + `solid-js`) while native ESP32-P4 dual-lane PPA and GDMA retained-move scrolling render crisp density-2 RGB565 graphics (`400×640` portrait / `640×400` landscape logical viewports, presented at DPI scale 1) with no LVGL dependency.
+- **Deterministic cold boot & low memory footprint vs. Web/WebView**: Guest apps execute directly on `quickjs-ng 0.14.0` inside the ESP-IDF host runtime instead of an Android/Linux OS + browser WebView stack—delivering deterministic startup and bounded internal DMA usage (two staging buffers totaling at most 128 KiB).
+- **~3-second delta hot-push & desktop screenshot preview**: Verify multi-screen layouts and touch flows locally in the desktop WASM preview harness (`bun run preview`, `bun run showroom:preview`), then push app-only PKAP v1 delta updates over USB or Wi-Fi in ~3 seconds (`bun run app:push`) without rebuilding or reflashing firmware.
+- **Firmware-owned safety, input & network boundary**: Native ESP-IDF code owns I2C buses, PCA9535, backlight, physical `CIRCLE` button arbitration (rotate / wake / screen power / 3 s restart), touch wake-swallow, Wi-Fi preset rotation/backoff, and per-slot `data.fs` isolation. Packages are admitted as PKAP v1 images against [`programs/reterminal-d1001/pocket.host.json`](programs/reterminal-d1001/pocket.host.json); an empty, damaged, or incompatible `apps` slot automatically falls back to the embedded app (`apps/worker-http`). A guest app hang or crash cannot break hardware controls or brick the device.
+- **Forkable, multi-screen HMI baselines**: Rather than toy single-screen snippets, [`apps/field-ops-panel`](apps/field-ops-panel), [`apps/ha-panel`](apps/ha-panel), and [`apps/showroom-ha-panel`](apps/showroom-ha-panel) provide tested, themeable, multi-screen baselines (portrait and rearranged landscape layouts, host mocks, font subsetting, and screenshot previews) ready to fork and adapt.
+
+## Repository layout & architecture
+
+| App | Role | Highlights |
+|---|---|---|
+| [`apps/field-ops-panel`](apps/field-ops-panel) | Forkable industrial HMI baseline | Multi-profile (`ess` / `charger` / `lorawan`), live theme hot-swap (`cobalt` / `emerald` / `amber`), commit→readback receipts, offline cache lockout, `VirtualList` alarms + RGB/`audio.pcm` feedback |
+| [`apps/ha-panel`](apps/ha-panel) | Forkable panel baseline | Home, light-list, dimmer, and settings screens; virtual/onboard/HA adapters, local mock server, portrait & landscape previews |
+| [`apps/showroom-ha-panel`](apps/showroom-ha-panel) | Bilingual HMI console baseline | Independent app (`dev.pocket-nexus.d1001.showroom-ha-panel`) with CN/EN UI, tap audio (`audio.pcm`), slot-local `data.fs` config, color-wheel dimmer, and HA telemetry/action controls |
+| [`apps/worker-http`](apps/worker-http) | Embedded fallback app | Worker HTTP polling example embedded in the factory firmware (`source=embedded` fallback) |
+| [`apps/input-test`](apps/input-test) | Input & scroll self-test | Multi-zone touch calibration, GPIO3 `CIRCLE` press counter, 80-row GDMA retained-move virtual list |
+| [`apps/system-test`](apps/system-test) | System services self-test | `data.fs` persistence (`counter.json`), RGB LED cycles, backlight dimming, and Wi-Fi scan |
+| [`apps/hello-d1001`](apps/hello-d1001) | Minimal dev-loop check | Minimal package for verifying `~3s` `app:push` cycles (edit `block.svg` for bytecode-unchanged asset iteration) |
+
+Native platform components live under [`platforms/esp-idf`](platforms/esp-idf) (`d1001_board`, `d1001_audio`, `pocket_fs_esp`, `pocket_http_esp`, `pocket_wifi_esp`, `pocket_worker_esp`, `pocket_hot_push_esp`) and the ESP32-P4 host program lives under [`programs/reterminal-d1001`](programs/reterminal-d1001). The board component owns the I2C buses, PCA9535, panel power/reset, DPI panel, and backlight; it has no LVGL dependency and creates no tasks.
+
+### Layering & BSP-first strategy
+
+As enforced in [`AGENTS.md`](AGENTS.md), the codebase separates hardware ownership from application iteration:
+
+1. **Firmware & BSP layer** (`platforms/esp-idf/*`, `programs/reterminal-d1001`): Hardware drivers, input arbitration, Wi-Fi preset management, storage, and native capabilities are implemented, hardware-validated, and registered in [`programs/reterminal-d1001/pocket.host.json`](programs/reterminal-d1001/pocket.host.json) first.
+2. **Guest application layer** (`apps/*`): Applications run in an isolated QuickJS realm, declare required capabilities in `pocket.app.json`, and consume only registered host capabilities and status APIs—they never hold Wi-Fi credentials or touch raw hardware buses.
+3. **Device data boundary**: Deployment credentials and per-device entity maps live in `storage` (`data.fs` per-slot isolation) or git-ignored `sdkconfig.local`, never inside committed app packages.
+
+### Host capabilities (current vs. expanding)
+
+- **Currently registered in [`pocket.host.json`](programs/reterminal-d1001/pocket.host.json)**: `audio.pcm` (ES8311 speaker output), `data.fs`, `input.buttons`, `input.touch`, `net.http`, `runtime.worker`, `system.device`, `system.wifi`, `text.glyphs.baked`.
+- **Hardware BSP expansion in progress (not yet registered in `pocket.host.json`)**: ES7210 dual-mic capture (`audio.capture`), SC2356 MIPI-CSI camera (`camera.qr` / `camera.photo`), LSM6DS3TR 6-axis IMU (`motion` input and tamper/tap-wake event sensing), and Mini-PCIe 4G LTE cellular connectivity for Wi-Fi-free field deployments.
 
 ## Requirements
 
-- Bun 1.4.4 through mise
+- Bun 1.4.4 through `mise`
 - Rust 1.98.1 with `riscv32imafc-unknown-none-elf`
 - ESP-IDF 6.2 at commit `188e3e55bb20505b5fa9dc49ee390bf42c58b4ee`, with the `esp32p4` tools installed
 
@@ -71,7 +108,7 @@ Push `apps/input-test` to exercise the touch panel, side button and retained-mov
 bun run app:push apps/input-test
 ```
 
-The app counts contact hits in four corners and the centre, counts GPIO3/CIRCLE presses and automatically scrolls an 80-row virtual list in both directions. The native input task still delivers raw debounced CIRCLE press/release state to this app while independently arbitrating screen power: a single release below 600 ms rotates after a 350 ms double-click window, two short releases toggle screen power, one second gives wake feedback, and three seconds logs a reason and restarts. Releasing before three seconds cancels without a short/double action. Touch wakes and is swallowed until release when the screen was off. Rotation restarts only the runtime with a new layout and synchronized touch coordinates; the panel snapshots lights, route and screen timeout into native RAM and consumes it in the new realm, and landscape settings return to portrait. Landscape admission copies the installed package to PSRAM, rewrites its plan viewport to 640x400 and leaves the flash package untouched. The full-width rectangular list uses the stock GDMA retained-move path; narrow partial-width lists use slower PPA staging bands. Firmware logs include raw, mirrored physical and orientation-aware logical touch coordinates, runner statistics, DMA heap and display-move counters/timings. Calibration follows Seeed's `swap_xy=0, mirror_x=1, mirror_y=1`, followed by orientation-aware logical mapping; see `platforms/esp-idf/d1001_board/README.md`. Physical touch and button hits require validation by a user with the device. Run `tools/d1001-input-acceptance.sh` for the guided timeout, wake, button, rotation and touch acceptance sequence.
+The app counts contact hits in four corners and the centre, counts GPIO3/CIRCLE presses and automatically scrolls an 80-row virtual list in both directions. The native input task still delivers raw debounced CIRCLE press/release state to this app while independently arbitrating screen power: a single release below 600 ms rotates after a 350 ms double-click window, two short releases toggle screen power, one second gives wake feedback, and three seconds logs a reason and restarts. Releasing before three seconds cancels without a short/double action. Touch wakes and is swallowed until release when the screen was off. Rotation restarts only the runtime with a new layout and synchronized touch coordinates; the panel snapshots lights, route and screen timeout into native RAM and consumes it in the new realm, and landscape settings return to portrait. Landscape admission copies the installed package to PSRAM, rewrites its plan viewport to 640x400 and leaves the flash package untouched. The full-width rectangular list uses the stock GDMA retained-move path; narrow partial-width lists use slower PPA staging bands. Firmware logs include raw, mirrored physical and orientation-aware logical touch coordinates, runner statistics, DMA heap and display-move counters/timings. Calibration follows Seeed's `swap_xy=0, mirror_x=1, mirror_y=1`, followed by orientation-aware logical mapping; see [`platforms/esp-idf/d1001_board/README.md`](platforms/esp-idf/d1001_board/README.md). Physical touch and button hits require validation by a user with the device. Run [`tools/d1001-input-acceptance.sh`](tools/d1001-input-acceptance.sh) for the guided timeout, wake, button, rotation and touch acceptance sequence.
 
 ## System services self-test (M4)
 
@@ -100,11 +137,11 @@ bun test apps/ha-panel tools/partitions.test.ts
 bun run app:push apps/ha-panel --wifi <device-ip>
 ```
 
-The panel provides home, light-list, dimmer and settings screens with virtual, onboard and HA light adapters. Live HA weather appears when an entity is available; there are no IMU or demonstration-weather cards. HA is disabled without local configuration. See `apps/ha-panel/README.md` for Kconfig settings, RTC/SNTP, host previews and the authenticated local mock server.
+The panel provides home, light-list, dimmer and settings screens with virtual, onboard and HA light adapters. Live HA weather appears when an entity is available; there are no IMU or demonstration-weather cards. HA is disabled without local configuration. See [`apps/ha-panel/README.md`](apps/ha-panel/README.md) for Kconfig settings, RTC/SNTP, host previews and the authenticated local mock server.
 
 ## Showroom HA panel
 
-`apps/showroom-ha-panel` is a separate product with app id `dev.pocket-nexus.d1001.showroom-ha-panel`. It retains the generic panel's light, dimmer and settings foundations while adding the showroom main light, environment readings, weather, Reachy actions, execution telemetry and protected arm controls. Its source, tests, fonts, mock server and preview harness are independent of `apps/ha-panel`.
+`apps/showroom-ha-panel` is a separate baseline app with app id `dev.pocket-nexus.d1001.showroom-ha-panel`. It builds on the generic panel's light, dimmer and settings foundations while adding bilingual CN/EN UI switching, tap audio feedback (`audio.pcm`), slot-local `data.fs` provisioning (`tools/showroom-ha-panel-provision.ts`), an RGB/HS color-wheel dimmer, environment readings, weather, and Home Assistant service action triggers with transient run feedback. Its source, tests, fonts, mock server and preview harness are independent of `apps/ha-panel`.
 
 ```sh
 bun test apps/showroom-ha-panel tools/partitions.test.ts
@@ -113,7 +150,7 @@ bun run showroom:preview --smoke
 bun run app:push apps/showroom-ha-panel
 ```
 
-The committed app has no live HA credentials. See `apps/showroom-ha-panel/README.md` for its public entity-map format, local configuration seam, safety behavior and full validation commands.
+The committed app has no live HA credentials. See [`apps/showroom-ha-panel/README.md`](apps/showroom-ha-panel/README.md) for its public entity-map format, local configuration seam, safety behavior and full validation commands.
 
 ## Development Wi-Fi hot push
 
