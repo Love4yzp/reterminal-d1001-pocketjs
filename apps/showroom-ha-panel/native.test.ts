@@ -2,12 +2,17 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   canSwitchNetwork,
+  formatBatteryPercent,
   formatRssi,
   NOT_CONNECTED_TEXT,
+  powerDetailLabel,
+  powerShortLabel,
+  powerStatusLabel,
   readFirmwareVersion,
   readHaConfig,
   readLandscape,
   readNetwork,
+  readPower,
   requestLandscape,
   requestNextPreset,
   savePanelState,
@@ -22,6 +27,7 @@ const globalWithNative = globalThis as typeof globalThis & {
     setLandscape?(landscape: boolean): boolean;
     savePanelState?(json: string): boolean;
     takePanelState?(): string;
+    readPower?(): string;
   };
 };
 const originalNative = globalWithNative.d1001;
@@ -104,6 +110,79 @@ describe("orientation binding", () => {
     delete globalWithNative.d1001;
     expect(savePanelState("{}")).toBe(false);
     expect(takePanelState()).toBe("");
+  });
+});
+
+describe("power telemetry binding", () => {
+  test("parses battery percentage, USB presence and honest charge states", () => {
+    globalWithNative.d1001 = {
+      firmwareVersion: () => "test",
+      readPower: () => JSON.stringify({
+        available: true,
+        batteryMv: 3960,
+        batteryPercent: 84,
+        usbMv: 5012,
+        usbPresent: true,
+        chargePinLow: true,
+        chargeState: "charging",
+      }),
+    };
+    const charging = readPower();
+    expect(charging).toEqual({
+      available: true,
+      batteryMv: 3960,
+      batteryPercent: 84,
+      usbMv: 5012,
+      usbPresent: true,
+      charging: true,
+      chargeState: "charging",
+    });
+    expect(formatBatteryPercent(charging)).toBe("84%");
+    expect(powerShortLabel(charging, "zh")).toBe("USB 充电");
+    expect(powerDetailLabel(charging, "en")).toBe("84% · USB Charging");
+
+    globalWithNative.d1001 = {
+      firmwareVersion: () => "test",
+      readPower: () => JSON.stringify({
+        available: true,
+        batteryMv: 4120,
+        batteryPercent: 100,
+        usbMv: 4990,
+        usbPresent: true,
+        chargePinLow: false,
+        chargeState: "usb_idle",
+      }),
+    };
+    const idle = readPower();
+    expect(idle.charging).toBe(false);
+    expect(idle.usbPresent).toBe(true);
+    expect(powerStatusLabel(idle, "zh")).toBe("USB 已接入（未在充电）");
+    expect(powerStatusLabel(idle, "en")).toBe("USB Connected (Idle)");
+  });
+
+  test("falls back safely when the binding is missing, throws or fails", () => {
+    delete globalWithNative.d1001;
+    expect(readPower().available).toBe(false);
+    expect(formatBatteryPercent(readPower())).toBe("--%");
+    expect(powerDetailLabel(readPower(), "zh")).toBe("不可用");
+
+    globalWithNative.d1001 = {
+      firmwareVersion: () => "test",
+      readPower: () => '{"available":false}',
+    };
+    expect(readPower().available).toBe(false);
+
+    globalWithNative.d1001 = {
+      firmwareVersion: () => "test",
+      readPower: () => "{bad json",
+    };
+    expect(readPower().available).toBe(false);
+
+    globalWithNative.d1001 = {
+      firmwareVersion: () => "test",
+      readPower: () => { throw new Error("adc fault"); },
+    };
+    expect(readPower().available).toBe(false);
   });
 });
 

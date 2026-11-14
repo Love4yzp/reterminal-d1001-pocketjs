@@ -15,6 +15,7 @@ export const PORTRAIT_HOME = {
   statusBarHeight: 28,
   clockTop: 34,
   dateTop: 92,
+  power: { left: 192, top: 34, width: 80, height: 40 },
   language: { left: 200, top: 80, width: 72, height: 34 },
   weather: { left: 274, top: 30, width: 110, height: 68 },
   sensors: { left: 16, top: 118, width: 178, height: 78, gap: 12 },
@@ -23,6 +24,13 @@ export const PORTRAIT_HOME = {
   quickActions: { left: 16, top: 324, width: 118, height: 56, columnPitch: 126, rowPitch: 64 },
   armActions: { left: 16, top: 456, width: 368, height: 104, gap: 8 },
 } as const;
+
+export const LANDSCAPE_HOME_POWER: LayoutBox = {
+  left: 336,
+  top: 40,
+  width: 200,
+  height: 62,
+};
 
 export function portraitSensorBox(index: number): LayoutBox {
   return {

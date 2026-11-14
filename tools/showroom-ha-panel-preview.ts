@@ -94,6 +94,11 @@ function installNativeStubs(options: Pick<PreviewOptions, "haConfigured" | "armC
     readRtc: () => Date.UTC(2026, 10, 8, 6, 32, 0) / 1000,
     utcOffsetMinutes: () => 480,
     syncClock: () => "synchronized",
+    readPower: () => JSON.stringify(
+      options.haConfigured
+        ? { available: true, batteryMv: 3960, batteryPercent: 84, usbMv: 5012, usbPresent: true, chargePinLow: true, chargeState: "charging" }
+        : { available: true, batteryMv: 3840, batteryPercent: 62, usbMv: 0, usbPresent: false, chargePinLow: false, chargeState: "usb_absent" },
+    ),
     setRgb: (r: number, gr: number, b: number) => { rgb = [r, gr, b]; return true; },
     firmwareVersion: () => "host-preview",
     setScreenOffSeconds: () => true,

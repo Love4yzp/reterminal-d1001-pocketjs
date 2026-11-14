@@ -2,7 +2,7 @@ import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { timezoneLabel } from "../clock";
 import { languageToggleLabel, pick, type Language } from "../i18n";
-import type { NetworkInfo } from "../native";
+import { powerDetailLabel, type NetworkInfo, type PowerInfo } from "../native";
 import type { NavEvent } from "../navigation";
 import { screenOffLabel, SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
 import { haStatus } from "../status";
@@ -15,6 +15,7 @@ interface SettingsProps {
   state: PanelState;
   settings: SettingsState;
   network: NetworkInfo;
+  power: PowerInfo;
   language: Language;
   utcOffsetMinutes: number;
   firmwareVersion: string;
@@ -133,22 +134,29 @@ export function SettingsScreen(props: SettingsProps) {
         </Pressable>
       </View>
 
-      <SectionLabel top={384}>{pick(props.language, "时间", "Time")}</SectionLabel>
-      <View class="absolute" style={{ insetL: 16, insetT: 410, width: 368, height: 52, radius: 12, bgColor: theme.card }}>
-        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 17, width: 100, textColor: theme.text }}>
-          {pick(props.language, "时区", "Time zone")}
+      <SectionLabel top={380}>{pick(props.language, "电源", "Power")}</SectionLabel>
+      <View class="absolute" style={{ insetL: 16, insetT: 402, width: 368, height: 46, radius: 12, bgColor: theme.card }}>
+        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 15, width: 112, textColor: theme.text }}>
+          {pick(props.language, "电源与电池", "Power & Battery")}
         </Text>
-        <Text class="absolute text-xs text-right" style={{ insetL: 140, insetT: 19, width: 200, textColor: theme.secondaryText }}>
-          {timezoneLabel(props.utcOffsetMinutes, props.language)}
+        <Text class="absolute text-xs text-right" style={{ insetL: 128, insetT: 16, width: 226, textColor: props.power.available ? theme.secondaryText : theme.disabledText }}>
+          {powerDetailLabel(props.power, props.language)}
         </Text>
       </View>
 
-      <SectionLabel top={472}>{pick(props.language, "关于", "About")}</SectionLabel>
-      <View class="absolute" style={{ insetL: 16, insetT: 498, width: 368, height: 52, radius: 12, bgColor: theme.card }}>
-        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 17, width: 100, textColor: theme.text }}>
+      <SectionLabel top={456}>{pick(props.language, "关于", "About")}</SectionLabel>
+      <View class="absolute" style={{ insetL: 16, insetT: 478, width: 368, height: 84, radius: 12, bgColor: theme.card }}>
+        <Text class="absolute text-sm" style={{ insetL: 14, insetT: 12, width: 100, textColor: theme.text }}>
+          {pick(props.language, "时区", "Time zone")}
+        </Text>
+        <Text class="absolute text-xs text-right" style={{ insetL: 120, insetT: 14, width: 234, textColor: theme.secondaryText }}>
+          {timezoneLabel(props.utcOffsetMinutes, props.language)}
+        </Text>
+        <Divider left={14} top={42} width={340} />
+        <Text class="absolute text-xs" style={{ insetL: 14, insetT: 54, width: 100, textColor: theme.text }}>
           {pick(props.language, "设备地址", "Device address")}
         </Text>
-        <Text class="absolute text-2xs text-right" style={{ insetL: 112, insetT: 18, width: 228, textColor: theme.secondaryText }}>
+        <Text class="absolute text-2xs text-right" style={{ insetL: 112, insetT: 55, width: 242, textColor: theme.secondaryText }}>
           {`${props.network.address}  ${pick(props.language, "固件", "Firmware")} ${props.firmwareVersion}`}
         </Text>
       </View>

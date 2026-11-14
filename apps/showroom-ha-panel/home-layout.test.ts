@@ -51,7 +51,7 @@ describe("portrait home layout", () => {
     expect(boxes[2]!.top + boxes[2]!.height).toBeLessThan(PORTRAIT_HOME.armActions.top);
   });
 
-  test("keeps both sensor cards inside the page and the language pill away from the weather", () => {
+  test("keeps both sensor cards inside the page and the language pill and power badge away from neighbors", () => {
     const first = portraitSensorBox(0);
     const second = portraitSensorBox(1);
     expect(first.left).toBe(16);
@@ -62,5 +62,8 @@ describe("portrait home layout", () => {
     expect(PORTRAIT_HOME.language.left + PORTRAIT_HOME.language.width)
       .toBeLessThan(PORTRAIT_HOME.weather.left);
     expect(PORTRAIT_HOME.language.top + PORTRAIT_HOME.language.height).toBeLessThan(PORTRAIT_HOME.sensors.top);
+    expect(PORTRAIT_HOME.power.left).toBeGreaterThan(20 + 159 + 4);
+    expect(PORTRAIT_HOME.power.left + PORTRAIT_HOME.power.width).toBeLessThan(PORTRAIT_HOME.weather.left);
+    expect(PORTRAIT_HOME.power.top + PORTRAIT_HOME.power.height).toBeLessThan(PORTRAIT_HOME.language.top);
   });
 });

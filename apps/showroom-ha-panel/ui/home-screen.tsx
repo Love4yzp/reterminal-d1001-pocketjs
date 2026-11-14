@@ -4,13 +4,14 @@ import { formatClock, formatLocalizedDate } from "../clock";
 import { PORTRAIT_HOME, portraitActionBox, portraitSensorBox } from "../home-layout";
 import { languageToggleLabel, pick, type Language } from "../i18n";
 import type { PanelAction, PanelState } from "../model";
-import type { NetworkInfo } from "../native";
+import type { NetworkInfo, PowerInfo } from "../native";
 import type { NavEvent } from "../navigation";
 import { SHOWROOM } from "../showroom";
 import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
 import { ActionButton, MainLightControl } from "./console-controls";
 import { HomeArmActions } from "./home-arm-actions";
+import { PowerBadge } from "./power-badge";
 import { Icon, Numerals, Pressable } from "./primitives";
 import { SensorCard } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
@@ -18,6 +19,7 @@ import { StatusBar } from "./status-bar";
 interface HomeProps {
   state: PanelState;
   network: NetworkInfo;
+  power: PowerInfo;
   language: Language;
   utcOffsetMinutes: number;
   onAction(action: PanelAction): void;
@@ -40,6 +42,7 @@ export function HomeScreen(props: HomeProps) {
       <Text class="absolute text-sm" style={{ insetL: 20, insetT: PORTRAIT_HOME.dateTop, width: 176, textColor: theme.secondaryText }}>
         {formatLocalizedDate(props.state.clockEpochSeconds, props.utcOffsetMinutes, props.language)}
       </Text>
+      <PowerBadge power={props.power} language={props.language} box={PORTRAIT_HOME.power} compact />
       <Pressable
         box={PORTRAIT_HOME.language}
         style={{ radius: 17, bgColor: theme.secondaryBackground }}

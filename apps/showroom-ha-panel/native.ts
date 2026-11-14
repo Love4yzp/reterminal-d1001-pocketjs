@@ -10,6 +10,7 @@ interface D1001Native extends ScreenOffNative {
   readRtc(): number;
   utcOffsetMinutes(): number;
   syncClock(): string;
+  readPower?(): string;
   setRgb(red: number, green: number, blue: number): boolean;
   firmwareVersion(): string;
   landscape(): boolean;
@@ -19,6 +20,23 @@ interface D1001Native extends ScreenOffNative {
 }
 
 export type ClockSyncState = "offline" | "pending" | "synchronized" | "error";
+
+export type ChargeState =
+  | "usb_absent"
+  | "charging"
+  | "usb_idle"
+  | "inconsistent"
+  | "unavailable";
+
+export interface PowerInfo {
+  available: boolean;
+  batteryMv: number | null;
+  batteryPercent: number | null;
+  usbMv: number | null;
+  usbPresent: boolean;
+  charging: boolean;
+  chargeState: ChargeState;
+}
 
 export const NOT_CONNECTED_TEXT = "未连接";
 export const UNKNOWN_TEXT = "未知";
@@ -71,6 +89,99 @@ export function readUtcOffsetMinutes(): number {
 export function syncNativeClock(): ClockSyncState {
   const value = native()?.syncClock() ?? "offline";
   return value === "pending" || value === "synchronized" || value === "offline" ? value : "error";
+}
+
+const UNAVAILABLE_POWER: PowerInfo = {
+  available: false,
+  batteryMv: null,
+  batteryPercent: null,
+  usbMv: null,
+  usbPresent: false,
+  charging: false,
+  chargeState: "unavailable",
+};
+
+function isChargeState(value: unknown): value is Exclude<ChargeState, "unavailable"> {
+  return (
+    value === "usb_absent" ||
+    value === "charging" ||
+    value === "usb_idle" ||
+    value === "inconsistent"
+  );
+}
+
+function finiteNonNegative(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : null;
+}
+
+export function readPower(): PowerInfo {
+  try {
+    const raw = native()?.readPower?.();
+    if (typeof raw !== "string" || raw.length === 0) return UNAVAILABLE_POWER;
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== "object" || parsed.available !== true) return UNAVAILABLE_POWER;
+    const percentRaw = finiteNonNegative(parsed.batteryPercent);
+    if (percentRaw === null) return UNAVAILABLE_POWER;
+    const chargeState = isChargeState(parsed.chargeState) ? parsed.chargeState : "unavailable";
+    if (chargeState === "unavailable") return UNAVAILABLE_POWER;
+    const usbPresent = typeof parsed.usbPresent === "boolean"
+      ? parsed.usbPresent
+      : chargeState === "charging" || chargeState === "usb_idle";
+    return {
+      available: true,
+      batteryMv: finiteNonNegative(parsed.batteryMv),
+      batteryPercent: Math.max(0, Math.min(100, percentRaw)),
+      usbMv: finiteNonNegative(parsed.usbMv),
+      usbPresent,
+      charging: chargeState === "charging",
+      chargeState,
+    };
+  } catch {
+    return UNAVAILABLE_POWER;
+  }
+}
+
+export function formatBatteryPercent(power: PowerInfo): string {
+  return power.available && power.batteryPercent !== null ? `${power.batteryPercent}%` : "--%";
+}
+
+export function powerShortLabel(power: PowerInfo, language: Language = "zh"): string {
+  if (!power.available) return unknownText(language);
+  switch (power.chargeState) {
+    case "charging":
+      return pick(language, "USB 充电", "Charging");
+    case "usb_idle":
+      return pick(language, "USB 已连", "USB Ready");
+    case "inconsistent":
+      return pick(language, "电源异常", "Check Power");
+    case "usb_absent":
+      return pick(language, "电池供电", "Battery");
+    default:
+      return unknownText(language);
+  }
+}
+
+export function powerStatusLabel(power: PowerInfo, language: Language = "zh"): string {
+  if (!power.available) return pick(language, "不可用", "Unavailable");
+  switch (power.chargeState) {
+    case "charging":
+      return pick(language, "USB 充电中", "USB Charging");
+    case "usb_idle":
+      return pick(language, "USB 已接入（未在充电）", "USB Connected (Idle)");
+    case "inconsistent":
+      return pick(language, "电源状态异常", "Power Inconsistent");
+    case "usb_absent":
+      return pick(language, "电池供电", "On Battery");
+    default:
+      return pick(language, "不可用", "Unavailable");
+  }
+}
+
+export function powerDetailLabel(power: PowerInfo, language: Language = "zh"): string {
+  if (!power.available) return pick(language, "不可用", "Unavailable");
+  return `${formatBatteryPercent(power)} · ${powerStatusLabel(power, language)}`;
 }
 
 export function readHaConfig(): PanelHaConfig {

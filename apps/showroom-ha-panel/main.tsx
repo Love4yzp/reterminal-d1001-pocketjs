@@ -35,6 +35,7 @@ import {
   readHaConfig,
   readLandscape,
   readNetwork,
+  readPower,
   readRtcSeconds,
   readUtcOffsetMinutes,
   requestLandscape,
@@ -76,6 +77,7 @@ function Panel() {
   const [route, setRoute] = createSignal<Route>(saved?.route ?? INITIAL_ROUTE);
   const [language, setLanguage] = createSignal<Language>(initialLanguage);
   const [network, setNetwork] = createSignal(readNetwork(initialLanguage));
+  const [power, setPower] = createSignal(readPower());
   const [settings, setSettings] = createSignal(
     saved ? restoreSettings(createSettings(initialBacklight), saved) : createSettings(initialBacklight),
   );
@@ -334,6 +336,7 @@ function Panel() {
       dispatch({ type: "sensor-tick", nowSeconds: now }, true);
     }
     if (frame % 90 === 0) setNetwork(readNetwork(language()));
+    if (frame % 150 === 0) setPower(readPower());
   });
   const shared = () => ({
     state: state(),
@@ -373,6 +376,7 @@ function Panel() {
           state={state()}
           settings={settings()}
           network={network()}
+          power={power()}
           language={language()}
           utcOffsetMinutes={utcOffsetMinutes}
           firmwareVersion={firmwareVersion()}
@@ -386,6 +390,7 @@ function Panel() {
       <HomeScreen
         {...shared()}
         network={network()}
+        power={power()}
         utcOffsetMinutes={utcOffsetMinutes}
         onAction={dispatch}
         onHaAction={onHaAction}
@@ -402,6 +407,7 @@ function Panel() {
         route={route()}
         settings={settings()}
         network={network()}
+        power={power()}
         language={language()}
         lightPage={lightPage()}
         sensorPage={sensorPage()}

@@ -2,10 +2,19 @@ import { createSignal, For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { formatClock, formatLocalizedDate, timezoneLabel } from "../clock";
 import { brightnessFromPercent, percentFromBrightness, type DimmerMode } from "../dimmer";
+import { LANDSCAPE_HOME_POWER } from "../home-layout";
 import { languageToggleLabel, pick, type Language } from "../i18n";
 import { lightColor, lightInfo, lightStatusText } from "../lights";
 import { isLightAvailable, type LightId, type PanelAction, type PanelState } from "../model";
-import { canSwitchNetwork, formatRssi, requestNextPreset, type NetworkInfo } from "../native";
+import {
+  canSwitchNetwork,
+  formatBatteryPercent,
+  formatRssi,
+  powerStatusLabel,
+  requestNextPreset,
+  type NetworkInfo,
+  type PowerInfo,
+} from "../native";
 import { activeTab, TABS, tabLabel, type NavEvent, type Route, type Tab } from "../navigation";
 import { pageWindow, SHOWROOM } from "../showroom";
 import { screenOffLabel, SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
@@ -15,6 +24,7 @@ import { theme } from "../theme";
 import { weatherIcon, weatherLabel, weatherTemperature } from "../weather";
 import { ActionButton, MainLightControl } from "./console-controls";
 import { HomeArmActions } from "./home-arm-actions";
+import { PowerBadge } from "./power-badge";
 import { BacklightSlider, ColorWheel, ModeButton, VerticalSlider } from "./controls";
 import { Divider, Icon, Numerals, Pressable } from "./primitives";
 import { SensorDetailScreen } from "./sensors-screen";
@@ -25,6 +35,7 @@ interface LandscapeProps {
   route: Route;
   settings: SettingsState;
   network: NetworkInfo;
+  power: PowerInfo;
   language: Language;
   lightPage: number;
   sensorPage: number;
@@ -109,6 +120,7 @@ function Home(props: LandscapeProps) {
           <Text class="absolute text-2xs text-right" style={{ insetL: 38, insetT: 28, width: 82, textColor: theme.secondaryText }}>{weatherLabel(weather()!, props.language)}</Text>
         </View>
       ) : null}
+      <PowerBadge power={props.power} language={props.language} box={LANDSCAPE_HOME_POWER} />
       <MainLightControl
         {...props}
         lightId={SHOWROOM.home.lights[0]!}
@@ -218,6 +230,18 @@ function Settings(props: LandscapeProps) {
         }}</For>
         <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 222, width: 228, textColor: theme.secondaryText }}>
           {pick(props.language, "触摸或按键活动会重新计时", "Touch or key activity restarts the timer")}
+        </Text>
+      </View>
+
+      <View class="absolute" style={{ insetL: 16, insetT: 320, width: 256, height: 52, radius: 12, bgColor: theme.card }}>
+        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 10, width: 126, textColor: theme.text }}>
+          {pick(props.language, "电源与电池", "Power & Battery")}
+        </Text>
+        <Text class="absolute text-xs font-bold text-right" style={{ insetL: 146, insetT: 9, width: 96, textColor: props.power.available ? theme.text : theme.disabledText }}>
+          {formatBatteryPercent(props.power)}
+        </Text>
+        <Text class="absolute text-2xs" style={{ insetL: 14, insetT: 28, width: 228, textColor: props.power.available ? theme.secondaryText : theme.disabledText }}>
+          {powerStatusLabel(props.power, props.language)}
         </Text>
       </View>
 
