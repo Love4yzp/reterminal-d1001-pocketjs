@@ -1,0 +1,10 @@
+version: "0.1.0"
+description: Mini-PCIe USB CDC modem BSP for Seeed reTerminal D1001
+license: MIT
+targets:
+  - esp32p4
+dependencies:
+  idf: ">=6.0,<6.3"
+  espressif/usb_host_cdc_acm:
+    version: "2.4.1"
+    override_path: "vendor/usb_host_cdc_acm"
