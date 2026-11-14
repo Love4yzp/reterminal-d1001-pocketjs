@@ -24,6 +24,7 @@ idf_component_register(
         pocket_runtime
         pocket_wifi_esp
         pocket_worker_esp
+    REQUIRED_IDF_TARGETS esp32p4
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)

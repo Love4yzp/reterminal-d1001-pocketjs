@@ -54,6 +54,7 @@ typedef struct {
   bool ready;
   bool capturing;
   bool frame_outstanding;
+  bool cleanup_pending;
   uint32_t captured_frames;
   uint32_t failed_captures;
   uint32_t timeouts;
@@ -70,7 +71,12 @@ typedef struct {
   size_t internal_dma_minimum_free_bytes;
 } d1001_camera_status_t;
 
-/** Initialize SC2356, CSI and ISP using an existing I2C0 bus. */
+/**
+ * Initialize SC2356, CSI and ISP using an existing I2C0 bus.
+ * On failure, *out_camera is NULL if rollback succeeded. A non-NULL handle
+ * on failure is cleanup-only: retry deinit, and do not attempt capture.
+ * A rollback failure is logged with the init error and returned to the caller.
+ */
 esp_err_t d1001_camera_init(const d1001_camera_config_t *config,
                             d1001_camera_handle_t *out_camera);
 
@@ -80,6 +86,9 @@ esp_err_t d1001_camera_probe(d1001_camera_handle_t camera, uint16_t *sensor_id);
 /**
  * Capture one centered 640x480 frame into PSRAM. RGB565 and UYVY are packed
  * with two bytes per pixel. A zero timeout selects the default timeout.
+ * The deadline bounds waiting for a valid frame after stream start, including
+ * rejects; setup, teardown and scheduler latency are outside that budget.
+ * Cleanup failure retains working buffers and disables capture until deinit.
  */
 esp_err_t d1001_camera_capture(d1001_camera_handle_t camera,
                                d1001_camera_format_t format,
@@ -94,7 +103,11 @@ esp_err_t d1001_camera_release_frame(d1001_camera_handle_t camera,
 esp_err_t d1001_camera_get_status(d1001_camera_handle_t camera,
                                   d1001_camera_status_t *status);
 
-/** The caller must release frames first and serialize init/capture/deinit. */
+/**
+ * The caller must release frames first and serialize init/capture/deinit.
+ * Success invalidates the handle. Failure preserves it for deinit retries;
+ * once teardown starts, only status and deinit are supported.
+ */
 esp_err_t d1001_camera_deinit(d1001_camera_handle_t camera);
 
 #ifdef __cplusplus

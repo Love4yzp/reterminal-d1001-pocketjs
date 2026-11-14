@@ -209,7 +209,9 @@ static void test_ctrl3_encoding(void) {
   CHECK(d1001_imu_core_encode_ctrl3(true, false, 0x44U, &value));
   CHECK(value == 0x64U);
   CHECK(d1001_imu_core_encode_ctrl3(false, false, 0xffU, &value));
-  CHECK(value == 0xcfU);
+  CHECK(value == 0xcdU);
+  CHECK(d1001_imu_core_encode_ctrl3(true, false, 0x02U, &value));
+  CHECK(value == 0x64U);
   CHECK(d1001_imu_core_encode_ctrl3(false, true, 0, &value));
   CHECK(value == 0x54U);
   CHECK(d1001_imu_core_encode_ctrl3(true, true, 0, &value));
@@ -270,6 +272,71 @@ static void test_event_decoding(void) {
         !wakeup.z_wakeup);
 }
 
+static void test_sample_byte_order_and_minimum(void) {
+  /* Fixed bytes, independent of put_word: temperature, gyro XYZ, accel XYZ. */
+  const uint8_t bytes[14] = {
+      0x00, 0x80, 0x34, 0x12, 0x00, 0x80, 0xff, 0xff,
+      0x00, 0x80, 0x02, 0x01, 0xfe, 0xff,
+  };
+  d1001_imu_sample sample;
+  d1001_imu_core_decode_sample(bytes, D1001_IMU_ACCEL_2G,
+                               D1001_IMU_GYRO_250_DPS, &sample);
+  CHECK_CLOSE(sample.temperature_c, -103.0f);
+  CHECK_CLOSE(sample.angular_rate_dps.x, 4660.0f * 0.00875f);
+  CHECK_CLOSE(sample.angular_rate_dps.y, (float)INT16_MIN * 0.00875f);
+  CHECK_CLOSE(sample.angular_rate_dps.z, -0.00875f);
+  const float accel_lsb = 0.061f * 9.80665f / 1000.0f;
+  CHECK_CLOSE(sample.acceleration_mps2.x, (float)INT16_MIN * accel_lsb);
+  CHECK_CLOSE(sample.acceleration_mps2.y, 258.0f * accel_lsb);
+  CHECK_CLOSE(sample.acceleration_mps2.z, -2.0f * accel_lsb);
+}
+
+static void test_int1_basic_enable(void) {
+  const d1001_imu_int1_route routes[] = {
+      {.single_tap = true}, {.double_tap = true}, {.wakeup = true},
+      {.free_fall = true}, {.orientation_6d = true},
+  };
+  const d1001_imu_int1_route none = {0};
+  uint8_t value = 0;
+  for (unsigned current = 0; current <= UINT8_MAX; ++current) {
+    for (size_t i = 0; i < sizeof routes / sizeof routes[0]; ++i) {
+      CHECK(d1001_imu_core_encode_int1_tap_cfg(&routes[i], (uint8_t)current,
+                                             &value));
+      CHECK(value == (uint8_t)(current | 0x80U));
+    }
+    CHECK(d1001_imu_core_encode_int1_tap_cfg(&none, (uint8_t)current, &value));
+    CHECK(value == current);
+  }
+  CHECK(!d1001_imu_core_encode_int1_tap_cfg(NULL, 0, &value));
+  CHECK(!d1001_imu_core_encode_int1_tap_cfg(&none, 0, NULL));
+}
+
+static void test_event_bits(void) {
+  for (unsigned bit = 0; bit < 8; ++bit) {
+    const uint8_t raw = (uint8_t)(1U << bit);
+    d1001_imu_tap_source tap;
+    d1001_imu_core_decode_tap_source(raw, &tap);
+    CHECK(tap.raw == raw);
+    CHECK(tap.event == (bit == 6));
+    CHECK(tap.single_tap == (bit == 5));
+    CHECK(tap.double_tap == (bit == 4));
+    CHECK(tap.negative_sign == (bit == 3));
+    CHECK(tap.x_tap == (bit == 2));
+    CHECK(tap.y_tap == (bit == 1));
+    CHECK(tap.z_tap == (bit == 0));
+
+    d1001_imu_wakeup_source wakeup;
+    d1001_imu_core_decode_wakeup_source(raw, &wakeup);
+    CHECK(wakeup.raw == raw);
+    CHECK(wakeup.free_fall == (bit == 5));
+    CHECK(wakeup.sleep_state == (bit == 4));
+    CHECK(wakeup.event == (bit == 3));
+    CHECK(wakeup.x_wakeup == (bit == 2));
+    CHECK(wakeup.y_wakeup == (bit == 1));
+    CHECK(wakeup.z_wakeup == (bit == 0));
+  }
+}
+
 int main(void) {
   test_accel_encoding();
   test_gyro_encoding();
@@ -279,6 +346,9 @@ int main(void) {
   test_ctrl3_encoding();
   test_int1_route_encoding();
   test_event_decoding();
+  test_sample_byte_order_and_minimum();
+  test_int1_basic_enable();
+  test_event_bits();
   puts("d1001_imu_core: all checks passed");
   return 0;
 }

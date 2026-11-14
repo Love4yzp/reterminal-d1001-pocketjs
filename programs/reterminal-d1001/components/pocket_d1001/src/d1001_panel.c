@@ -17,6 +17,7 @@
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
+#include "esp_timer.h"
 #include "pocket/screen.h"
 #include "sdkconfig.h"
 
@@ -25,6 +26,7 @@
 #endif
 
 static const char *TAG = "d1001_panel";
+#define D1001_IMU_RETRY_US INT64_C(3000000)
 
 static struct {
   const d1001_board_handles *board;
@@ -33,7 +35,8 @@ static struct {
   bool imu_open;
   esp_err_t rtc_error;
   esp_err_t imu_error;
-  bool imu_failed;
+  int64_t imu_retry_after_us;
+  esp_err_t imu_open_error;
   bool sntp_active;
   atomic_bool sntp_synced;
 } panel;
@@ -47,16 +50,19 @@ static void rtc_log_error(esp_err_t result) {
 static esp_err_t imu_ensure(void) {
   if (panel.imu_open)
     return ESP_OK;
-  if (panel.imu_failed)
-    return ESP_ERR_INVALID_STATE;
   if (panel.board == NULL)
     return ESP_ERR_INVALID_STATE;
+  if (esp_timer_get_time() < panel.imu_retry_after_us)
+    return panel.imu_open_error;
   const esp_err_t result =
       d1001_imu_open(panel.board->system_i2c, NULL, &panel.imu);
-  if (result == ESP_OK)
+  panel.imu_open_error = result;
+  if (result == ESP_OK) {
     panel.imu_open = true;
-  else
-    panel.imu_failed = true;
+    panel.imu_retry_after_us = 0;
+  } else {
+    panel.imu_retry_after_us = esp_timer_get_time() + D1001_IMU_RETRY_US;
+  }
   return result;
 }
 

@@ -46,7 +46,9 @@ static const jd9365_command INIT_COMMANDS[] = {
 static esp_err_t jd9365_del(esp_lcd_panel_t *panel) {
   jd9365_panel *jd9365 = panel->user_data;
   const esp_err_t result = jd9365->del(panel);
-  free(jd9365);
+  /* Keep the wrapper valid when the underlying panel refuses deletion. */
+  if (result == ESP_OK)
+    free(jd9365);
   return result;
 }
 

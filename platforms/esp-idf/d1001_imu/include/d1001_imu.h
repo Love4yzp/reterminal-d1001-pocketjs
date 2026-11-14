@@ -13,7 +13,12 @@ extern "C" {
 #define D1001_IMU_INT1_GPIO 19
 #define D1001_IMU_INT2_GPIO (-1)
 
-/** ISR-safe notification callback; it must not call any I2C or sensor API. */
+/**
+ * ISR-safe notification callback; it must not call any I2C or sensor API.
+ * If the shared GPIO service uses ESP_INTR_FLAG_IRAM, the callback and its
+ * entire call chain must be in IRAM; callback_arg and all data accessed by
+ * that chain must be in internal RAM (not PSRAM or flash).
+ */
 typedef void (*d1001_imu_isr_callback)(void *arg);
 
 typedef struct {
@@ -66,7 +71,11 @@ esp_err_t d1001_imu_read_wakeup_source(d1001_imu *imu,
 /** Read raw D6D_SRC flags; reading also clears a latched 6D request. */
 esp_err_t d1001_imu_read_d6d_source(d1001_imu *imu, uint8_t *out);
 
-/** Route selected embedded events to INT1 through MD1_CFG. */
+/**
+ * Route selected embedded events to INT1 through MD1_CFG. Any nonempty route
+ * enables TAP_CFG.INTERRUPTS_ENABLE, preserving LIR and all other fields.
+ * An empty route clears MD1_CFG but leaves TAP_CFG unchanged.
+ */
 esp_err_t d1001_imu_set_int1_route(d1001_imu *imu,
                                    const d1001_imu_int1_route *route);
 
@@ -74,6 +83,10 @@ esp_err_t d1001_imu_set_int1_route(d1001_imu *imu,
  * Register an active-low, falling-edge INT1 notification. Use
  * D1001_IMU_INT1_GPIO for the board default; -1 unregisters the callback.
  * This changes only GPIO state, not MD1_CFG or event-detection registers.
+ * The imu context must remain in internal RAM until unregister/close finishes;
+ * registration rejects an external-RAM context with ESP_ERR_INVALID_ARG.
+ * For an IRAM shared service, callback/callback_arg must meet the callback
+ * contract above. The driver does not validate the callback's call chain.
  */
 esp_err_t d1001_imu_register_int1(d1001_imu *imu, int int1_gpio,
                                   d1001_imu_isr_callback callback,

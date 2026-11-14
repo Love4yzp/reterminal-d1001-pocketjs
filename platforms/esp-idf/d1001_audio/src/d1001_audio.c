@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "d1001_audio_input.h"
+#include "audio_lifecycle.h"
 #include "d1001_board.h"
 #include "driver/i2s_std.h"
 #include "esp_check.h"
@@ -103,7 +103,8 @@ static const codec_write_t CODEC_INIT[] = {
 
 static i2c_master_dev_handle_t codec;
 static i2s_chan_handle_t tx;
-static bool ready;
+static audio_lifecycle output_state = AUDIO_LIFECYCLE_INITIALIZER;
+static bool tx_enabled;
 
 static esp_err_t codec_write(uint8_t reg, uint8_t value) {
   const uint8_t data[] = {reg, value};
@@ -118,12 +119,13 @@ static esp_err_t codec_read(uint8_t reg, uint8_t *value) {
 static esp_err_t codec_update(uint8_t reg, uint8_t mask, uint8_t value) {
   uint8_t current = 0;
   ESP_RETURN_ON_ERROR(codec_read(reg, &current), TAG, "read codec 0x%02x", reg);
-  return codec_write(reg, (uint8_t)((current & (uint8_t)~mask) | (value & mask)));
+  return codec_write(reg,
+                     (uint8_t)((current & (uint8_t)~mask) | (value & mask)));
 }
 
 static esp_err_t init_i2s(void) {
-  i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(D1001_AUDIO_I2S_NUM,
-                                                          I2S_ROLE_MASTER);
+  i2s_chan_config_t channel =
+      I2S_CHANNEL_DEFAULT_CONFIG(D1001_AUDIO_I2S_NUM, I2S_ROLE_MASTER);
   channel.dma_desc_num = 4;
   channel.dma_frame_num = 256;
   channel.auto_clear_after_cb = true;
@@ -134,8 +136,8 @@ static esp_err_t init_i2s(void) {
 
   i2s_std_config_t config = {
       .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(D1001_AUDIO_SAMPLE_RATE_HZ),
-      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
-          I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
+                                                      I2S_SLOT_MODE_STEREO),
       .gpio_cfg =
           {
               .mclk = (gpio_num_t)D1001_AUDIO_MCLK_GPIO,
@@ -150,6 +152,7 @@ static esp_err_t init_i2s(void) {
   ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(tx, &config), TAG,
                       "I2S0 std mode");
   ESP_RETURN_ON_ERROR(i2s_channel_enable(tx), TAG, "I2S0 enable");
+  tx_enabled = true;
   return ESP_OK;
 }
 
@@ -162,105 +165,150 @@ static esp_err_t init_codec(i2c_master_bus_handle_t system_i2c) {
   ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(system_i2c, &config, &codec),
                       TAG, "add ES8311");
   for (size_t i = 0; i < sizeof CODEC_INIT / sizeof CODEC_INIT[0]; ++i)
-    ESP_RETURN_ON_ERROR(codec_write(CODEC_INIT[i].reg, CODEC_INIT[i].value), TAG,
-                        "ES8311 init register 0x%02x", CODEC_INIT[i].reg);
+    ESP_RETURN_ON_ERROR(codec_write(CODEC_INIT[i].reg, CODEC_INIT[i].value),
+                        TAG, "ES8311 init register 0x%02x", CODEC_INIT[i].reg);
   return ESP_OK;
 }
 
-esp_err_t d1001_audio_init(i2c_master_bus_handle_t system_i2c,
-                           const d1001_audio_config *config) {
-  if (ready)
-    return ESP_OK;
-  ESP_RETURN_ON_FALSE(system_i2c != NULL, ESP_ERR_INVALID_ARG, TAG,
-                      "missing system I2C");
-  codec = NULL;
-  tx = NULL;
-  esp_err_t err = init_i2s();
-  if (err != ESP_OK) {
-    d1001_audio_deinit();
-    return err;
-  }
-  err = init_codec(system_i2c);
-  if (err != ESP_OK) {
-    d1001_audio_deinit();
-    return err;
-  }
-  const uint8_t volume = config != NULL && config->volume_percent <= 100U
-                             ? config->volume_percent
-                             : D1001_AUDIO_DEFAULT_VOLUME_PERCENT;
-  ready = true;
-  err = d1001_audio_set_volume(volume);
-  if (err == ESP_OK)
-    err = d1001_audio_set_mute(true);
-  if (err == ESP_OK)
-    err = d1001_board_pa_set(false);
-  if (err != ESP_OK) {
-    d1001_audio_deinit();
-    return err;
-  }
-  ESP_LOGI(TAG,
-           "ES8311 on I2C1/0x%02x, I2S0 44.1 kHz stereo, MCLK %u Hz, volume %u%%",
-           D1001_AUDIO_I2C_ADDRESS, (unsigned)D1001_AUDIO_MCLK_HZ,
-           (unsigned)volume);
-  return ESP_OK;
-}
-
-bool d1001_audio_ready(void) { return ready; }
-
-esp_err_t d1001_audio_write(const int16_t *frames, size_t frame_count,
-                            uint32_t timeout_ms) {
-  if (!ready || tx == NULL)
-    return ESP_ERR_INVALID_STATE;
-  if (frame_count == 0)
-    return ESP_OK;
-  ESP_RETURN_ON_FALSE(frames != NULL, ESP_ERR_INVALID_ARG, TAG,
-                      "missing PCM frames");
-  const size_t bytes = frame_count * D1001_AUDIO_CHANNELS * sizeof(int16_t);
-  size_t written = 0;
-  const esp_err_t err = i2s_channel_write(tx, frames, bytes, &written, timeout_ms);
-  if (err != ESP_OK)
-    return err;
-  return written == bytes ? ESP_OK : ESP_ERR_TIMEOUT;
-}
-
-esp_err_t d1001_audio_set_mute(bool mute) {
-  if (!ready || codec == NULL)
-    return ESP_ERR_INVALID_STATE;
-  return codec_update(ES8311_REG_DAC_31, ES8311_MUTE_BITS,
-                      mute ? ES8311_MUTE_BITS : 0U);
-}
-
-esp_err_t d1001_audio_set_volume(uint8_t percent) {
-  if (!ready || codec == NULL)
-    return ESP_ERR_INVALID_STATE;
+static esp_err_t set_volume_locked(uint8_t percent) {
   if (percent > 100U)
     percent = 100U;
   const uint8_t reg = (uint8_t)((percent * 255U + 50U) / 100U);
   return codec_write(ES8311_REG_DAC_32, reg);
 }
 
-esp_err_t d1001_audio_set_active(bool active) {
-  if (!ready)
+/* owner_lock is held. RX has a separate owner and is never touched here. */
+static esp_err_t deinit_locked(void) {
+  audio_lifecycle_publish(&output_state, false);
+  esp_err_t result = ESP_OK;
+  if (tx_enabled) {
+    result = i2s_channel_disable(tx);
+    if (result == ESP_OK)
+      tx_enabled = false;
+  }
+  audio_io_drain(&output_state);
+  if (tx != NULL && !tx_enabled) {
+    const esp_err_t err = i2s_del_channel(tx);
+    if (err == ESP_OK)
+      tx = NULL;
+    else
+      result = err;
+  }
+  if (codec != NULL) {
+    const esp_err_t mute =
+        codec_update(ES8311_REG_DAC_31, ES8311_MUTE_BITS, ES8311_MUTE_BITS);
+    const esp_err_t pa = d1001_board_pa_set(false);
+    if (result == ESP_OK)
+      result = mute != ESP_OK ? mute : pa;
+    const esp_err_t err = i2c_master_bus_rm_device(codec);
+    if (err == ESP_OK)
+      codec = NULL;
+    else {
+      ESP_LOGE(TAG, "remove ES8311 failed: %s; retry deinit",
+               esp_err_to_name(err));
+      result = err;
+    }
+  }
+  return result;
+}
+
+esp_err_t d1001_audio_init(i2c_master_bus_handle_t system_i2c,
+                           const d1001_audio_config *config) {
+  ESP_RETURN_ON_FALSE(system_i2c != NULL, ESP_ERR_INVALID_ARG, TAG,
+                      "missing system I2C");
+  _lock_acquire(&output_state.owner_lock);
+  if (audio_lifecycle_ready(&output_state)) {
+    _lock_release(&output_state.owner_lock);
+    return ESP_OK;
+  }
+  if (codec != NULL || tx != NULL) {
+    _lock_release(&output_state.owner_lock);
     return ESP_ERR_INVALID_STATE;
-  esp_err_t err = d1001_audio_set_mute(!active);
-  const esp_err_t pa = d1001_board_pa_set(active);
+  }
+  esp_err_t err = init_i2s();
   if (err == ESP_OK)
-    err = pa;
+    err = init_codec(system_i2c);
+  const uint8_t volume = config != NULL && config->volume_percent <= 100U
+                             ? config->volume_percent
+                             : D1001_AUDIO_DEFAULT_VOLUME_PERCENT;
+  if (err == ESP_OK)
+    err = set_volume_locked(volume);
+  if (err == ESP_OK)
+    err = codec_update(ES8311_REG_DAC_31, ES8311_MUTE_BITS, ES8311_MUTE_BITS);
+  if (err == ESP_OK)
+    err = d1001_board_pa_set(false);
+  if (err != ESP_OK) {
+    const esp_err_t cleanup = deinit_locked();
+    if (cleanup != ESP_OK) {
+      ESP_LOGE(TAG, "init failed: %s; cleanup failed: %s", esp_err_to_name(err),
+               esp_err_to_name(cleanup));
+      err = cleanup;
+    }
+  } else {
+    audio_lifecycle_publish(&output_state, true);
+    ESP_LOGI(
+        TAG,
+        "ES8311 on I2C1/0x%02x, I2S0 44.1 kHz stereo, MCLK %u Hz, volume %u%%",
+        D1001_AUDIO_I2C_ADDRESS, (unsigned)D1001_AUDIO_MCLK_HZ,
+        (unsigned)volume);
+  }
+  _lock_release(&output_state.owner_lock);
   return err;
 }
 
-void d1001_audio_deinit(void) {
-  d1001_audio_input_close();
-  ready = false;
-  if (codec != NULL) {
-    (void)codec_update(ES8311_REG_DAC_31, ES8311_MUTE_BITS, ES8311_MUTE_BITS);
-    (void)d1001_board_pa_set(false);
-    (void)i2c_master_bus_rm_device(codec);
-    codec = NULL;
+bool d1001_audio_ready(void) { return audio_lifecycle_ready(&output_state); }
+
+esp_err_t d1001_audio_write(const int16_t *frames, size_t frame_count,
+                            uint32_t timeout_ms) {
+  if (frame_count > SIZE_MAX / (D1001_AUDIO_CHANNELS * sizeof(int16_t)) ||
+      (frame_count != 0U && frames == NULL))
+    return ESP_ERR_INVALID_ARG;
+  if (!audio_io_begin(&output_state))
+    return ESP_ERR_INVALID_STATE;
+  const size_t bytes = frame_count * D1001_AUDIO_CHANNELS * sizeof(int16_t);
+  size_t written = 0U;
+  const esp_err_t err = audio_io_transfer(&output_state, tx, (void *)frames,
+                                          bytes, &written, timeout_ms, false);
+  audio_io_end(&output_state);
+  return err;
+}
+
+esp_err_t d1001_audio_set_mute(bool mute) {
+  _lock_acquire(&output_state.owner_lock);
+  const esp_err_t err = audio_lifecycle_ready(&output_state)
+                            ? codec_update(ES8311_REG_DAC_31, ES8311_MUTE_BITS,
+                                           mute ? ES8311_MUTE_BITS : 0U)
+                            : ESP_ERR_INVALID_STATE;
+  _lock_release(&output_state.owner_lock);
+  return err;
+}
+
+esp_err_t d1001_audio_set_volume(uint8_t percent) {
+  _lock_acquire(&output_state.owner_lock);
+  const esp_err_t err = audio_lifecycle_ready(&output_state)
+                            ? set_volume_locked(percent)
+                            : ESP_ERR_INVALID_STATE;
+  _lock_release(&output_state.owner_lock);
+  return err;
+}
+
+esp_err_t d1001_audio_set_active(bool active) {
+  _lock_acquire(&output_state.owner_lock);
+  esp_err_t err = ESP_ERR_INVALID_STATE;
+  if (audio_lifecycle_ready(&output_state)) {
+    err = codec_update(ES8311_REG_DAC_31, ES8311_MUTE_BITS,
+                       active ? 0U : ES8311_MUTE_BITS);
+    const esp_err_t pa = d1001_board_pa_set(active);
+    if (err == ESP_OK)
+      err = pa;
   }
-  if (tx != NULL) {
-    (void)i2s_channel_disable(tx);
-    (void)i2s_del_channel(tx);
-    tx = NULL;
-  }
+  _lock_release(&output_state.owner_lock);
+  return err;
+}
+
+esp_err_t d1001_audio_deinit(void) {
+  _lock_acquire(&output_state.owner_lock);
+  const esp_err_t err = deinit_locked();
+  _lock_release(&output_state.owner_lock);
+  return err;
 }

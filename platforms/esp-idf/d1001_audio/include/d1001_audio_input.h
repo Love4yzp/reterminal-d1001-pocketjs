@@ -23,11 +23,14 @@ extern "C" {
 esp_err_t d1001_audio_input_open(i2c_master_bus_handle_t system_i2c,
                                  uint32_t sample_rate);
 
-/** Read interleaved stereo s16 frames from I2S1 without holding board locks. */
+/** Read stereo s16 frames with an overall timeout budget in ms, without board
+ * locks. Reports partial frames on timeout or concurrent close cancellation
+ * (ESP_ERR_INVALID_STATE). Task context only. */
 esp_err_t d1001_audio_input_read(int16_t *frames, size_t frame_count,
                                  size_t *frames_read, uint32_t timeout_ms);
 
-void d1001_audio_input_close(void);
+/** Close RX only. On cleanup failure, retry before opening RX again. */
+esp_err_t d1001_audio_input_close(void);
 bool d1001_audio_input_ready(void);
 
 #ifdef __cplusplus

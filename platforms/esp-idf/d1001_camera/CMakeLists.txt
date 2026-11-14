@@ -7,3 +7,9 @@ idf_component_register(
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
+
+# IDF 6.2 unregisters a failed close's fd. Retry esp_video's retained reference
+# through the pinned 2.6.0 internal API rather than closing a recycled fd.
+idf_component_get_property(d1001_camera_video_dir espressif__esp_video COMPONENT_DIR)
+target_include_directories(${COMPONENT_LIB} PRIVATE
+    "${d1001_camera_video_dir}/private_include")

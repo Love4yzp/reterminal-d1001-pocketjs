@@ -21,6 +21,9 @@ bool d1001_imu_core_encode_ctrl3(bool active_low, bool open_drain,
 bool d1001_imu_core_encode_int1_route(const d1001_imu_int1_route *route,
                                       uint8_t *out);
 
+bool d1001_imu_core_encode_int1_tap_cfg(const d1001_imu_int1_route *route,
+                                      uint8_t current, uint8_t *out);
+
 void d1001_imu_core_decode_sample(const uint8_t bytes[14],
                                   d1001_imu_accel_range accel_range,
                                   d1001_imu_gyro_range gyro_range,

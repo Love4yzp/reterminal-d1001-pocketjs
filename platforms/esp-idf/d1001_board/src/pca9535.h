@@ -18,5 +18,7 @@
 #define D1001_PCA9535_PA_ENABLE (1U << 11)
 
 esp_err_t d1001_pca9535_init(i2c_master_bus_handle_t bus);
+/* Internal board rollback; serialized with all register accesses. */
+esp_err_t d1001_pca9535_deinit(void);
 esp_err_t d1001_pca9535_set_direction(uint16_t mask, bool output);
 esp_err_t d1001_pca9535_set_level(uint16_t mask, bool high);

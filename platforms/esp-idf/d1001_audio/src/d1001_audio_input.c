@@ -1,5 +1,6 @@
 #include "d1001_audio_input.h"
 
+#include "audio_lifecycle.h"
 #include "driver/i2s_std.h"
 #include "driver/i2s_types.h"
 #include "esp_check.h"
@@ -70,17 +71,15 @@ static const input_codec_write INPUT_CODEC_INIT[] = {
 };
 
 static const input_codec_write INPUT_CODEC_ENABLE[] = {
-    {ES7210_REG_POWER_DOWN, 0x04},
-    {ES7210_REG_MIC12_POWER, 0x0F},
-    {ES7210_REG_RESET, 0x71},
-    {ES7210_REG_RESET, 0x41},
-    {ES7210_REG_ADC1_DIRECT_DB, 0xBF},
-    {ES7210_REG_ADC2_DIRECT_DB, 0xBF},
+    {ES7210_REG_POWER_DOWN, 0x04},     {ES7210_REG_MIC12_POWER, 0x0F},
+    {ES7210_REG_RESET, 0x71},          {ES7210_REG_RESET, 0x41},
+    {ES7210_REG_ADC1_DIRECT_DB, 0xBF}, {ES7210_REG_ADC2_DIRECT_DB, 0xBF},
 };
 
 static i2c_master_dev_handle_t input_codec;
 static i2s_chan_handle_t input_rx;
-static bool input_active;
+static audio_lifecycle input_state = AUDIO_LIFECYCLE_INITIALIZER;
+static bool input_enabled;
 
 static esp_err_t codec_write(uint8_t reg, uint8_t value) {
   const uint8_t data[] = {reg, value};
@@ -114,8 +113,8 @@ static esp_err_t init_i2s(const input_clock *clock) {
 
   i2s_std_config_t config = {
       .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(clock->sample_rate),
-      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
-          I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
+                                                      I2S_SLOT_MODE_STEREO),
       .gpio_cfg =
           {
               .mclk = (gpio_num_t)D1001_AUDIO_INPUT_MCLK_GPIO,
@@ -130,6 +129,7 @@ static esp_err_t init_i2s(const input_clock *clock) {
   ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(input_rx, &config), TAG,
                       "I2S1 std mode");
   ESP_RETURN_ON_ERROR(i2s_channel_enable(input_rx), TAG, "I2S1 enable");
+  input_enabled = true;
   return ESP_OK;
 }
 
@@ -143,43 +143,84 @@ static esp_err_t init_codec(i2c_master_bus_handle_t system_i2c,
   ESP_RETURN_ON_ERROR(
       i2c_master_bus_add_device(system_i2c, &config, &input_codec), TAG,
       "add ES7210");
-  ESP_RETURN_ON_ERROR(codec_write_table(
-                          INPUT_CODEC_INIT,
-                          sizeof INPUT_CODEC_INIT / sizeof INPUT_CODEC_INIT[0]),
-                      TAG, "ES7210 init");
+  ESP_RETURN_ON_ERROR(
+      codec_write_table(INPUT_CODEC_INIT,
+                        sizeof INPUT_CODEC_INIT / sizeof INPUT_CODEC_INIT[0]),
+      TAG, "ES7210 init");
   ESP_RETURN_ON_ERROR(codec_write(ES7210_REG_MAINCLK, clock->mainclk), TAG,
                       "ES7210 main clock");
   ESP_RETURN_ON_ERROR(codec_write(ES7210_REG_LRCK_DIVH, clock->lrck_h), TAG,
                       "ES7210 LRCK high");
   ESP_RETURN_ON_ERROR(codec_write(ES7210_REG_LRCK_DIVL, clock->lrck_l), TAG,
                       "ES7210 LRCK low");
-  return codec_write_table(
-      INPUT_CODEC_ENABLE,
-      sizeof INPUT_CODEC_ENABLE / sizeof INPUT_CODEC_ENABLE[0]);
+  return codec_write_table(INPUT_CODEC_ENABLE,
+                           sizeof INPUT_CODEC_ENABLE /
+                               sizeof INPUT_CODEC_ENABLE[0]);
+}
+
+/* owner_lock is held; failed cleanup retains ownership for close retry. */
+static esp_err_t close_locked(void) {
+  audio_lifecycle_publish(&input_state, false);
+  esp_err_t result = ESP_OK;
+  if (input_enabled) {
+    result = i2s_channel_disable(input_rx);
+    if (result == ESP_OK)
+      input_enabled = false;
+  }
+  audio_io_drain(&input_state);
+  if (input_rx != NULL && !input_enabled) {
+    const esp_err_t err = i2s_del_channel(input_rx);
+    if (err == ESP_OK)
+      input_rx = NULL;
+    else
+      result = err;
+  }
+  if (input_codec != NULL) {
+    const esp_err_t reset = codec_write(ES7210_REG_RESET, 0x32);
+    if (result == ESP_OK)
+      result = reset;
+    const esp_err_t err = i2c_master_bus_rm_device(input_codec);
+    if (err == ESP_OK)
+      input_codec = NULL;
+    else {
+      ESP_LOGE(TAG, "remove ES7210 failed: %s; retry close",
+               esp_err_to_name(err));
+      result = err;
+    }
+  }
+  return result;
 }
 
 esp_err_t d1001_audio_input_open(i2c_master_bus_handle_t system_i2c,
                                  uint32_t sample_rate) {
-  if (input_active)
-    return ESP_ERR_INVALID_STATE;
   const input_clock *clock = find_clock(sample_rate);
-  ESP_RETURN_ON_FALSE(system_i2c != NULL && clock != NULL,
-                      ESP_ERR_INVALID_ARG, TAG, "invalid input open");
-  input_codec = NULL;
-  input_rx = NULL;
+  ESP_RETURN_ON_FALSE(system_i2c != NULL && clock != NULL, ESP_ERR_INVALID_ARG,
+                      TAG, "invalid input open");
+  _lock_acquire(&input_state.owner_lock);
+  if (audio_lifecycle_ready(&input_state) || input_codec != NULL ||
+      input_rx != NULL) {
+    _lock_release(&input_state.owner_lock);
+    return ESP_ERR_INVALID_STATE;
+  }
   esp_err_t err = init_codec(system_i2c, clock);
   if (err == ESP_OK)
     err = init_i2s(clock);
   if (err != ESP_OK) {
-    d1001_audio_input_close();
-    return err;
+    const esp_err_t cleanup = close_locked();
+    if (cleanup != ESP_OK) {
+      ESP_LOGE(TAG, "open failed: %s; cleanup failed: %s", esp_err_to_name(err),
+               esp_err_to_name(cleanup));
+      err = cleanup;
+    }
+  } else {
+    audio_lifecycle_publish(&input_state, true);
+    ESP_LOGI(TAG, "ES7210 on I2C/0x%02x, I2S1 %u Hz stereo, MCLK %u Hz (%ux)",
+             D1001_AUDIO_INPUT_I2C_ADDRESS, (unsigned)sample_rate,
+             (unsigned)D1001_AUDIO_INPUT_MCLK_HZ,
+             (unsigned)clock->mclk_multiple);
   }
-  input_active = true;
-  ESP_LOGI(TAG, "ES7210 on I2C/0x%02x, I2S1 %u Hz stereo, MCLK %u Hz (%ux)",
-           D1001_AUDIO_INPUT_I2C_ADDRESS, (unsigned)sample_rate,
-           (unsigned)D1001_AUDIO_INPUT_MCLK_HZ,
-           (unsigned)clock->mclk_multiple);
-  return ESP_OK;
+  _lock_release(&input_state.owner_lock);
+  return err;
 }
 
 esp_err_t d1001_audio_input_read(int16_t *frames, size_t frame_count,
@@ -187,34 +228,30 @@ esp_err_t d1001_audio_input_read(int16_t *frames, size_t frame_count,
   if (frames_read == NULL)
     return ESP_ERR_INVALID_ARG;
   *frames_read = 0U;
-  if (!input_active || input_rx == NULL)
-    return ESP_ERR_INVALID_STATE;
-  if (frame_count == 0U)
-    return ESP_OK;
-  if (frames == NULL || frame_count > SIZE_MAX / (2U * sizeof(int16_t)))
+  if (frame_count > SIZE_MAX / (D1001_AUDIO_INPUT_CHANNELS * sizeof(int16_t)) ||
+      (frame_count != 0U && frames == NULL))
     return ESP_ERR_INVALID_ARG;
-  const size_t bytes = frame_count * D1001_AUDIO_INPUT_CHANNELS * sizeof(int16_t);
+  if (!audio_io_begin(&input_state))
+    return ESP_ERR_INVALID_STATE;
+  const size_t bytes =
+      frame_count * D1001_AUDIO_INPUT_CHANNELS * sizeof(int16_t);
   size_t read = 0U;
-  const esp_err_t err =
-      i2s_channel_read(input_rx, frames, bytes, &read, timeout_ms);
+  const esp_err_t err = audio_io_transfer(&input_state, input_rx, frames, bytes,
+                                          &read, timeout_ms, true);
+  audio_io_end(&input_state);
   if ((read % (D1001_AUDIO_INPUT_CHANNELS * sizeof(int16_t))) != 0U)
     return ESP_FAIL;
   *frames_read = read / (D1001_AUDIO_INPUT_CHANNELS * sizeof(int16_t));
   return err;
 }
 
-void d1001_audio_input_close(void) {
-  input_active = false;
-  if (input_rx != NULL) {
-    (void)i2s_channel_disable(input_rx);
-    (void)i2s_del_channel(input_rx);
-    input_rx = NULL;
-  }
-  if (input_codec != NULL) {
-    (void)codec_write(ES7210_REG_RESET, 0x32);
-    (void)i2c_master_bus_rm_device(input_codec);
-    input_codec = NULL;
-  }
+esp_err_t d1001_audio_input_close(void) {
+  _lock_acquire(&input_state.owner_lock);
+  const esp_err_t err = close_locked();
+  _lock_release(&input_state.owner_lock);
+  return err;
 }
 
-bool d1001_audio_input_ready(void) { return input_active; }
+bool d1001_audio_input_ready(void) {
+  return audio_lifecycle_ready(&input_state);
+}

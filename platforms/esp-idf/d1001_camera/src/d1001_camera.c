@@ -3,15 +3,18 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
 
 #include "esp_cam_sensor.h"
+#include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_private/esp_cache_private.h"
 #include "esp_timer.h"
+#include "esp_video.h"
 #include "esp_video_device.h"
 #include "esp_video_init.h"
 #include "esp_video_ioctl.h"
@@ -23,6 +26,8 @@
 #define D1001_CAMERA_WORK_BUFFERS 2U
 #define D1001_CAMERA_POLL_INTERVAL_MS 10U
 #define D1001_CAMERA_SCCB_FREQUENCY_HZ 100000U
+/* Internal device name in the pinned esp_video 2.6.0, not its VFS path. */
+#define D1001_CAMERA_VIDEO_NAME "MIPI-CSI"
 
 static const char *TAG = "d1001_camera";
 static d1001_camera_handle_t s_camera;
@@ -31,10 +36,17 @@ struct d1001_camera {
   uint32_t magic;
   d1001_camera_config_t config;
   int fd;
+  struct esp_video *video;
+  bool close_pending;
   bool video_initialized;
   bool controls_started;
   bool ready;
   bool capturing;
+  bool cleanup_pending;
+  bool buffers_requested;
+  bool streaming;
+  uint8_t *working[D1001_CAMERA_WORK_BUFFERS];
+  size_t working_size[D1001_CAMERA_WORK_BUFFERS];
   uint16_t sensor_id;
   uint32_t captured_frames;
   uint32_t failed_captures;
@@ -134,7 +146,8 @@ static esp_err_t camera_power_off(d1001_camera_handle_t camera) {
   err = set_control(camera, camera->config.set_power, false, "camera power");
   if (first_error == ESP_OK)
     first_error = err;
-  camera->controls_started = false;
+  if (first_error == ESP_OK)
+    camera->controls_started = false;
   return first_error;
 }
 
@@ -200,6 +213,54 @@ static esp_err_t request_no_buffers(d1001_camera_handle_t camera) {
   return video_ioctl(camera->fd, VIDIOC_REQBUFS, &request, "free video buffers");
 }
 
+/* Keep USERPTR storage alive until both the DMA stream and its descriptors
+ * have relinquished it. Failure leaves the exact state available to deinit. */
+static esp_err_t camera_return_working_buffers(d1001_camera_handle_t camera) {
+  if (camera->streaming) {
+    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    ESP_RETURN_ON_ERROR(
+        video_ioctl(camera->fd, VIDIOC_STREAMOFF, &type, "stop video stream"),
+        TAG, "working buffers still owned by stream");
+    camera->streaming = false;
+  }
+  if (camera->buffers_requested) {
+    ESP_RETURN_ON_ERROR(request_no_buffers(camera), TAG,
+                        "working buffers still owned by video driver");
+    camera->buffers_requested = false;
+  }
+  return ESP_OK;
+}
+
+static void camera_free_working_buffers(d1001_camera_handle_t camera) {
+  /* This guard also protects future callers from freeing retained USERPTRs. */
+  if (camera->streaming || camera->buffers_requested)
+    return;
+  for (unsigned i = 0; i < D1001_CAMERA_WORK_BUFFERS; ++i) {
+    camera_frame_free(camera, camera->working[i], camera->working_size[i]);
+    camera->working[i] = NULL;
+    camera->working_size[i] = 0;
+  }
+}
+
+static esp_err_t camera_close_video(d1001_camera_handle_t camera) {
+  if (camera->fd < 0)
+    return ESP_OK;
+  if (camera->close_pending) {
+    /* IDF 6.2 unregisters the VFS fd even when close fails. esp_video keeps
+     * its reference on failure, so retry that reference, never the stale fd. */
+    ESP_RETURN_ON_ERROR(esp_video_close(camera->video), TAG,
+                        "retry pending video close");
+    camera->close_pending = false;
+  } else if (close(camera->fd) != 0) {
+    const int error = errno;
+    camera->close_pending = true;
+    ESP_LOGE(TAG, "close video failed: errno=%d (%s)", error, strerror(error));
+    return errno_to_esp_err(error);
+  }
+  camera->fd = -1;
+  return ESP_OK;
+}
+
 static void crop_center(const uint8_t *source, uint8_t *destination) {
   const size_t source_stride = D1001_CAMERA_SENSOR_WIDTH *
                                D1001_CAMERA_BYTES_PER_PIXEL;
@@ -241,6 +302,7 @@ esp_err_t d1001_camera_init(const d1001_camera_config_t *config,
   s_camera = camera;
 
   esp_err_t err = camera_power_on(camera);
+  esp_err_t cleanup_err;
   if (err != ESP_OK)
     goto fail;
 
@@ -257,12 +319,19 @@ esp_err_t d1001_camera_init(const d1001_camera_config_t *config,
   const esp_video_init_config_t video_config = {
       .csi = &csi_config,
   };
+  /* An unsuccessful init can also leave resources if its own rollback fails. */
+  camera->video_initialized = true;
   err = esp_video_init_with_flags(&video_config, ESP_VIDEO_INIT_FLAGS_MIPI_CSI);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "initialize CSI/ISP failed: %s", esp_err_to_name(err));
     goto fail;
   }
-  camera->video_initialized = true;
+
+  camera->video = esp_video_device_get_object(D1001_CAMERA_VIDEO_NAME);
+  if (camera->video == NULL) {
+    err = ESP_ERR_NOT_FOUND;
+    goto fail;
+  }
 
   camera->fd = open(ESP_VIDEO_MIPI_CSI_DEVICE_NAME, O_RDONLY | O_NONBLOCK, 0);
   if (camera->fd < 0) {
@@ -284,13 +353,20 @@ esp_err_t d1001_camera_init(const d1001_camera_config_t *config,
   return ESP_OK;
 
 fail:
-  (void)d1001_camera_deinit(camera);
+  cleanup_err = d1001_camera_deinit(camera);
+  if (cleanup_err != ESP_OK) {
+    ESP_LOGE(TAG, "init failed (%s), rollback pending (%s)",
+             esp_err_to_name(err), esp_err_to_name(cleanup_err));
+    *out_camera = camera;
+    return cleanup_err;
+  }
   return err;
 }
 
 esp_err_t d1001_camera_probe(d1001_camera_handle_t camera,
                              uint16_t *sensor_id) {
-  ESP_RETURN_ON_FALSE(camera_valid(camera) && camera->fd >= 0,
+  ESP_RETURN_ON_FALSE(camera_valid(camera) && camera->fd >= 0 &&
+                          !camera->close_pending && !camera->cleanup_pending,
                       ESP_ERR_INVALID_STATE, TAG, "camera is not initialized");
   ESP_RETURN_ON_FALSE(sensor_id != NULL, ESP_ERR_INVALID_ARG, TAG,
                       "missing sensor ID output");
@@ -308,7 +384,8 @@ esp_err_t d1001_camera_capture(d1001_camera_handle_t camera,
                                d1001_camera_frame_t **out_frame) {
   if (out_frame != NULL)
     *out_frame = NULL;
-  ESP_RETURN_ON_FALSE(camera_valid(camera) && camera->ready,
+  ESP_RETURN_ON_FALSE(camera_valid(camera) && camera->ready &&
+                          !camera->cleanup_pending,
                       ESP_ERR_INVALID_STATE, TAG, "camera is not ready");
   ESP_RETURN_ON_FALSE(out_frame != NULL, ESP_ERR_INVALID_ARG, TAG,
                       "missing frame output");
@@ -325,15 +402,12 @@ esp_err_t d1001_camera_capture(d1001_camera_handle_t camera,
   const size_t output_frame_bytes = D1001_CAMERA_CAPTURE_WIDTH *
                                     D1001_CAMERA_CAPTURE_HEIGHT *
                                     D1001_CAMERA_BYTES_PER_PIXEL;
-  uint8_t *working[D1001_CAMERA_WORK_BUFFERS] = {NULL, NULL};
-  size_t working_size[D1001_CAMERA_WORK_BUFFERS] = {0, 0};
   uint8_t *output = NULL;
-  bool buffers_requested = false;
-  bool streaming = false;
   bool frame_valid = false;
   size_t received_size = 0;
   unsigned received_index = 0;
   esp_err_t err = ESP_OK;
+  esp_err_t cleanup_err;
 
   camera->capturing = true;
   output = camera_frame_alloc(camera, output_frame_bytes);
@@ -369,7 +443,7 @@ esp_err_t d1001_camera_capture(d1001_camera_handle_t camera,
   err = video_ioctl(camera->fd, VIDIOC_REQBUFS, &request, "request video buffers");
   if (err != ESP_OK)
     goto cleanup;
-  buffers_requested = true;
+  camera->buffers_requested = true;
   if (request.count != D1001_CAMERA_WORK_BUFFERS) {
     ESP_LOGE(TAG, "driver changed buffer count to %" PRIu32, request.count);
     err = ESP_ERR_NOT_SUPPORTED;
@@ -389,53 +463,64 @@ esp_err_t d1001_camera_capture(d1001_camera_handle_t camera,
       err = ESP_ERR_INVALID_SIZE;
       goto cleanup;
     }
-    working_size[i] = buffer.length;
-    working[i] = camera_frame_alloc(camera, buffer.length);
-    if (working[i] == NULL) {
+    camera->working_size[i] = buffer.length;
+    camera->working[i] = camera_frame_alloc(camera, buffer.length);
+    if (camera->working[i] == NULL) {
       err = ESP_ERR_NO_MEM;
       goto cleanup;
     }
-    buffer.m.userptr = (unsigned long)working[i];
+    buffer.m.userptr = (unsigned long)camera->working[i];
     err = video_ioctl(camera->fd, VIDIOC_QBUF, &buffer, "queue video buffer");
     if (err != ESP_OK)
       goto cleanup;
   }
 
-  struct timeval dequeue_timeout = {
-      .tv_sec = 0,
-      .tv_usec = D1001_CAMERA_POLL_INTERVAL_MS * 1000U,
-  };
-  err = video_ioctl(camera->fd, VIDIOC_S_DQBUF_TIMEOUT, &dequeue_timeout,
-                    "set frame timeout");
-  if (err != ESP_OK)
-    goto cleanup;
-
   int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   err = video_ioctl(camera->fd, VIDIOC_STREAMON, &type, "start video stream");
   if (err != ESP_OK)
     goto cleanup;
-  streaming = true;
+  camera->streaming = true;
 
   if (timeout_ms == 0)
     timeout_ms = D1001_CAMERA_DEFAULT_TIMEOUT_MS;
   const int64_t deadline = esp_timer_get_time() + timeout_ms * 1000LL;
   while (!frame_valid) {
+    const int64_t remaining_us = deadline - esp_timer_get_time();
+    if (remaining_us <= 0) {
+      err = ESP_ERR_TIMEOUT;
+      goto cleanup;
+    }
+    struct timeval dequeue_timeout = {
+        .tv_sec = 0,
+        .tv_usec = remaining_us < D1001_CAMERA_POLL_INTERVAL_MS * 1000LL
+                       ? remaining_us
+                       : D1001_CAMERA_POLL_INTERVAL_MS * 1000LL,
+    };
+    /* esp_video floors this to scheduler ticks; a sub-tick remainder polls
+     * without blocking rather than rounding past the deadline. */
+    err = video_ioctl(camera->fd, VIDIOC_S_DQBUF_TIMEOUT, &dequeue_timeout,
+                      "set frame timeout");
+    if (err != ESP_OK)
+      goto cleanup;
     struct v4l2_buffer buffer = {
         .type = V4L2_BUF_TYPE_VIDEO_CAPTURE,
         .memory = V4L2_MEMORY_USERPTR,
     };
     err = dequeue_video_frame(camera->fd, &buffer);
+    /* Check every dequeue, including valid frames and consecutive rejects. */
+    if (esp_timer_get_time() >= deadline) {
+      err = ESP_ERR_TIMEOUT;
+      goto cleanup;
+    }
     if (err == ESP_ERR_TIMEOUT) {
-      if (esp_timer_get_time() >= deadline)
-        goto cleanup;
-      vTaskDelay(pdMS_TO_TICKS(D1001_CAMERA_POLL_INTERVAL_MS));
+      taskYIELD();
       err = ESP_OK;
       continue;
     }
     if (err != ESP_OK)
       goto cleanup;
     if (buffer.index >= D1001_CAMERA_WORK_BUFFERS ||
-        working[buffer.index] == NULL) {
+        camera->working[buffer.index] == NULL) {
       err = ESP_FAIL;
       goto cleanup;
     }
@@ -450,28 +535,24 @@ esp_err_t d1001_camera_capture(d1001_camera_handle_t camera,
     }
 
     ++camera->rejected_frames;
-    buffer.m.userptr = (unsigned long)working[buffer.index];
-    buffer.length = working_size[buffer.index];
+    buffer.m.userptr = (unsigned long)camera->working[buffer.index];
+    buffer.length = camera->working_size[buffer.index];
     err = video_ioctl(camera->fd, VIDIOC_QBUF, &buffer, "requeue rejected frame");
     if (err != ESP_OK)
       goto cleanup;
   }
 
 cleanup:
-  if (streaming) {
-    const esp_err_t stop_err =
-        video_ioctl(camera->fd, VIDIOC_STREAMOFF, &type, "stop video stream");
+  cleanup_err = camera_return_working_buffers(camera);
+  if (cleanup_err != ESP_OK) {
+    camera->cleanup_pending = true;
+    camera->ready = false;
     if (err == ESP_OK)
-      err = stop_err;
-  }
-  if (buffers_requested) {
-    const esp_err_t free_err = request_no_buffers(camera);
-    if (err == ESP_OK)
-      err = free_err;
+      err = cleanup_err;
   }
 
   if (err == ESP_OK && frame_valid) {
-    crop_center(working[received_index], output);
+    crop_center(camera->working[received_index], output);
     camera->frame.data = output;
     camera->frame.size = output_frame_bytes;
     camera->frame.width = D1001_CAMERA_CAPTURE_WIDTH;
@@ -484,8 +565,7 @@ cleanup:
     *out_frame = &camera->frame;
   }
 
-  for (unsigned i = 0; i < D1001_CAMERA_WORK_BUFFERS; ++i)
-    camera_frame_free(camera, working[i], working_size[i]);
+  camera_free_working_buffers(camera);
   camera_frame_free(camera, output, output_frame_bytes);
   camera->capturing = false;
 
@@ -523,6 +603,7 @@ esp_err_t d1001_camera_get_status(d1001_camera_handle_t camera,
   status->ready = camera->ready;
   status->capturing = camera->capturing;
   status->frame_outstanding = camera->frame.data != NULL;
+  status->cleanup_pending = camera->cleanup_pending;
   status->captured_frames = camera->captured_frames;
   status->failed_captures = camera->failed_captures;
   status->timeouts = camera->timeouts;
@@ -553,27 +634,24 @@ esp_err_t d1001_camera_deinit(d1001_camera_handle_t camera) {
                       "capture active or frame not released");
 
   camera->ready = false;
-  esp_err_t first_error = ESP_OK;
-  if (camera->fd >= 0) {
-    if (close(camera->fd) != 0)
-      first_error = errno_to_esp_err(errno);
-    camera->fd = -1;
-  }
+  camera->cleanup_pending = true;
+  ESP_RETURN_ON_ERROR(camera_return_working_buffers(camera), TAG,
+                      "capture cleanup pending");
+  camera_free_working_buffers(camera);
+  ESP_RETURN_ON_ERROR(camera_close_video(camera), TAG, "video close pending");
   if (camera->video_initialized) {
-    const esp_err_t err =
-        esp_video_deinit_with_flags(ESP_VIDEO_INIT_FLAGS_MIPI_CSI);
-    if (first_error == ESP_OK)
-      first_error = err;
+    ESP_RETURN_ON_ERROR(
+        esp_video_deinit_with_flags(ESP_VIDEO_INIT_FLAGS_MIPI_CSI), TAG,
+        "CSI deinit pending");
     camera->video_initialized = false;
+    camera->video = NULL;
   }
   if (camera->controls_started) {
-    const esp_err_t err = camera_power_off(camera);
-    if (first_error == ESP_OK)
-      first_error = err;
+    ESP_RETURN_ON_ERROR(camera_power_off(camera), TAG, "power off pending");
   }
 
   camera->magic = 0;
   s_camera = NULL;
   free(camera);
-  return first_error;
+  return ESP_OK;
 }

@@ -33,7 +33,9 @@ typedef struct {
 esp_err_t d1001_audio_init(i2c_master_bus_handle_t system_i2c,
                            const d1001_audio_config *config);
 
-/** Write interleaved stereo s16 frames. Blocks until the I2S DMA accepts them. */
+/** Write interleaved stereo s16 frames with an overall timeout budget in ms.
+ * Concurrent deinit cancels with ESP_ERR_INVALID_STATE; partial PCM may have
+ * been accepted on error. Task context only. */
 esp_err_t d1001_audio_write(const int16_t *frames, size_t frame_count,
                             uint32_t timeout_ms);
 
@@ -41,7 +43,8 @@ esp_err_t d1001_audio_set_mute(bool mute);
 esp_err_t d1001_audio_set_volume(uint8_t percent);
 /** Unmute/enable the PA for playback, or mute/disable it when idle. */
 esp_err_t d1001_audio_set_active(bool active);
-void d1001_audio_deinit(void);
+/** Close TX only. On cleanup failure, retry before initializing TX again. */
+esp_err_t d1001_audio_deinit(void);
 bool d1001_audio_ready(void);
 
 #ifdef __cplusplus

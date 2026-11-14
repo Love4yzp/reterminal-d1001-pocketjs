@@ -5,6 +5,8 @@
 
 #include "d1001_imu_core.h"
 #include "driver/gpio.h"
+#include "esp_attr.h"
+#include "esp_memory_utils.h"
 
 #define LSM6DS3_WHO_AM_I 0x0fU
 #define LSM6DS3_ID 0x6aU
@@ -308,10 +310,21 @@ esp_err_t d1001_imu_set_int1_route(d1001_imu *imu,
   uint8_t value = 0;
   if (!d1001_imu_core_encode_int1_route(route, &value))
     return ESP_ERR_INVALID_ARG;
+  if (value != 0U) {
+    uint8_t tap_cfg = 0;
+    esp_err_t result = read_register(imu->device, LSM6DS3_TAP_CFG, &tap_cfg);
+    if (result != ESP_OK)
+      return result;
+    if (!d1001_imu_core_encode_int1_tap_cfg(route, tap_cfg, &tap_cfg))
+      return ESP_ERR_INVALID_ARG;
+    result = write_register(imu->device, LSM6DS3_TAP_CFG, tap_cfg);
+    if (result != ESP_OK)
+      return result;
+  }
   return write_register(imu->device, LSM6DS3_MD1_CFG, value);
 }
 
-static void handle_int1_isr(void *arg) {
+static void IRAM_ATTR handle_int1_isr(void *arg) {
   d1001_imu *imu = arg;
   if (imu->int1_callback != NULL)
     imu->int1_callback(imu->int1_callback_arg);
@@ -326,6 +339,10 @@ esp_err_t d1001_imu_register_int1(d1001_imu *imu, int int1_gpio,
   if (int1_gpio == -1)
     return d1001_imu_unregister_int1(imu);
   if (callback == NULL || !GPIO_IS_VALID_GPIO(int1_gpio))
+    return ESP_ERR_INVALID_ARG;
+  /* The shared service may have been installed with ESP_INTR_FLAG_IRAM. */
+  if (!esp_ptr_internal(imu) ||
+      !esp_ptr_internal((const uint8_t *)imu + sizeof(*imu) - 1U))
     return ESP_ERR_INVALID_ARG;
   if (imu->int1_registered)
     return ESP_ERR_INVALID_STATE;

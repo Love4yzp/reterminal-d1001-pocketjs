@@ -57,9 +57,12 @@ ESP_ERROR_CHECK(d1001_camera_deinit(camera));
 ```
 
 - Output is a centered crop of the native 1280x720 frame, not a scaled image. RGB565 and packed UYVY both use two bytes per pixel. Crop offsets are even to preserve UYVY pairs.
-- Capture uses two driver-owned transactions over component-allocated PSRAM working buffers. A valid frame is copied to a separate PSRAM output buffer before the working buffers are freed. The video driver's dequeue timeout is set explicitly, and an outer deadline covers repeated rejected frames.
+- Capture uses two driver-owned transactions over component-allocated PSRAM working buffers. A valid frame is copied to a separate PSRAM output buffer before the working buffers are freed. Each dequeue wait is limited to the remaining deadline, up to 10 ms; sub-tick waits poll without blocking. The deadline is checked before each wait and after every dequeue, including valid and rejected frames. It bounds waiting for a frame after stream start; setup, teardown and scheduler latency are outside this budget.
 - One camera instance and one unreleased output frame are supported. Serialize init, probe, capture, status, release and deinit from the owning task. Capture polls in the caller's context and has a timeout; it does not create a task.
-- Release the output before another capture or deinit. Deinit closes `/dev/video0`, tears down only the CSI video resources, applies the safe control levels and frees the handle.
+- Release the output before another capture or deinit. Working buffers are freed only after any started stream has stopped successfully and `VIDIOC_REQBUFS(count=0)` has released its descriptors. If either operation fails, capture retains the PSRAM buffers, reports `cleanup_pending=true` and `ready=false`, and rejects further captures. Call deinit to retry cleanup; the retained buffers remain included in `psram_allocated_bytes` until safely freed.
+- Deinit retries stream/buffer cleanup, closes `/dev/video0`, tears down only the CSI video resources, then applies the safe control levels. Each completed stage is recorded; failure preserves the handle and singleton for another deinit attempt. The handle becomes invalid only on success. Once teardown starts, only status and deinit are supported.
+- Check both the init result and its output handle. Init normally returns a NULL handle on failure. If rollback also fails, it logs both errors, returns the cleanup error and supplies a non-NULL cleanup-only handle; retry deinit on that handle before initializing again.
+- IDF 6.2 unregisters the VFS descriptor even if close fails, while `esp_video` retains the underlying reference. Close retries therefore use the pinned 2.6.0 private `esp_video_close` API and saved video object, never the stale descriptor. The private include directory is local to this component; recheck this contract before upgrading either dependency.
 - `d1001_camera_get_status` reports capture/error counters and component-owned PSRAM allocation/peak. Its free/largest/minimum fields are global heap snapshots, not an attribution of other drivers' allocations.
 
 ## Memory budget
@@ -79,13 +82,15 @@ All image buffers use cache-line-aligned PSRAM. No frame payload consumes intern
 
 The handle, V4L2 objects, queues, semaphores, ISR and ISP/CSI driver contexts still consume internal RAM. Measure that consumption on device; the table is not a claim that total internal RAM usage is zero. The existing display's two internal-DMA staging buffers remain independent and within their 128 KiB budget.
 
+The zero-allocation rows assume successful cleanup. A failed stream stop or buffer release retains up to 3,686,400 bytes of working-frame payload until a successful deinit retry. The output buffer is freed on failed capture.
+
 ## Integration requirements
 
-Add the component to the firmware component path and make the native camera consumer require `d1001_camera`. Keep it out of guest/runtime restart paths.
+The firmware component path includes `d1001_camera`, and `main` declares its build dependency. A native runtime camera consumer remains a follow-up; keep camera ownership outside guest/runtime restart paths.
 
-Add narrow camera control functions to `d1001_board` during integration, forwarding the masks exported by `d1001_camera.h` to the existing PCA9535 implementation. Do not create a second PCA9535 device or output cache. Pass `board.touch_i2c`, not `board.system_i2c`.
+`d1001_board_camera_set_power`, `d1001_board_camera_set_pwdn` and `d1001_board_camera_set_reset` forward the camera masks to the existing PCA9535 implementation. The consumer must supply context-compatible wrappers for these functions and pass `board.touch_i2c`, not `board.system_i2c`. Do not create a second PCA9535 device or output cache.
 
-Use these settings in the firmware configuration; no defaults are changed by this standalone component:
+`programs/reterminal-d1001/sdkconfig.defaults` contains the following camera and memory configuration:
 
 ```ini
 CONFIG_IDF_EXPERIMENTAL_FEATURES=y

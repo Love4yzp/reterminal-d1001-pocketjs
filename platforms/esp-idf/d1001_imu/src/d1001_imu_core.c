@@ -77,7 +77,8 @@ bool d1001_imu_core_encode_ctrl3(bool active_low, bool open_drain,
                                  uint8_t current, uint8_t *out) {
   if (out == NULL)
     return false;
-  *out = (uint8_t)((current & 0x8bU) | 0x44U | (active_low ? 0x20U : 0U) |
+  /* BLE must stay clear: sample decoding uses LSB at the lower address. */
+  *out = (uint8_t)((current & 0x89U) | 0x44U | (active_low ? 0x20U : 0U) |
                    (open_drain ? 0x10U : 0U));
   return true;
 }
@@ -91,6 +92,16 @@ bool d1001_imu_core_encode_int1_route(const d1001_imu_int1_route *route,
                    (route->free_fall ? 0x10U : 0U) |
                    (route->double_tap ? 0x08U : 0U) |
                    (route->orientation_6d ? 0x04U : 0U));
+  return true;
+}
+
+bool d1001_imu_core_encode_int1_tap_cfg(const d1001_imu_int1_route *route,
+                                      uint8_t current, uint8_t *out) {
+  uint8_t routed = 0;
+  if (out == NULL || !d1001_imu_core_encode_int1_route(route, &routed))
+    return false;
+  /* Never disable the shared gate when removing this pin's routes. */
+  *out = (uint8_t)(current | (routed != 0U ? 0x80U : 0U));
   return true;
 }
 
