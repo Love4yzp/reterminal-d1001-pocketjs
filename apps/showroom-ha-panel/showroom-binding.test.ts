@@ -22,7 +22,7 @@ const valid = {
 
 describe("ignored showroom entity binding", () => {
   test("parses known display keys without accepting credentials", () => {
-    expect(parseShowroomEntityMap(JSON.stringify(valid))).toEqual(valid);
+    expect(parseShowroomEntityMap(JSON.stringify(valid))).toEqual({ ...valid, sensors: {} });
     expect(parseShowroomEntityMap(JSON.stringify(SHOWROOM_ENTITY_MAP_EXAMPLE))).toEqual(SHOWROOM_ENTITY_MAP_EXAMPLE);
     expect(parseShowroomEntityMap("")).toBeUndefined();
     expect(() => parseShowroomEntityMap(JSON.stringify({ ...valid, token: "secret" })))
@@ -38,7 +38,7 @@ describe("ignored showroom entity binding", () => {
         "reachy-result": "sensor.example_reachy_result",
         "arm-mode": "sensor.example_arm_mode",
       },
-    }))).toEqual(valid);
+    }))).toEqual({ ...valid, sensors: {} });
   });
 
   test("keeps the public JSON example in sync with the validated mock map", async () => {
@@ -52,10 +52,10 @@ describe("ignored showroom entity binding", () => {
       ...valid,
       lights: { unknown: "light.example" },
     }))).toThrow("unknown key unknown");
-    expect(() => parseShowroomEntityMap(JSON.stringify({
+    expect(parseShowroomEntityMap(JSON.stringify({
       ...valid,
-      sensors: { temperature: "light.wrong" },
-    }))).toThrow("invalid entityId");
+      sensors: { temperature: "light.wrong", obsolete: 42 },
+    }))?.sensors).toEqual({});
     expect(() => parseShowroomEntityMap(JSON.stringify({
       ...valid,
       actions: { "reachy-wake": "light.not_a_service" },

@@ -1,5 +1,5 @@
 import { pick, type Language } from "./i18n";
-import { LIGHT_IDS, type LightId, type PanelAction } from "./model";
+import { LIGHT_IDS, type LightId, type PanelAction, type PanelState } from "./model";
 
 export type Tab = "home" | "lights" | "sensors" | "settings";
 export type ProvisionTopic = "wifi" | "ha";
@@ -10,6 +10,14 @@ export const TABS: readonly { id: Tab; label: string; labelEn: string }[] = [
   { id: "sensors", label: "环境", labelEn: "Sensors" },
   { id: "settings", label: "设置", labelEn: "Settings" },
 ];
+
+export function hasEnvironment(state: Pick<PanelState, "sensorOrder" | "weather" | "haConnected">): boolean {
+  return state.sensorOrder.length > 0 || (state.haConnected && state.weather !== null);
+}
+
+export function visibleTabs(state: Pick<PanelState, "sensorOrder" | "weather" | "haConnected">): typeof TABS {
+  return TABS.filter(tab => tab.id !== "sensors" || hasEnvironment(state));
+}
 
 export function tabLabel(tab: Pick<(typeof TABS)[number], "label" | "labelEn">, language: Language = "zh"): string {
   return pick(language, tab.label, tab.labelEn);

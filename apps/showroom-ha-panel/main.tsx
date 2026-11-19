@@ -49,6 +49,7 @@ import {
 } from "./native";
 import {
   activeTab,
+  hasEnvironment,
   INITIAL_ROUTE,
   navigate,
   type NavEvent,
@@ -381,7 +382,7 @@ function Panel() {
           onNav={onNav}
         />
       );
-    if (current.tab === "sensors")
+    if (current.tab === "sensors" && hasEnvironment(state()))
       return <SensorsScreen {...shared()} network={network()} page={sensorPage()} />;
     if (current.tab === "settings")
       return (
@@ -440,7 +441,7 @@ function Panel() {
   return (
     <View class="relative overflow-hidden" style={{ width: 400, height: 640, bgColor: theme.page }}>
       {screen()}
-      {route().kind === "tab" ? <NavBar active={activeTab(route())} language={language()} onNav={onNav} /> : null}
+      {route().kind === "tab" ? <NavBar state={state()} active={activeTab(route()) === "sensors" && !hasEnvironment(state()) ? "home" : activeTab(route())} language={language()} onNav={onNav} /> : null}
     </View>
   );
 }

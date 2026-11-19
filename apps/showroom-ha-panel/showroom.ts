@@ -70,7 +70,7 @@ export const SHOWROOM: ShowroomConfig = {
   id: "example-showroom",
   home: {
     lights: ["remote"],
-    sensors: ["temperature", "humidity"],
+    sensors: [],
     actions: [
       "reachy-intro-retail",
       "reachy-intro-space",
@@ -98,16 +98,7 @@ export const SHOWROOM: ShowroomConfig = {
       initial: { on: false, brightness: 128, hue: 36, saturation: 70 },
     },
   ],
-  sensors: [
-    {
-      key: "temperature", name: "温度", nameEn: "Temperature", entityId: "sensor.example_temperature",
-      unit: "°C", decimals: 1, staleAfterSeconds: 90,
-    },
-    {
-      key: "humidity", name: "湿度", nameEn: "Humidity", entityId: "sensor.example_humidity",
-      unit: "%", decimals: 0, staleAfterSeconds: 90,
-    },
-  ],
+  sensors: [],
   actions: [
     {
       key: "reachy-intro-retail", name: "零售讲解", nameEn: "Retail Demo", group: "reachy",
@@ -136,10 +127,7 @@ export const SHOWROOM: ShowroomConfig = {
 export const SHOWROOM_ENTITY_MAP_EXAMPLE: ShowroomEntityMap = {
   version: 1,
   lights: { remote: "light.yeelink_cn_975205352_bslamp2_s_2_light" },
-  sensors: {
-    temperature: "sensor.example_temperature",
-    humidity: "sensor.example_humidity",
-  },
+  sensors: {},
   actions: Object.fromEntries(SHOWROOM.actions.flatMap(action =>
     action.group === "reachy" && action.entityId ? [[action.key, action.entityId]] : [])),
   weather: "weather.example_home",
@@ -240,25 +228,23 @@ export function parseShowroomEntityMap(text: string, config: ShowroomConfig = SH
       throw new Error(`entityMap unknown field ${key}`);
 
   const result: ShowroomEntityMap = { version: 1, lights: {}, sensors: {}, actions: {} };
-  const legacySensors = new Set(["reachy-agent", "reachy-result", "arm-mode"]);
   const readEntries = (
-    field: "lights" | "sensors" | "actions",
+    field: "lights" | "actions",
     allowed: ReadonlyMap<string, RegExp>,
   ) => {
     const group = bindingObject(value[field] ?? {}, `entityMap.${field}`);
     for (const [key, entity] of Object.entries(group)) {
-      const legacy = field === "sensors" && legacySensors.has(key);
-      const domain = allowed.get(key) ?? (legacy ? /^sensor\.[a-z0-9_]+$/ : undefined);
+      const domain = allowed.get(key);
       if (!domain) throw new Error(`entityMap.${field} unknown key ${key}`);
       if (typeof entity !== "string" || !domain.test(entity))
         throw new Error(`entityMap.${field}.${key} invalid entityId`);
-      if (!legacy) result[field][key] = entity;
+      result[field][key] = entity;
     }
   };
   readEntries("lights", new Map(config.lights.filter(light => light.source === "ha").map(light => [
     light.key, /^(light|edidt)\.[a-z0-9_]+$/,
   ])));
-  readEntries("sensors", new Map(config.sensors.map(sensor => [sensor.key, /^sensor\.[a-z0-9_]+$/])));
+  // Older device maps may contain sensors; the showroom no longer uses them.
   readEntries("actions", new Map(config.actions.map(action => [
     action.key,
     action.group === "arm" ? /^(?:script\.keymesh_dispatch|input_button\.[a-z0-9_]+)$/ : /^input_button\.[a-z0-9_]+$/,

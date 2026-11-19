@@ -81,6 +81,49 @@ async function connected(engine: HaEngine) {
 }
 
 describe("production HA engine", () => {
+  test("refreshes every entity on the next tick after reconnecting, but not on a healthy heartbeat", async () => {
+    const network = deferredExecutor();
+    const engine = new HaEngine(network.execute, () => {});
+    const probe = "GET http://example.test:8123/api/";
+    const snapshot = () => network.calls.filter(request => request.url.includes("/api/states/"));
+    const heartbeat = async (success: boolean) => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const pending = network.pending.get(probe)!;
+      if (success) pending.resolve('{"message":"API running."}');
+      else pending.reject(new Error("HTTP status 503"));
+      await engine.idle();
+    };
+    engine.setConfig(config());
+    engine.tick();
+    await heartbeat(true);
+    engine.tick();
+    // Let the initial snapshot complete later, so its deadlines do not
+    // coincide with the heartbeat schedule.
+    for (let i = 0; i < 998; i += 1) engine.tick();
+    await engine.idle();
+    const initial = snapshot().map(request => request.url);
+    expect(initial).toHaveLength(3);
+    expect(initial.some(url => url.includes("/api/states/sensor."))).toBe(false);
+
+    // A successful heartbeat must not bring forward the five-minute polls.
+    for (let i = 0; i < 2001; i += 1) engine.tick();
+    await heartbeat(true);
+    expect(snapshot().map(request => request.url)).toEqual(initial);
+    engine.tick();
+    await engine.idle();
+
+    // The next heartbeat fails just before the entity deadlines.
+    for (let i = 0; i < 2999; i += 1) engine.tick();
+    await heartbeat(false);
+    const beforeReconnect = snapshot().length;
+    for (let i = 0; i < 300; i += 1) engine.tick();
+    await heartbeat(true);
+    expect(snapshot()).toHaveLength(beforeReconnect);
+    engine.tick();
+    await engine.idle();
+    expect(snapshot().slice(beforeReconnect).map(request => request.url)).toEqual(initial);
+  });
+
   test("probes again within two seconds while the network has no address", async () => {
     const urls: string[] = [];
     let online = false;
@@ -98,8 +141,8 @@ describe("production HA engine", () => {
     expect(urls.filter(url => url.endsWith("/api/"))).toHaveLength(2);
   });
 
-  test("runs a keyed light command while a sensor poll is still blocked", async () => {
-    const network = deferredExecutor(url => url.includes("sensor.example_temperature"));
+  test("runs a keyed light command while a weather poll is still blocked", async () => {
+    const network = deferredExecutor(url => url.includes("weather.example"));
     const events: WorkerEvent[] = [];
     const engine = new HaEngine(network.execute, event => events.push(event));
     engine.setConfig(config());
@@ -109,14 +152,14 @@ describe("production HA engine", () => {
     await engine.idle();
     engine.tick();
     await new Promise(resolve => setTimeout(resolve, 0));
-    const sensorUrl = "GET http://example.test:8123/api/states/sensor.example_temperature";
-    expect(network.pending.has(sensorUrl)).toBe(true);
+    const weatherUrl = "GET http://example.test:8123/api/states/weather.example";
+    expect(network.pending.has(weatherUrl)).toBe(true);
 
     const command = engine.command({ type: "entity-light", lightId: "remote", light: light(true, 200), seq: 1 });
     await command;
     expect(network.calls.some(request => request.url.endsWith("/api/services/light/turn_on"))).toBe(true);
-    expect(network.pending.has(sensorUrl)).toBe(true);
-    network.pending.get(sensorUrl)!.resolve(JSON.stringify({ state: "21.5" }));
+    expect(network.pending.has(weatherUrl)).toBe(true);
+    network.pending.get(weatherUrl)!.resolve("null");
     await engine.idle();
   });
 
@@ -200,7 +243,7 @@ describe("production HA engine", () => {
     }));
   });
 
-  test("isolates an unavailable light and failed sensor from healthy entities and the connection", async () => {
+  test("isolates an unavailable light and ignores legacy sensors while other entities stay connected", async () => {
     const services: { request: HttpRequest }[] = [];
     const events: WorkerEvent[] = [];
     const engine = new HaEngine(immediateExecutor({
@@ -216,8 +259,8 @@ describe("production HA engine", () => {
 
     expect(events).toContainEqual(expect.objectContaining({ type: "entity-error", key: "remote", availability: "unavailable" }));
     expect(events).toContainEqual(expect.objectContaining({ type: "entity-light", lightId: "accent" }));
-    expect(events.some(event => event.type === "entity-error" && event.key === "temperature")).toBe(true);
-    expect(events.some(event => event.type === "sensor" && event.sensorId === "humidity" && event.reading.value === 48)).toBe(true);
+    expect(events.some(event => event.type === "entity-error" && event.domain === "sensor")).toBe(false);
+    expect(events.some(event => event.type === "sensor")).toBe(false);
     expect(events.some(event => event.type === "status" && event.connected)).toBe(true);
   });
 

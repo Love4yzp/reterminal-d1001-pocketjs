@@ -7,7 +7,6 @@ import {
   createPressButtonRequest,
   createSetLightStateRequest,
   parseLightEntity,
-  parseSensorEntity,
   type HaLightCommand,
   type HttpRequest,
 } from "./ha-request";
@@ -53,7 +52,6 @@ class SerialLanes {
 // receive. Poll showroom state every five minutes after the initial snapshot;
 // direct UI commands still use the independent command lane immediately.
 const LIGHT_RETRY_TICKS = 3_000;
-const SENSOR_RETRY_TICKS = 3_000;
 const ERROR_RETRY_TICKS = 300;
 // Wi-Fi usually gets its address a few seconds after the app starts; probe
 // again soon instead of leaving HA offline for a full error interval.
@@ -105,9 +103,6 @@ export class HaEngine {
     if (!this.connected) return;
 
     for (const lightId of this.lightIds()) this.pollLight(lightId);
-    if (config.entityMap) {
-      for (const sensorId of Object.keys(config.entityMap.sensors)) this.pollSensor(sensorId);
-    }
     this.pollWeather();
   }
 
@@ -149,6 +144,11 @@ export class HaEngine {
     try {
       await this.lanes.run("poll", () => this.execute(createApiProbeRequest(config)));
       if (epoch !== this.epoch) return;
+      if (!this.connected) {
+        for (const key of Object.keys(this.due)) {
+          if (key.startsWith("light:") || key === "weather") delete this.due[key];
+        }
+      }
       this.connected = true;
       this.heartbeatDue = this.tickCount + HEARTBEAT_TICKS;
       this.publishStatus();
@@ -255,46 +255,6 @@ export class HaEngine {
         this.inFlight.delete(key);
         const stale = epoch !== this.epoch || revision !== (this.revisions[lightId] ?? 0) || !this.connected;
         if (!stale && (this.due[key] ?? 0) === 0) this.due[key] = this.tickCount + LIGHT_RETRY_TICKS;
-      }
-    });
-  }
-
-  private pollSensor(sensorId: string): void {
-    const config = this.config;
-    const entityId = config?.entityMap?.sensors[sensorId];
-    if (!config || !entityId) return;
-    const key = `sensor:${sensorId}`;
-    if (this.inFlight.has(key) || this.tickCount < (this.due[key] ?? 0)) return;
-    this.inFlight.add(key);
-    const epoch = this.epoch;
-    void this.lanes.run("poll", async () => {
-      try {
-        const response = await this.execute(createGetEntityStateRequest(config, entityId));
-        if (epoch !== this.epoch || !this.connected) return;
-        const reading = parseSensorEntity(response.body);
-        if (!reading) {
-          this.publishEntityError("sensor", sensorId, "unavailable", "sensor entity is malformed");
-        } else if (reading.status === "unavailable") {
-          this.publish({
-            type: "sensor",
-            sensorId,
-            reading: { value: null, status: "unavailable", updatedAt: null },
-          });
-        } else {
-          this.publish({
-            type: "sensor",
-            sensorId,
-            reading: { value: reading.value, status: "live", updatedAt: null },
-          });
-        }
-        this.due[key] = this.tickCount + SENSOR_RETRY_TICKS;
-      } catch (error) {
-        if (epoch === this.epoch && this.connected)
-          this.publishEntityError("sensor", sensorId, "offline", this.errorMessage(error));
-        this.due[key] = this.tickCount + ERROR_RETRY_TICKS;
-      } finally {
-        this.inFlight.delete(key);
-        if ((this.due[key] ?? 0) === 0) this.due[key] = this.tickCount + SENSOR_RETRY_TICKS;
       }
     });
   }

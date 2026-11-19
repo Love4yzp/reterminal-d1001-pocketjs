@@ -65,46 +65,15 @@ describe("multi-entity front-end seam", () => {
     expect(isLightAvailable(failed, "accent")).toBe(true);
   });
 
-  test("keyed sensor readings do not invent production values and degrade on disconnect", () => {
+  test("has no sensor state and ignores legacy temperature, humidity and telemetry events", () => {
     const initial = createInitialPanelState();
-    const withLive = reducePanel(initial, {
-      type: "sensor",
-      sensorId: "temperature",
-      reading: { value: 23.4, status: "live", updatedAt: 100 },
-    });
-    expect(withLive.sensors.temperature).toEqual({ value: 23.4, status: "live", updatedAt: 100 });
-    expect(reducePanel(withLive, {
-      type: "sensor", sensorId: "missing", reading: { value: 1, status: "live", updatedAt: 100 },
-    })).toBe(withLive);
-
-    const offline = reducePanel(withLive, {
-      type: "ha", haConfigured: true, haConnected: false, haLightConfigured: true,
-    });
-    expect(offline.sensors.temperature?.status).toBe("offline");
-    expect(offline.sensors.temperature?.value).toBe(23.4);
-  });
-
-  test("does not create or accept Reachy and arm MQTT telemetry", () => {
-    const initial = createInitialPanelState();
-    expect(initial.sensorOrder).toEqual(["temperature", "humidity"]);
-    expect(initial.sensors).not.toHaveProperty("reachy-agent");
-    expect(initial.sensors).not.toHaveProperty("reachy-result");
-    expect(initial.sensors).not.toHaveProperty("arm-mode");
-    expect(reducePanel(initial, {
-      type: "sensor",
-      sensorId: "arm-mode",
-      reading: { value: "gravity", status: "live", updatedAt: 100 },
-    })).toBe(initial);
-  });
-
-  test("mock readings remain explicitly marked as examples", () => {
-    const next = reducePanel(createInitialPanelState(), {
-      type: "sensor",
-      sensorId: "humidity",
-      reading: { value: 48, status: "mock", updatedAt: 100 },
-    });
-    expect(next.sensors.humidity?.status).toBe("mock");
-    expect(reducePanel(next, { type: "sensor-tick", nowSeconds: 1000 })).toBe(next);
+    expect(initial.sensorOrder).toEqual([]);
+    expect(initial.sensors).toEqual({});
+    for (const sensorId of ["temperature", "humidity", "reachy-agent", "reachy-result", "arm-mode"]) {
+      expect(reducePanel(initial, {
+        type: "sensor", sensorId, reading: { value: 23, status: "live", updatedAt: 100 },
+      })).toBe(initial);
+    }
   });
 
   test("action acceptance and errors stay keyed and never become scene state", () => {
@@ -132,11 +101,11 @@ describe("configured navigation and session", () => {
     expect(nextLight("desk", -1, order, order)).toBe("remote");
   });
 
-  test("opens and restores a sensor detail without persisting its reading", () => {
+  test("discards a removed sensor detail from an old session", () => {
     const route = navigate({ kind: "tab", tab: "sensors" }, { type: "open-sensor", sensorId: "temperature" });
     expect(route).toEqual({ kind: "sensor", sensorId: "temperature", from: "sensors" });
     const saved = decodeSession(encodeSession(createInitialPanelState(), route, createSettings(50)));
-    expect(saved?.route).toEqual(route);
+    expect(saved?.route).toEqual({ kind: "tab", tab: "home" });
     expect(saved).not.toHaveProperty("sensors");
   });
 });
