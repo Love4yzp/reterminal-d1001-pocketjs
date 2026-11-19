@@ -83,7 +83,7 @@ export function SensorDetailScreen(props: {
         <Text class="absolute text-xs" style={{ insetL: 20, insetT: 166, width: cardWidth() - 40, textColor: theme.disabledText }}>
           {pick(props.language, `显示键 ${sensor().key}`, `Key ${sensor().key}`)}
         </Text>
-        {reading().value === null ? <LoadingDots centerX={44} centerY={82} /> : null}
+        {reading().value === null && reading().status === "pending" ? <LoadingDots centerX={44} centerY={82} /> : null}
       </View>
       <Text class="absolute text-xs text-center" style={{ insetL: cardLeft(), insetT: 324, width: cardWidth(), textColor: theme.disabledText }}>
         {pick(props.language, "只读，不可调节", "Read-only, not adjustable")}

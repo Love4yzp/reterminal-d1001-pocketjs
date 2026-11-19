@@ -149,6 +149,11 @@ export class HaEngine {
     try {
       await this.lanes.run("poll", () => this.execute(createApiProbeRequest(config)));
       if (epoch !== this.epoch) return;
+      if (!this.connected) {
+        for (const key of Object.keys(this.due)) {
+          if (key.startsWith("light:") || key.startsWith("sensor:") || key === "weather") delete this.due[key];
+        }
+      }
       this.connected = true;
       this.heartbeatDue = this.tickCount + HEARTBEAT_TICKS;
       this.publishStatus();

@@ -81,6 +81,48 @@ async function connected(engine: HaEngine) {
 }
 
 describe("production HA engine", () => {
+  test("refreshes every entity on the next tick after reconnecting, but not on a healthy heartbeat", async () => {
+    const network = deferredExecutor();
+    const engine = new HaEngine(network.execute, () => {});
+    const probe = "GET http://example.test:8123/api/";
+    const snapshot = () => network.calls.filter(request => request.url.includes("/api/states/"));
+    const heartbeat = async (success: boolean) => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const pending = network.pending.get(probe)!;
+      if (success) pending.resolve('{"message":"API running."}');
+      else pending.reject(new Error("HTTP status 503"));
+      await engine.idle();
+    };
+    engine.setConfig(config());
+    engine.tick();
+    await heartbeat(true);
+    engine.tick();
+    // Let the initial snapshot complete later, so its deadlines do not
+    // coincide with the heartbeat schedule.
+    for (let i = 0; i < 998; i += 1) engine.tick();
+    await engine.idle();
+    const initial = snapshot().map(request => request.url);
+    expect(initial).toHaveLength(5);
+
+    // A successful heartbeat must not bring forward the five-minute polls.
+    for (let i = 0; i < 2001; i += 1) engine.tick();
+    await heartbeat(true);
+    expect(snapshot().map(request => request.url)).toEqual(initial);
+    engine.tick();
+    await engine.idle();
+
+    // The next heartbeat fails just before the entity deadlines.
+    for (let i = 0; i < 2999; i += 1) engine.tick();
+    await heartbeat(false);
+    const beforeReconnect = snapshot().length;
+    for (let i = 0; i < 300; i += 1) engine.tick();
+    await heartbeat(true);
+    expect(snapshot()).toHaveLength(beforeReconnect);
+    engine.tick();
+    await engine.idle();
+    expect(snapshot().slice(beforeReconnect).map(request => request.url)).toEqual(initial);
+  });
+
   test("probes again within two seconds while the network has no address", async () => {
     const urls: string[] = [];
     let online = false;

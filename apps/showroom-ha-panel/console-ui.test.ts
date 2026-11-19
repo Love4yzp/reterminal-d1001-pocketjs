@@ -12,6 +12,21 @@ const productionFiles = [
 ];
 
 describe("showroom console UI", () => {
+  test("sensor cards and details show loading dots only for a pending null value", () => {
+    for (const path of ["ui/showroom-cards.tsx", "ui/sensors-screen.tsx"]) {
+      const source = readFileSync(new URL(path, import.meta.url), "utf8");
+      const condition = source.match(/\{([^{}]+)\? <LoadingDots/)!;
+      expect(condition, path).not.toBeNull();
+      const showsDots = new Function("reading", `return ${condition[1]};`);
+      for (const status of ["pending", "unavailable", "offline", "live", "stale", "mock"]) {
+        for (const value of [null, 21]) {
+          expect(Boolean(showsDots(() => ({ value, status }))), `${path}: ${status}/${value}`)
+            .toBe(value === null && status === "pending");
+        }
+      }
+    }
+  });
+
   test("has no user-facing scenes or local scene execution state", () => {
     for (const path of productionFiles) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
