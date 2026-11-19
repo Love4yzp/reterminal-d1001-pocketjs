@@ -16,8 +16,8 @@ import {
   type NetworkInfo,
   type PowerInfo,
 } from "../native";
-import { activeTab, TABS, tabLabel, type NavEvent, type Route, type Tab } from "../navigation";
-import { pageWindow, SHOWROOM } from "../showroom";
+import { activeTab, hasEnvironment, visibleTabs, tabLabel, type NavEvent, type Route, type Tab } from "../navigation";
+import { SHOWROOM } from "../showroom";
 import { screenOffLabel, SCREEN_OFF_OPTIONS, type SettingsAction, type SettingsState } from "../settings";
 import { haStatus } from "../status";
 import { LoadingDots } from "./loading-dots";
@@ -29,7 +29,7 @@ import { PowerBadge } from "./power-badge";
 import { BacklightSlider, ColorWheel, ModeButton, VerticalSlider } from "./controls";
 import { Divider, Icon, Numerals, Pressable } from "./primitives";
 import { SensorDetailScreen } from "./sensors-screen";
-import { Pager, SensorCard } from "./showroom-cards";
+import { EnvironmentWeather } from "./environment-weather";
 
 interface LandscapeProps {
   state: PanelState;
@@ -53,7 +53,7 @@ interface LandscapeProps {
   onDimmerMode(mode: DimmerMode): void;
 }
 
-function LandscapeNav(props: { active: Tab; language: Language; onNav(event: NavEvent): void }) {
+function LandscapeNav(props: { state: PanelState; active: Tab; language: Language; onNav(event: NavEvent): void }) {
   const icon = (tab: Tab, active: boolean) => {
     if (tab === "home") return active ? "home-primary" as const : "home-secondary" as const;
     if (tab === "lights") return active ? "bulb-primary" as const : "bulb-secondary" as const;
@@ -63,7 +63,7 @@ function LandscapeNav(props: { active: Tab; language: Language; onNav(event: Nav
   return (
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: 88, height: 400, bgColor: theme.page }}>
       <View class="absolute" style={{ insetL: 87, insetT: 0, width: 1, height: 400, bgColor: theme.divider }} />
-      <For each={TABS}>{(tab, index) => {
+      <For each={visibleTabs(props.state)}>{(tab, index) => {
         const active = () => props.active === tab.id;
         return (
           <Pressable box={{ left: 0, top: 44 + index() * 76, width: 88, height: 70 }} onTap={() => props.onNav({ type: "tab", tab: tab.id })}>
@@ -127,20 +127,10 @@ function Home(props: LandscapeProps) {
         lightId={SHOWROOM.home.lights[0]!}
         box={{ left: 16, top: 112, width: 520, height: 78 }}
       />
-      <For each={SHOWROOM.home.sensors}>{(sensorId, index) => (
-        <SensorCard
-          state={props.state}
-          language={props.language}
-          sensorId={sensorId}
-          box={{ left: 16 + index() * 148, top: 198, width: 140 + (index() === 1 ? 4 : 0), height: 74 }}
-          compact
-          onNav={props.onNav}
-        />
-      )}</For>
-      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 280, width: 180, textColor: theme.text }}>
+      <Text class="absolute text-sm font-bold" style={{ insetL: 16, insetT: 206, width: 180, textColor: theme.text }}>
         {pick(props.language, "快捷指令", "Quick Actions")}
       </Text>
-      <Text class="absolute text-2xs text-right" style={{ insetL: 196, insetT: 284, width: 112, textColor: theme.secondaryText }}>
+      <Text class="absolute text-2xs text-right" style={{ insetL: 196, insetT: 210, width: 112, textColor: theme.secondaryText }}>
         {pick(props.language, "由 HA 执行", "Runs on HA")}
       </Text>
       <For each={SHOWROOM.home.actions}>{(actionId, index) => (
@@ -148,7 +138,7 @@ function Home(props: LandscapeProps) {
           state={props.state}
           language={props.language}
           actionId={actionId}
-          box={{ left: 16 + (index() % 3) * 100, top: 304 + Math.floor(index() / 3) * 46, width: 92, height: 42 }}
+          box={{ left: 16 + (index() % 3) * 100, top: 236 + Math.floor(index() / 3) * 80, width: 92, height: 72 }}
           configured={props.actionConfigured(actionId)}
           onHaAction={props.onHaAction}
         />
@@ -166,7 +156,6 @@ function Home(props: LandscapeProps) {
 }
 
 function Sensors(props: LandscapeProps) {
-  const window = () => pageWindow(props.state.sensorOrder, props.sensorPage, 4);
   return (
     <View class="absolute" style={{ insetL: 88, insetT: 0, width: 552, height: 400 }}>
       <StatusLine {...props} />
@@ -176,16 +165,7 @@ function Sensors(props: LandscapeProps) {
       <Text class="absolute text-xs" style={{ insetL: 16, insetT: 72, width: 280, textColor: theme.secondaryText }}>
         {pick(props.language, "只读状态", "Read-only status")}
       </Text>
-      <For each={window().items}>{(sensorId, index) => (
-        <SensorCard
-          state={props.state}
-          language={props.language}
-          sensorId={sensorId}
-          box={{ left: 16 + (index() % 2) * 268, top: 100 + Math.floor(index() / 2) * 108, width: 252, height: 96 }}
-          onNav={props.onNav}
-        />
-      )}</For>
-      <Pager left={16} top={330} width={520} language={props.language} page={window().page} pageCount={window().pageCount} target="sensors" onNav={props.onNav} />
+      <EnvironmentWeather state={props.state} language={props.language} box={{ left: 16, top: 100, width: 520, height: 140 }} />
     </View>
   );
 }
@@ -481,14 +461,14 @@ export function LandscapeScreen(props: LandscapeProps) {
     if (route.kind === "dimmer") return <Dimmer {...props} lightId={route.lightId} />;
     if (route.kind === "sensor") return <SensorDetailScreen state={props.state} language={props.language} sensorId={route.sensorId} landscape onNav={props.onNav} />;
     if (route.kind === "provision") return <Provision {...props} topic={route.topic} />;
-    if (route.tab === "sensors") return <Sensors {...props} />;
+    if (route.tab === "sensors" && hasEnvironment(props.state)) return <Sensors {...props} />;
     if (route.tab === "settings") return <Settings {...props} />;
     return <Home {...props} />;
   };
   return (
     <View class="relative overflow-hidden" style={{ width: 640, height: 400, bgColor: theme.page }}>
       {screen()}
-      {props.route.kind === "tab" ? <LandscapeNav active={activeTab(props.route)} language={props.language} onNav={props.onNav} /> : null}
+      {props.route.kind === "tab" ? <LandscapeNav state={props.state} active={activeTab(props.route) === "sensors" && !hasEnvironment(props.state) ? "home" : activeTab(props.route)} language={props.language} onNav={props.onNav} /> : null}
     </View>
   );
 }

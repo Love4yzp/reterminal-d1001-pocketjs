@@ -1,14 +1,13 @@
-import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { pick, type Language } from "../i18n";
 import type { NetworkInfo } from "../native";
 import type { NavEvent } from "../navigation";
 import type { PanelState } from "../model";
-import { formatSensorValue, pageWindow, sensorName, sensorStatusText, showroomSensor } from "../showroom";
+import { formatSensorValue, sensorName, sensorStatusText, showroomSensor } from "../showroom";
 import { theme } from "../theme";
 import { Icon, Pressable } from "./primitives";
 import { LoadingDots } from "./loading-dots";
-import { Pager, SensorCard } from "./showroom-cards";
+import { EnvironmentWeather } from "./environment-weather";
 import { StatusBar } from "./status-bar";
 
 interface SensorsProps {
@@ -20,7 +19,6 @@ interface SensorsProps {
 }
 
 export function SensorsScreen(props: SensorsProps) {
-  const window = () => pageWindow(props.state.sensorOrder, props.page, 4);
   return (
     <View class="absolute" style={{ insetL: 0, insetT: 0, width: 400, height: 640 }}>
       <StatusBar network={props.network} state={props.state} language={props.language} />
@@ -30,16 +28,7 @@ export function SensorsScreen(props: SensorsProps) {
       <Text class="absolute text-sm" style={{ insetL: 20, insetT: 86, width: 300, textColor: theme.secondaryText }}>
         {pick(props.language, "只读状态", "Read-only status")}
       </Text>
-      <For each={window().items}>{(sensorId, index) => (
-        <SensorCard
-          state={props.state}
-          language={props.language}
-          sensorId={sensorId}
-          box={{ left: 16 + (index() % 2) * 190, top: 118 + Math.floor(index() / 2) * 158, width: 178, height: 140 }}
-          onNav={props.onNav}
-        />
-      )}</For>
-      <Pager left={16} top={446} width={368} language={props.language} page={window().page} pageCount={window().pageCount} target="sensors" onNav={props.onNav} />
+      <EnvironmentWeather state={props.state} language={props.language} box={{ left: 16, top: 118, width: 368, height: 140 }} />
     </View>
   );
 }

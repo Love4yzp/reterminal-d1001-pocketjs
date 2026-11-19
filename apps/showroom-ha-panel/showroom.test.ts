@@ -9,9 +9,9 @@ import {
   sensorStatusText,
   SHOWROOM,
   showroomAction,
-  showroomSensor,
   slidingWindow,
   validateShowroomConfig,
+  type ShowroomSensor,
   type SensorReading,
   type ShowroomConfig,
 } from "./showroom";
@@ -25,6 +25,8 @@ const reading = (value: number | string | null, status: SensorReading["status"] 
 describe("showroom configuration", () => {
   test("the example configuration is valid and uses stable display keys", () => {
     expect(validateShowroomConfig(SHOWROOM)).toEqual([]);
+    expect(SHOWROOM.home.sensors).toEqual([]);
+    expect(SHOWROOM.sensors).toEqual([]);
     expect(SHOWROOM.home.lights).toEqual(["remote"]);
     expect(SHOWROOM.lights.find(light => light.key === "remote")?.legacy).toBe(true);
     expect(SHOWROOM.lights.find(light => light.key === "remote")?.entityId).toBeUndefined();
@@ -90,7 +92,9 @@ describe("small-screen windows", () => {
 });
 
 describe("sensor and action presentation", () => {
-  const sensor = SHOWROOM.sensors[0]!;
+  const sensor: ShowroomSensor = {
+    key: "temperature", name: "温度", nameEn: "Temperature", unit: "°C", decimals: 1, staleAfterSeconds: 90,
+  };
 
   test("formats configured precision without inventing a value", () => {
     expect(formatSensorValue(sensor, reading(21.26))).toBe("21.3");
@@ -111,8 +115,8 @@ describe("sensor and action presentation", () => {
   });
 
   test("names sensors and actions in Chinese and English", () => {
-    expect(sensorName(showroomSensor("temperature")!)).toBe("温度");
-    expect(sensorName(showroomSensor("temperature")!, "en")).toBe("Temperature");
+    expect(sensorName(sensor)).toBe("温度");
+    expect(sensorName(sensor, "en")).toBe("Temperature");
     expect(actionName(showroomAction("arm-gravity")!, "en")).toBe("Drag Arm");
     expect(actionName(showroomAction("arm-playback")!, "en")).toBe("Arm Dance");
     expect(actionButtonLabel(showroomAction("reachy-stop")!, "en")).toBe("STOP");

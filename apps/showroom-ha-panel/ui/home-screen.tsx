@@ -1,7 +1,7 @@
 import { For } from "solid-js";
 import { Text, View } from "@pocketjs/framework/solid/components";
 import { formatClock, formatLocalizedDate } from "../clock";
-import { PORTRAIT_HOME, portraitActionBox, portraitSensorBox } from "../home-layout";
+import { PORTRAIT_HOME, portraitActionBox } from "../home-layout";
 import { languageToggleLabel, pick, type Language } from "../i18n";
 import type { PanelAction, PanelState } from "../model";
 import type { NetworkInfo, PowerInfo } from "../native";
@@ -13,7 +13,6 @@ import { ActionButton, MainLightControl } from "./console-controls";
 import { HomeArmActions } from "./home-arm-actions";
 import { PowerBadge } from "./power-badge";
 import { Icon, Numerals, Pressable } from "./primitives";
-import { SensorCard } from "./showroom-cards";
 import { StatusBar } from "./status-bar";
 
 interface HomeProps {
@@ -63,16 +62,6 @@ export function HomeScreen(props: HomeProps) {
           </Text>
         </View>
       ) : null}
-      <For each={SHOWROOM.home.sensors}>{(sensorId, index) => (
-        <SensorCard
-          state={props.state}
-          language={props.language}
-          sensorId={sensorId}
-          box={portraitSensorBox(index())}
-          compact
-          onNav={props.onNav}
-        />
-      )}</For>
       <MainLightControl
         {...props}
         lightId={SHOWROOM.home.lights[0]!}

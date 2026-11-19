@@ -18,10 +18,9 @@ export const PORTRAIT_HOME = {
   power: { left: 192, top: 34, width: 80, height: 40 },
   language: { left: 200, top: 80, width: 72, height: 34 },
   weather: { left: 274, top: 30, width: 110, height: 68 },
-  sensors: { left: 16, top: 118, width: 178, height: 78, gap: 12 },
-  mainLight: { left: 16, top: 206, width: 368, height: 82 },
-  quickTitleTop: 300,
-  quickActions: { left: 16, top: 324, width: 118, height: 56, columnPitch: 126, rowPitch: 64 },
+  mainLight: { left: 16, top: 118, width: 368, height: 110 },
+  quickTitleTop: 240,
+  quickActions: { left: 16, top: 264, width: 118, height: 80, columnPitch: 126, rowPitch: 88 },
   armActions: { left: 16, top: 456, width: 368, height: 104, gap: 8 },
 } as const;
 
@@ -31,15 +30,6 @@ export const LANDSCAPE_HOME_POWER: LayoutBox = {
   width: 200,
   height: 62,
 };
-
-export function portraitSensorBox(index: number): LayoutBox {
-  return {
-    left: PORTRAIT_HOME.sensors.left + index * (PORTRAIT_HOME.sensors.width + PORTRAIT_HOME.sensors.gap),
-    top: PORTRAIT_HOME.sensors.top,
-    width: PORTRAIT_HOME.sensors.width,
-    height: PORTRAIT_HOME.sensors.height,
-  };
-}
 
 export function portraitActionBox(index: number): LayoutBox {
   const { left, top, width, height, columnPitch, rowPitch } = PORTRAIT_HOME.quickActions;

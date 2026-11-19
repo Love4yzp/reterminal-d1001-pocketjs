@@ -6,11 +6,10 @@
   "weatherEntityId": "",
   "entityMap": {
     "version": 1,
-    "lights": { "remote": "light.example_main" },
-    "sensors": {
-      "temperature": "sensor.example_temperature",
-      "humidity": "sensor.example_humidity"
+    "lights": {
+      "remote": "light.example_main"
     },
+    "sensors": {},
     "actions": {
       "reachy-intro-retail": "input_button.example_reachy_intro_retail",
       "reachy-intro-space": "input_button.example_reachy_intro_space",

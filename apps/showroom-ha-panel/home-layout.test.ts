@@ -1,18 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
-import { LANDSCAPE_HOME_POWER, PORTRAIT_HOME, portraitActionBox, portraitSensorBox } from "./home-layout";
+import { LANDSCAPE_HOME_POWER, PORTRAIT_HOME, portraitActionBox } from "./home-layout";
 import { SHOWROOM } from "./showroom";
 
 describe("portrait home layout", () => {
-  test("puts the sensor cards above the main-light card", () => {
-    const sensorsBottom = PORTRAIT_HOME.sensors.top + PORTRAIT_HOME.sensors.height;
-    expect(sensorsBottom).toBeLessThan(PORTRAIT_HOME.mainLight.top);
+  test("starts the main light immediately below the header with no sensor slot", () => {
+    expect(PORTRAIT_HOME.mainLight.top).toBe(118);
+    expect(PORTRAIT_HOME).not.toHaveProperty("sensors");
     expect(PORTRAIT_HOME.mainLight.top + PORTRAIT_HOME.mainLight.height).toBeLessThan(PORTRAIT_HOME.quickTitleTop);
   });
 
-  test("stacks status, sensors, light, quick actions and arm actions in one column", () => {
-    expect(PORTRAIT_HOME.statusBarHeight).toBeLessThan(PORTRAIT_HOME.sensors.top);
-    expect(PORTRAIT_HOME.sensors.top + PORTRAIT_HOME.sensors.height).toBeLessThan(PORTRAIT_HOME.mainLight.top);
+  test("stacks status, light, quick actions and arm actions in one column", () => {
+    expect(PORTRAIT_HOME.statusBarHeight).toBeLessThan(PORTRAIT_HOME.mainLight.top);
     expect(PORTRAIT_HOME.mainLight.top + PORTRAIT_HOME.mainLight.height)
       .toBeLessThan(PORTRAIT_HOME.quickActions.top);
     const actionRowsBottom = PORTRAIT_HOME.quickActions.top + PORTRAIT_HOME.quickActions.rowPitch
@@ -21,12 +20,10 @@ describe("portrait home layout", () => {
   });
 
   test("uses the requested card, action and arm heights", () => {
-    expect(PORTRAIT_HOME.sensors.height).toBeGreaterThanOrEqual(76);
-    expect(PORTRAIT_HOME.sensors.height).toBeLessThanOrEqual(80);
     expect(PORTRAIT_HOME.mainLight.height).toBeGreaterThanOrEqual(82);
-    expect(PORTRAIT_HOME.mainLight.height).toBeLessThanOrEqual(84);
-    expect(PORTRAIT_HOME.quickActions.height).toBeGreaterThanOrEqual(54);
-    expect(PORTRAIT_HOME.quickActions.height).toBeLessThanOrEqual(56);
+    expect(PORTRAIT_HOME.mainLight.height).toBeLessThanOrEqual(110);
+    expect(PORTRAIT_HOME.quickActions.height).toBeGreaterThanOrEqual(80);
+    expect(PORTRAIT_HOME.quickActions.height).toBeLessThanOrEqual(80);
     expect(PORTRAIT_HOME.armActions.height).toBeGreaterThanOrEqual(102);
     expect(PORTRAIT_HOME.armActions.height).toBeLessThanOrEqual(108);
   });
@@ -51,17 +48,13 @@ describe("portrait home layout", () => {
     expect(boxes[2]!.top + boxes[2]!.height).toBeLessThan(PORTRAIT_HOME.armActions.top);
   });
 
-  test("keeps both sensor cards inside the page and the language pill and power badge away from neighbors", () => {
-    const first = portraitSensorBox(0);
-    const second = portraitSensorBox(1);
-    expect(first.left).toBe(16);
-    expect(second.left + second.width).toBe(PORTRAIT_HOME.width - 16);
+  test("keeps the language pill and power badge away from neighbors", () => {
     expect(PORTRAIT_HOME.language.width).toBeGreaterThanOrEqual(72);
     expect(PORTRAIT_HOME.language.height).toBeGreaterThanOrEqual(34);
     expect(PORTRAIT_HOME.language.left).toBeGreaterThanOrEqual(20 + 176 + 4);
     expect(PORTRAIT_HOME.language.left + PORTRAIT_HOME.language.width)
       .toBeLessThan(PORTRAIT_HOME.weather.left);
-    expect(PORTRAIT_HOME.language.top + PORTRAIT_HOME.language.height).toBeLessThan(PORTRAIT_HOME.sensors.top);
+    expect(PORTRAIT_HOME.language.top + PORTRAIT_HOME.language.height).toBeLessThan(PORTRAIT_HOME.mainLight.top);
     expect(PORTRAIT_HOME.power.left).toBeGreaterThan(20 + 159 + 4);
     expect(PORTRAIT_HOME.power.left + PORTRAIT_HOME.power.width).toBeLessThan(PORTRAIT_HOME.weather.left);
     expect(PORTRAIT_HOME.power.top + PORTRAIT_HOME.power.height).toBeLessThan(PORTRAIT_HOME.language.top);

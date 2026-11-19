@@ -1,12 +1,25 @@
 import { describe, expect, test } from "bun:test";
 
+import { createInitialPanelState } from "./model";
 import type { LightId } from "./model";
-import { activeTab, INITIAL_ROUTE, navigate, nextLight, rowIntent, tabLabel, TABS, tileIntent, type Route } from "./navigation";
+import { activeTab, INITIAL_ROUTE, navigate, nextLight, rowIntent, tabLabel, TABS, visibleTabs, tileIntent, type Route } from "./navigation";
 
 const ALL: LightId[] = ["desk", "shelf", "onboard", "remote"];
 const OFFLINE: LightId[] = ["desk", "shelf", "onboard"];
 
 describe("tab navigation", () => {
+  test("keeps weather-only environment navigation and removes it when empty or offline", () => {
+    const initial = createInitialPanelState();
+    const ids = (state: typeof initial) => visibleTabs(state).map(tab => tab.id);
+    expect(ids(initial)).toEqual(["home", "lights", "settings"]);
+    const live = { ...initial, haConnected: true, weather: {
+      entityId: "weather.home", condition: "cloudy", temperature: 18, unit: "°C",
+    } };
+    expect(ids(live)).toEqual(["home", "lights", "sensors", "settings"]);
+    expect(ids({ ...live, weather: null })).toEqual(["home", "lights", "settings"]);
+    expect(ids({ ...live, haConnected: false })).toEqual(["home", "lights", "settings"]);
+  });
+
   test("starts on home and switches tabs", () => {
     expect(INITIAL_ROUTE).toEqual({ kind: "tab", tab: "home" });
     const lights = navigate(INITIAL_ROUTE, { type: "tab", tab: "lights" });
